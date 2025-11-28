@@ -234,6 +234,97 @@ class SlackNotifier(BaseNotifier):
         return {"blocks": blocks}
 
 
+class GoogleChatNotifier(BaseNotifier):
+    """Google Chat通知クラス"""
+
+    def __init__(self, webhook_url: Optional[str] = None):
+        """
+        Args:
+            webhook_url: Google Chat Webhook URL（省略時は環境変数から取得）
+        """
+        self.webhook_url = webhook_url or Config.GOOGLE_CHAT_WEBHOOK_URL
+
+    def send(self, alert: PriceAlert) -> bool:
+        """単一のアラートを送信する"""
+        if not self.webhook_url:
+            logger.warning("Google Chat Webhook URLが設定されていません")
+            return False
+
+        try:
+            payload = self._build_payload(alert)
+            response = requests.post(
+                self.webhook_url,
+                json=payload,
+                timeout=10
+            )
+            response.raise_for_status()
+            logger.info(f"Google Chat通知を送信しました: {alert.product_name}")
+            return True
+        except requests.RequestException as e:
+            logger.error(f"Google Chat通知の送信に失敗しました: {e}")
+            return False
+
+    def send_batch(self, alerts: list[PriceAlert]) -> bool:
+        """複数のアラートをまとめて送信する"""
+        if not alerts:
+            return True
+
+        if not self.webhook_url:
+            logger.warning("Google Chat Webhook URLが設定されていません")
+            return False
+
+        try:
+            payload = self._build_batch_payload(alerts)
+            response = requests.post(
+                self.webhook_url,
+                json=payload,
+                timeout=30
+            )
+            response.raise_for_status()
+            logger.info(f"Google Chat通知を{len(alerts)}件送信しました")
+            return True
+        except requests.RequestException as e:
+            logger.error(f"Google Chat通知の送信に失敗しました: {e}")
+            return False
+
+    def _build_payload(self, alert: PriceAlert) -> dict:
+        """単一アラート用のペイロードを構築する"""
+        direction = "上昇 📈" if alert.change_rate > 0 else "下落 📉"
+        symbol = "+" if alert.change_rate > 0 else ""
+
+        text = (
+            f"*【価格{direction}アラート】*\n\n"
+            f"*商品:* {alert.product_name}\n"
+            f"*ショップ:* {alert.shop_name}\n"
+            f"*現在価格:* {alert.currency} {alert.current_price:,.2f}\n"
+            f"*前回価格:* {alert.currency} {alert.previous_price:,.2f}\n"
+            f"*変動率:* {symbol}{alert.change_rate:.2f}%\n"
+            f"*日時:* {alert.timestamp}\n\n"
+            f"<{alert.url}|商品ページを開く>"
+        )
+
+        return {"text": text}
+
+    def _build_batch_payload(self, alerts: list[PriceAlert]) -> dict:
+        """複数アラート用のペイロードを構築する"""
+        lines = [f"*🔔 価格変動アラート ({len(alerts)}件)*\n"]
+
+        for alert in alerts:
+            emoji = "📈" if alert.change_rate > 0 else "📉"
+            symbol = "+" if alert.change_rate > 0 else ""
+
+            lines.append(
+                f"{emoji} *{alert.product_name}*\n"
+                f"   _{alert.shop_name}_ | "
+                f"{alert.currency} {alert.previous_price:,.2f} → "
+                f"{alert.currency} {alert.current_price:,.2f} "
+                f"(*{symbol}{alert.change_rate:.2f}%*)\n"
+                f"   <{alert.url}|詳細>\n"
+            )
+
+        return {"text": "\n".join(lines)}
+
+
 class ConsoleNotifier(BaseNotifier):
     """コンソール通知クラス（デバッグ用）"""
 

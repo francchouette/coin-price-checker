@@ -27,6 +27,9 @@ class Config:
     # Slack通知設定
     SLACK_WEBHOOK_URL: str = os.getenv("SLACK_WEBHOOK_URL", "")
 
+    # Google Chat通知設定
+    GOOGLE_CHAT_WEBHOOK_URL: str = os.getenv("GOOGLE_CHAT_WEBHOOK_URL", "")
+
     # スクレイピング設定
     SCRAPE_MIN_WAIT: float = 2.0  # 最小待機時間（秒）
     SCRAPE_MAX_WAIT: float = 5.0  # 最大待機時間（秒）
@@ -97,3 +100,8 @@ class Config:
     def is_slack_enabled(cls) -> bool:
         """Slack通知が有効かどうかを返す"""
         return bool(cls.SLACK_WEBHOOK_URL)
+
+    @classmethod
+    def is_google_chat_enabled(cls) -> bool:
+        """Google Chat通知が有効かどうかを返す"""
+        return bool(cls.GOOGLE_CHAT_WEBHOOK_URL)

@@ -15,6 +15,7 @@ from .scraper import ScraperManager, ScrapeTarget, detect_shop_from_url
 from .shops import ScrapedData
 from .notifier import (
     SlackNotifier,
+    GoogleChatNotifier,
     ConsoleNotifier,
     PriceAlert,
     calculate_change_rate,
@@ -87,39 +88,57 @@ def run():
             logger.warning(f"スクレイピング失敗: {target.url} - {result.error}")
             continue
 
-        # 価格レコードを作成
+        # 価格変動を計算
+        previous_price = previous_prices.get(target.url)
+        change_rate = 0.0
+        if previous_price is not None and previous_price > 0:
+            change_rate = calculate_change_rate(result.price, previous_price)
+
+        # 価格レコードを作成（在庫状況・差分を含む）
         record = PriceRecord(
             timestamp=timestamp,
             shop_name=target.shop_name,
             product_name=result.product_name,
             price=result.price,
             currency=result.currency,
+            previous_price=previous_price if previous_price else 0.0,
+            change_rate=change_rate,
+            in_stock=result.in_stock,
             url=target.url
         )
         price_records.append(record)
 
-        # 価格変動をチェック
-        previous_price = previous_prices.get(target.url)
-        if previous_price is not None:
-            change_rate = calculate_change_rate(result.price, previous_price)
+        # ログ出力
+        stock_status = "In Stock" if result.in_stock else "Out of Stock"
+        if previous_price:
+            logger.info(
+                f"取得: {result.product_name} - {result.currency} {result.price:,.2f} "
+                f"(前回: {previous_price:,.2f}, 変動: {change_rate:+.2f}%) [{stock_status}]"
+            )
+        else:
+            logger.info(
+                f"取得: {result.product_name} - {result.currency} {result.price:,.2f} "
+                f"(初回取得) [{stock_status}]"
+            )
 
-            if check_alert_threshold(change_rate, alert_threshold):
-                alert = PriceAlert(
-                    product_name=result.product_name,
-                    shop_name=target.shop_name,
-                    current_price=result.price,
-                    previous_price=previous_price,
-                    change_rate=change_rate,
-                    currency=result.currency,
-                    url=target.url,
-                    timestamp=timestamp
-                )
-                alerts.append(alert)
-                logger.info(
-                    f"アラート検出: {result.product_name} "
-                    f"({previous_price:,.2f} → {result.price:,.2f}, "
-                    f"{change_rate:+.2f}%)"
-                )
+        # 価格変動アラートをチェック
+        if previous_price is not None and check_alert_threshold(change_rate, alert_threshold):
+            alert = PriceAlert(
+                product_name=result.product_name,
+                shop_name=target.shop_name,
+                current_price=result.price,
+                previous_price=previous_price,
+                change_rate=change_rate,
+                currency=result.currency,
+                url=target.url,
+                timestamp=timestamp
+            )
+            alerts.append(alert)
+            logger.info(
+                f"アラート検出: {result.product_name} "
+                f"({previous_price:,.2f} → {result.price:,.2f}, "
+                f"{change_rate:+.2f}%)"
+            )
 
     # 価格履歴を保存
     if price_records:
@@ -180,16 +199,29 @@ def send_alerts(alerts: list[PriceAlert]):
     Args:
         alerts: 価格アラートのリスト
     """
+    sent = False
+
+    # Google Chatが設定されている場合はGoogle Chatに送信
+    if Config.is_google_chat_enabled():
+        notifier = GoogleChatNotifier()
+        if notifier.send_batch(alerts):
+            logger.info("Google Chatにアラートを送信しました")
+            sent = True
+        else:
+            logger.warning("Google Chatへのアラート送信に失敗しました")
+
     # Slackが設定されている場合はSlackに送信
     if Config.is_slack_enabled():
         notifier = SlackNotifier()
         if notifier.send_batch(alerts):
             logger.info("Slackにアラートを送信しました")
+            sent = True
         else:
             logger.warning("Slackへのアラート送信に失敗しました")
-    else:
-        # コンソールに出力
-        logger.info("Slack未設定のため、コンソールに出力します")
+
+    # どちらも設定されていない場合はコンソールに出力
+    if not sent:
+        logger.info("通知サービス未設定のため、コンソールに出力します")
         notifier = ConsoleNotifier()
         notifier.send_batch(alerts)
 

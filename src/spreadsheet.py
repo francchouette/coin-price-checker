@@ -40,7 +40,10 @@ class PriceRecord:
     product_name: str
     price: float
     currency: str
-    url: str
+    previous_price: float = 0.0
+    change_rate: float = 0.0
+    in_stock: bool = True
+    url: str = ""
 
 
 class SpreadsheetClient:
@@ -257,6 +260,9 @@ class SpreadsheetClient:
                     record.product_name,
                     str(record.price),
                     record.currency,
+                    str(record.previous_price) if record.previous_price else "",
+                    f"{record.change_rate:+.2f}%" if record.change_rate else "",
+                    "In Stock" if record.in_stock else "Out of Stock",
                     record.url
                 ]
                 for record in records
