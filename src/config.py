@@ -9,6 +9,8 @@ import os
 import json
 from typing import Optional
 
+import google.auth
+
 
 class Config:
     """アプリケーション設定クラス"""
@@ -59,6 +61,20 @@ class Config:
             return None
 
     @classmethod
+    def is_adc_available(cls) -> bool:
+        """
+        Application Default Credentials (ADC) が利用可能かどうかを確認する
+
+        Returns:
+            bool: ADCが利用可能な場合True
+        """
+        try:
+            google.auth.default()
+            return True
+        except google.auth.exceptions.DefaultCredentialsError:
+            return False
+
+    @classmethod
     def validate(cls) -> list[str]:
         """
         必須設定の検証を行う
@@ -71,8 +87,9 @@ class Config:
         if not cls.SPREADSHEET_ID:
             errors.append("SPREADSHEET_ID が設定されていません")
 
-        if not cls.get_google_credentials():
-            errors.append("GOOGLE_SERVICE_ACCOUNT_JSON が設定されていないか、無効です")
+        # ADCまたはサービスアカウントJSONのいずれかが必要
+        if not cls.is_adc_available() and not cls.get_google_credentials():
+            errors.append("Google認証情報が設定されていません（ADCまたはGOOGLE_SERVICE_ACCOUNT_JSON）")
 
         return errors
 
