@@ -112,14 +112,14 @@ class SpreadsheetClient:
 
             targets = []
             for i, row in enumerate(records[1:], start=2):  # ヘッダーをスキップ
-                if len(row) >= 6 and row[0].upper() == "ON":
+                if len(row) >= 4 and row[0].upper() == "ON":
                     targets.append(TrackingTarget(
                         status=row[0],
                         shop_name=row[1],
                         product_name=row[2],
                         url=row[3],
-                        price_selector=row[4],
-                        name_selector=row[5],
+                        price_selector=row[4] if len(row) > 4 else "",
+                        name_selector=row[5] if len(row) > 5 else "",
                         row_index=i
                     ))
 
