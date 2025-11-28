@@ -6,8 +6,11 @@
 
 import sys
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional
+
+# 日本時間 (JST = UTC+9)
+JST = timezone(timedelta(hours=9))
 
 from .config import Config
 from .spreadsheet import SpreadsheetClient, PriceRecord, TrackingTarget
@@ -81,7 +84,7 @@ def run():
 
     # 結果を処理
     logger.info("結果を処理中...")
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
     price_records = []
     alerts = []
 
