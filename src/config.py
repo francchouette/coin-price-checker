@@ -22,6 +22,7 @@ class Config:
     # シート名
     SHEET_TRACKING: str = "トラッキング対象"
     SHEET_HISTORY: str = "価格履歴"
+    SHEET_DASHBOARD: str = "ダッシュボード"
     SHEET_SETTINGS: str = "設定"
 
     # Slack通知設定

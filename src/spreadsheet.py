@@ -310,7 +310,7 @@ class SpreadsheetClient:
 
     def get_latest_prices(self, urls: list[str]) -> dict[str, float]:
         """
-        複数URLの直近価格を一括取得する
+        複数URLの直近価格を一括取得する（ダッシュボードから取得）
 
         Args:
             urls: 商品URLのリスト
@@ -322,6 +322,29 @@ class SpreadsheetClient:
             return {}
 
         try:
+            # まずダッシュボードから取得を試みる
+            try:
+                sheet = self._spreadsheet.worksheet(Config.SHEET_DASHBOARD)
+                records = sheet.get_all_values()
+
+                url_set = set(urls)
+                latest_prices = {}
+
+                for row in records[1:]:  # ヘッダーをスキップ
+                    if len(row) >= 9:
+                        url = row[8]  # URL列
+                        if url in url_set and url not in latest_prices:
+                            try:
+                                latest_prices[url] = float(row[2])  # 現在価格列
+                            except ValueError:
+                                continue
+
+                if latest_prices:
+                    return latest_prices
+            except Exception:
+                pass  # ダッシュボードがない場合は価格履歴から取得
+
+            # フォールバック: 価格履歴から取得
             sheet = self._spreadsheet.worksheet(Config.SHEET_HISTORY)
             records = sheet.get_all_values()
 
@@ -330,8 +353,8 @@ class SpreadsheetClient:
 
             # 最新のレコードから逆順に検索
             for row in reversed(records[1:]):
-                if len(row) >= 6:
-                    url = row[5]
+                if len(row) >= 9:
+                    url = row[8]  # URL列（新しい形式）
                     if url in url_set and url not in latest_prices:
                         try:
                             latest_prices[url] = float(row[3])
@@ -346,3 +369,87 @@ class SpreadsheetClient:
         except Exception as e:
             logger.error(f"直近価格の一括取得エラー: {e}")
             return {}
+
+    def update_dashboard(self, records: list[PriceRecord]) -> bool:
+        """
+        ダッシュボードシートを更新する（最新の価格のみ）
+
+        Args:
+            records: 価格レコードのリスト
+
+        Returns:
+            bool: 更新成功時True
+        """
+        if not self._spreadsheet:
+            logger.error("スプレッドシートに接続されていません")
+            return False
+
+        if not records:
+            return True
+
+        try:
+            # ダッシュボードシートを取得または作成
+            try:
+                sheet = self._spreadsheet.worksheet(Config.SHEET_DASHBOARD)
+            except Exception:
+                # シートがなければ作成
+                sheet = self._spreadsheet.add_worksheet(
+                    title=Config.SHEET_DASHBOARD,
+                    rows=100,
+                    cols=10
+                )
+                # ヘッダーを追加
+                sheet.update('A1:I1', [[
+                    '商品名', 'ショップ名', '現在価格', '通貨',
+                    '前回価格', '変動率', '在庫状況', '最終更新', 'URL'
+                ]])
+
+            # 既存データを取得
+            existing_data = sheet.get_all_values()
+            url_to_row = {}
+            for i, row in enumerate(existing_data[1:], start=2):  # ヘッダーをスキップ
+                if len(row) >= 9:
+                    url_to_row[row[8]] = i
+
+            # 更新データを準備
+            updates = []
+            new_rows = []
+
+            for record in records:
+                row_data = [
+                    record.product_name,
+                    record.shop_name,
+                    str(record.price),
+                    record.currency,
+                    str(record.previous_price) if record.previous_price else "",
+                    f"{record.change_rate:+.2f}%" if record.change_rate else "",
+                    "In Stock" if record.in_stock else "Out of Stock",
+                    record.timestamp,
+                    record.url
+                ]
+
+                if record.url in url_to_row:
+                    # 既存行を更新
+                    row_num = url_to_row[record.url]
+                    updates.append({
+                        'range': f'A{row_num}:I{row_num}',
+                        'values': [row_data]
+                    })
+                else:
+                    # 新規行を追加
+                    new_rows.append(row_data)
+
+            # バッチ更新
+            if updates:
+                sheet.batch_update(updates)
+
+            # 新規行を追加
+            if new_rows:
+                sheet.append_rows(new_rows)
+
+            logger.info(f"ダッシュボードを更新しました（更新: {len(updates)}件, 新規: {len(new_rows)}件）")
+            return True
+
+        except Exception as e:
+            logger.error(f"ダッシュボード更新エラー: {e}")
+            return False

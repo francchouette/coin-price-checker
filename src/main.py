@@ -148,6 +148,13 @@ def run():
         else:
             logger.error("価格履歴の保存に失敗しました")
 
+        # ダッシュボードを更新（最新価格のみ）
+        logger.info("ダッシュボードを更新中...")
+        if sheet_client.update_dashboard(price_records):
+            logger.info("ダッシュボードを更新しました")
+        else:
+            logger.warning("ダッシュボードの更新に失敗しました")
+
     # アラートを送信
     if alerts:
         logger.info(f"アラートを送信中... ({len(alerts)}件)")
