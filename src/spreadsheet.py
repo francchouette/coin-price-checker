@@ -404,6 +404,51 @@ class SpreadsheetClient:
             logger.error(f"直近価格の一括取得エラー: {e}")
             return {}
 
+    def get_colorme_products(self) -> list:
+        """
+        カラーミー商品管理シートから商品リストを取得する
+
+        Returns:
+            list: ColorMeProduct のリスト
+        """
+        from .colorme import ColorMeProduct
+
+        if not self._spreadsheet:
+            logger.error("スプレッドシートに接続されていません")
+            return []
+
+        try:
+            sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME)
+            records = sheet.get_all_values()
+
+            products = []
+            for row in records[1:]:  # ヘッダーをスキップ
+                if len(row) >= 6:
+                    product_id = row[0].strip()
+                    bullionstar_url = row[3].strip()
+
+                    # 商品IDとURLが両方ある場合のみ追加
+                    if product_id and bullionstar_url:
+                        try:
+                            products.append(ColorMeProduct(
+                                product_id=int(product_id),
+                                name=row[1].strip(),
+                                current_price=int(row[2]) if row[2] else 0,
+                                bullionstar_url=bullionstar_url,
+                                quantity=int(row[4]) if row[4] else 1,
+                                margin_rate=float(row[5]) if row[5] else 1.1
+                            ))
+                        except ValueError as e:
+                            logger.warning(f"行のパースエラー: {row} - {e}")
+                            continue
+
+            logger.info(f"カラーミー商品を{len(products)}件取得しました")
+            return products
+
+        except Exception as e:
+            logger.warning(f"カラーミー商品管理シートの取得エラー: {e}")
+            return []
+
     def update_dashboard(self, records: list[PriceRecord]) -> bool:
         """
         ダッシュボードシートを更新する（最新の価格のみ）

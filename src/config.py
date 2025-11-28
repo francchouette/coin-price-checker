@@ -31,6 +31,9 @@ class Config:
     # Google Chat通知設定
     GOOGLE_CHAT_WEBHOOK_URL: str = os.getenv("GOOGLE_CHAT_WEBHOOK_URL", "")
 
+    # カラーミーショップAPI設定
+    COLORME_ACCESS_TOKEN: str = os.getenv("COLORME_ACCESS_TOKEN", "")
+
     # スクレイピング設定
     SCRAPE_MIN_WAIT: float = 2.0  # 最小待機時間（秒）
     SCRAPE_MAX_WAIT: float = 5.0  # 最大待機時間（秒）
@@ -106,3 +109,11 @@ class Config:
     def is_google_chat_enabled(cls) -> bool:
         """Google Chat通知が有効かどうかを返す"""
         return bool(cls.GOOGLE_CHAT_WEBHOOK_URL)
+
+    @classmethod
+    def is_colorme_enabled(cls) -> bool:
+        """カラーミー連携が有効かどうかを返す"""
+        return bool(cls.COLORME_ACCESS_TOKEN)
+
+    # シート名
+    SHEET_COLORME: str = "カラーミー商品管理"

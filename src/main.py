@@ -24,6 +24,8 @@ from .notifier import (
     calculate_change_rate,
     check_alert_threshold,
 )
+from .exchange_rate import ExchangeRateClient
+from .colorme import ColorMeClient
 
 # ロギング設定
 logging.basicConfig(
@@ -187,6 +189,14 @@ def run():
     else:
         logger.info("アラートはありません")
 
+    # カラーミー価格更新
+    if Config.is_colorme_enabled():
+        logger.info("=" * 60)
+        logger.info("カラーミー価格更新を開始します")
+        update_colorme_prices(sheet_client, price_records)
+    else:
+        logger.info("カラーミー連携は無効です（COLORME_ACCESS_TOKEN未設定）")
+
     # 完了
     elapsed = (datetime.now() - start_time).total_seconds()
     logger.info("=" * 60)
@@ -222,6 +232,64 @@ def scrape_targets(targets: list[TrackingTarget]) -> list[ScrapedData]:
 
     with ScraperManager() as manager:
         return manager.scrape_all(scrape_targets_list)
+
+
+def update_colorme_prices(sheet_client: SpreadsheetClient, price_records: list[PriceRecord]):
+    """
+    カラーミーショップの価格を更新する
+
+    Args:
+        sheet_client: スプレッドシートクライアント
+        price_records: 今回取得した価格レコードのリスト
+    """
+    # カラーミー商品リストを取得
+    colorme_products = sheet_client.get_colorme_products()
+    if not colorme_products:
+        logger.info("カラーミー商品管理シートに対象商品がありません")
+        return
+
+    logger.info(f"カラーミー価格更新対象: {len(colorme_products)}件")
+
+    # 今回取得したBullionstar価格をURL -> 価格の辞書に変換
+    # Bullionstarの価格のみを対象とする
+    bullionstar_prices = {}
+    for record in price_records:
+        if "bullionstar" in record.url.lower():
+            bullionstar_prices[record.url] = record.price
+
+    if not bullionstar_prices:
+        logger.warning("Bullionstarの価格データがありません")
+        return
+
+    logger.info(f"Bullionstar価格データ: {len(bullionstar_prices)}件")
+
+    # 為替レートを取得
+    exchange_client = ExchangeRateClient()
+    if not exchange_client.fetch_rates():
+        logger.error("為替レートの取得に失敗しました")
+        return
+
+    exchange_rate = exchange_client.get_rate("USD", "JPY")
+    if not exchange_rate:
+        logger.error("USD/JPY為替レートが取得できません")
+        return
+
+    logger.info(f"為替レート: 1 USD = {exchange_rate:.2f} JPY")
+
+    # カラーミー価格を更新
+    colorme_client = ColorMeClient()
+    result = colorme_client.update_prices_batch(
+        colorme_products,
+        bullionstar_prices,
+        exchange_rate
+    )
+
+    logger.info(
+        f"カラーミー価格更新完了: "
+        f"成功 {result['success']}件, "
+        f"失敗 {result['failed']}件, "
+        f"スキップ {result['skipped']}件"
+    )
 
 
 def send_alerts(alerts: list[PriceAlert]):
