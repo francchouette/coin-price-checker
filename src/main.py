@@ -68,10 +68,12 @@ def run():
     alert_threshold = sheet_client.get_alert_threshold()
     logger.info(f"アラート閾値: ±{alert_threshold}%")
 
-    # 直近の価格を事前に取得
+    # 直近の価格と在庫状況を事前に取得
     urls = [t.url for t in targets]
     previous_prices = sheet_client.get_latest_prices(urls)
+    previous_stock = sheet_client.get_latest_stock_status(urls)
     logger.info(f"直近価格データ: {len(previous_prices)}件")
+    logger.info(f"直近在庫データ: {len(previous_stock)}件")
 
     # スクレイピング実行
     logger.info("スクレイピングを開始します...")
@@ -131,14 +133,34 @@ def run():
                 change_rate=change_rate,
                 currency=result.currency,
                 url=target.url,
-                timestamp=timestamp
+                timestamp=timestamp,
+                alert_type="price",
+                in_stock=result.in_stock
             )
             alerts.append(alert)
             logger.info(
-                f"アラート検出: {result.product_name} "
+                f"価格アラート検出: {result.product_name} "
                 f"({previous_price:,.2f} → {result.price:,.2f}, "
                 f"{change_rate:+.2f}%)"
             )
+
+        # 在庫切れアラートをチェック（前回In Stock → 今回Out of Stock）
+        was_in_stock = previous_stock.get(target.url, True)
+        if was_in_stock and not result.in_stock:
+            alert = PriceAlert(
+                product_name=result.product_name,
+                shop_name=target.shop_name,
+                current_price=result.price,
+                previous_price=previous_price if previous_price else result.price,
+                change_rate=0.0,
+                currency=result.currency,
+                url=target.url,
+                timestamp=timestamp,
+                alert_type="stock",
+                in_stock=False
+            )
+            alerts.append(alert)
+            logger.info(f"在庫切れアラート検出: {result.product_name}")
 
     # 価格履歴を保存
     if price_records:

@@ -27,6 +27,8 @@ class PriceAlert:
     currency: str
     url: str
     timestamp: str
+    alert_type: str = "price"  # "price" or "stock"
+    in_stock: bool = True
 
 
 class BaseNotifier(ABC):
@@ -68,6 +70,16 @@ class BaseNotifier(ABC):
         Returns:
             str: フォーマット済みメッセージ
         """
+        if alert.alert_type == "stock":
+            return (
+                f"【在庫切れアラート】\n"
+                f"商品: {alert.product_name}\n"
+                f"ショップ: {alert.shop_name}\n"
+                f"最終価格: {alert.currency} {alert.current_price:,.2f}\n"
+                f"日時: {alert.timestamp}\n"
+                f"URL: {alert.url}"
+            )
+
         direction = "上昇" if alert.change_rate > 0 else "下落"
         symbol = "+" if alert.change_rate > 0 else ""
 
@@ -289,38 +301,56 @@ class GoogleChatNotifier(BaseNotifier):
 
     def _build_payload(self, alert: PriceAlert) -> dict:
         """単一アラート用のペイロードを構築する"""
-        direction = "上昇 📈" if alert.change_rate > 0 else "下落 📉"
-        symbol = "+" if alert.change_rate > 0 else ""
+        if alert.alert_type == "stock":
+            text = (
+                f"*【⚠️ 在庫切れアラート】*\n\n"
+                f"*商品:* {alert.product_name}\n"
+                f"*ショップ:* {alert.shop_name}\n"
+                f"*最終価格:* {alert.currency} {alert.current_price:,.2f}\n"
+                f"*日時:* {alert.timestamp}\n\n"
+                f"<{alert.url}|商品ページを開く>"
+            )
+        else:
+            direction = "上昇 📈" if alert.change_rate > 0 else "下落 📉"
+            symbol = "+" if alert.change_rate > 0 else ""
 
-        text = (
-            f"*【価格{direction}アラート】*\n\n"
-            f"*商品:* {alert.product_name}\n"
-            f"*ショップ:* {alert.shop_name}\n"
-            f"*現在価格:* {alert.currency} {alert.current_price:,.2f}\n"
-            f"*前回価格:* {alert.currency} {alert.previous_price:,.2f}\n"
-            f"*変動率:* {symbol}{alert.change_rate:.2f}%\n"
-            f"*日時:* {alert.timestamp}\n\n"
-            f"<{alert.url}|商品ページを開く>"
-        )
+            text = (
+                f"*【価格{direction}アラート】*\n\n"
+                f"*商品:* {alert.product_name}\n"
+                f"*ショップ:* {alert.shop_name}\n"
+                f"*現在価格:* {alert.currency} {alert.current_price:,.2f}\n"
+                f"*前回価格:* {alert.currency} {alert.previous_price:,.2f}\n"
+                f"*変動率:* {symbol}{alert.change_rate:.2f}%\n"
+                f"*日時:* {alert.timestamp}\n\n"
+                f"<{alert.url}|商品ページを開く>"
+            )
 
         return {"text": text}
 
     def _build_batch_payload(self, alerts: list[PriceAlert]) -> dict:
         """複数アラート用のペイロードを構築する"""
-        lines = [f"*🔔 価格変動アラート ({len(alerts)}件)*\n"]
+        lines = [f"*🔔 アラート ({len(alerts)}件)*\n"]
 
         for alert in alerts:
-            emoji = "📈" if alert.change_rate > 0 else "📉"
-            symbol = "+" if alert.change_rate > 0 else ""
+            if alert.alert_type == "stock":
+                lines.append(
+                    f"⚠️ *{alert.product_name}* - 在庫切れ\n"
+                    f"   _{alert.shop_name}_ | "
+                    f"最終価格: {alert.currency} {alert.current_price:,.2f}\n"
+                    f"   <{alert.url}|詳細>\n"
+                )
+            else:
+                emoji = "📈" if alert.change_rate > 0 else "📉"
+                symbol = "+" if alert.change_rate > 0 else ""
 
-            lines.append(
-                f"{emoji} *{alert.product_name}*\n"
-                f"   _{alert.shop_name}_ | "
-                f"{alert.currency} {alert.previous_price:,.2f} → "
-                f"{alert.currency} {alert.current_price:,.2f} "
-                f"(*{symbol}{alert.change_rate:.2f}%*)\n"
-                f"   <{alert.url}|詳細>\n"
-            )
+                lines.append(
+                    f"{emoji} *{alert.product_name}*\n"
+                    f"   _{alert.shop_name}_ | "
+                    f"{alert.currency} {alert.previous_price:,.2f} → "
+                    f"{alert.currency} {alert.current_price:,.2f} "
+                    f"(*{symbol}{alert.change_rate:.2f}%*)\n"
+                    f"   <{alert.url}|詳細>\n"
+                )
 
         return {"text": "\n".join(lines)}
 

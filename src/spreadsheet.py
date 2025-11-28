@@ -308,6 +308,40 @@ class SpreadsheetClient:
             logger.error(f"直近価格の取得エラー: {e}")
             return None
 
+    def get_latest_stock_status(self, urls: list[str]) -> dict[str, bool]:
+        """
+        複数URLの直近の在庫状況を一括取得する（ダッシュボードから取得）
+
+        Args:
+            urls: 商品URLのリスト
+
+        Returns:
+            dict: URL -> 在庫状況（True=In Stock）の辞書
+        """
+        if not self._spreadsheet:
+            return {}
+
+        try:
+            try:
+                sheet = self._spreadsheet.worksheet(Config.SHEET_DASHBOARD)
+                records = sheet.get_all_values()
+
+                url_set = set(urls)
+                stock_status = {}
+
+                for row in records[1:]:  # ヘッダーをスキップ
+                    if len(row) >= 9:
+                        url = row[8]  # URL列
+                        if url in url_set and url not in stock_status:
+                            stock_status[url] = row[6] == "In Stock"  # 在庫状況列
+
+                return stock_status
+            except Exception:
+                return {}
+        except Exception as e:
+            logger.error(f"在庫状況の取得エラー: {e}")
+            return {}
+
     def get_latest_prices(self, urls: list[str]) -> dict[str, float]:
         """
         複数URLの直近価格を一括取得する（ダッシュボードから取得）
