@@ -14,9 +14,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10  # 最大10分で完了
 
+    # Workload Identity Federation に必要な権限
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/613320899872/locations/global/workloadIdentityPools/github-actions-pool/providers/github'
+          service_account: 'spreadsheet-access@coin-price-tracker-479614.iam.gserviceaccount.com'
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -37,7 +49,6 @@ jobs:
       - name: Run price check
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           python -m src.main

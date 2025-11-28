@@ -12,6 +12,7 @@ from typing import Optional
 from dataclasses import dataclass
 
 import gspread
+import google.auth
 from google.oauth2.service_account import Credentials
 
 from .config import Config
@@ -58,9 +59,24 @@ class SpreadsheetClient:
         """
         スプレッドシートに接続する
 
+        Workload Identity Federation（ADC）またはサービスアカウントJSONを使用。
+        ADCが優先され、利用できない場合はJSONにフォールバック。
+
         Returns:
             bool: 接続成功時True
         """
+        try:
+            # まずApplication Default Credentials（ADC）を試す
+            # GitHub ActionsでWorkload Identity Federationを使用する場合はこちら
+            credentials, project = google.auth.default(scopes=self.SCOPES)
+            self._client = gspread.authorize(credentials)
+            self._spreadsheet = self._client.open_by_key(Config.SPREADSHEET_ID)
+            logger.info(f"スプレッドシートに接続しました（ADC使用）: {self._spreadsheet.title}")
+            return True
+        except google.auth.exceptions.DefaultCredentialsError:
+            logger.info("ADCが利用できません。サービスアカウントJSONを使用します。")
+
+        # フォールバック: サービスアカウントJSON
         credentials_dict = Config.get_google_credentials()
         if not credentials_dict:
             logger.error("Google認証情報が取得できません")
@@ -73,7 +89,7 @@ class SpreadsheetClient:
             )
             self._client = gspread.authorize(credentials)
             self._spreadsheet = self._client.open_by_key(Config.SPREADSHEET_ID)
-            logger.info(f"スプレッドシートに接続しました: {self._spreadsheet.title}")
+            logger.info(f"スプレッドシートに接続しました（JSON使用）: {self._spreadsheet.title}")
             return True
         except Exception as e:
             logger.error(f"スプレッドシート接続エラー: {e}")
