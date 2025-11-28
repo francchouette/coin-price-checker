@@ -16,7 +16,7 @@ class BullionstarScraper(BaseScraper):
 
     SHOP_NAME = "Bullionstar"
     CURRENCY = "JPY"
-    WAIT_TIME_MS = 3000
+    WAIT_TIME_MS = 5000  # Bot検出対策のため長めに設定
 
     # セレクタ
     NAME_SELECTOR = "h1"

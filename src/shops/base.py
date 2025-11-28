@@ -80,6 +80,12 @@ class BaseScraper(ABC):
             # 価格を取得
             price = self._extract_price()
             if price is None:
+                # デバッグ: ページタイトルをログ出力
+                try:
+                    page_title = self.page.title()
+                    logger.warning(f"価格取得失敗 - ページタイトル: {page_title}")
+                except Exception:
+                    pass
                 return ScrapedData(
                     product_name=product_name,
                     price=0.0,
