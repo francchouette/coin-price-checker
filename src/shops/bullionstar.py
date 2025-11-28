@@ -15,8 +15,9 @@ class BullionstarScraper(BaseScraper):
     """Bullionstar用スクレイパー"""
 
     SHOP_NAME = "Bullionstar"
-    CURRENCY = "JPY"
+    CURRENCY = "USD"  # デフォルト（実際はサイト表示に依存）
     WAIT_TIME_MS = 5000  # Bot検出対策のため長めに設定
+    _detected_currency = None  # 検出された通貨
 
     # セレクタ
     NAME_SELECTOR = "h1"
@@ -29,6 +30,7 @@ class BullionstarScraper(BaseScraper):
 
         Bullionstarは数量別価格テーブルで表示される
         最初の価格行（1-9個の価格）を取得
+        複数の通貨（JPY, USD, SGD等）に対応
         """
         try:
             rows = self.page.query_selector_all(self.PRICE_TABLE_SELECTOR)
@@ -36,16 +38,28 @@ class BullionstarScraper(BaseScraper):
             for row in rows:
                 text = row.inner_text().strip()
 
-                # "1 - 9    ¥126,112.25" のような形式を探す
-                # ヘッダー行（"Quantity Price"）はスキップ
+                # ヘッダー行はスキップ
                 if "Quantity" in text or "Price" in text:
                     continue
 
-                # 円記号を含む価格を抽出
-                match = re.search(r'¥([\d,]+\.?\d*)', text)
-                if match:
-                    price_str = match.group(1).replace(',', '')
-                    return float(price_str)
+                # 複数通貨パターン: ¥, $, S$, €, £
+                patterns = [
+                    r'¥([\d,]+\.?\d*)',      # JPY
+                    r'S\$([\d,]+\.?\d*)',    # SGD
+                    r'\$([\d,]+\.?\d*)',     # USD
+                    r'€([\d,]+\.?\d*)',      # EUR
+                    r'£([\d,]+\.?\d*)',      # GBP
+                ]
+
+                for pattern in patterns:
+                    match = re.search(pattern, text)
+                    if match:
+                        price_str = match.group(1).replace(',', '')
+                        price = float(price_str)
+                        if price > 0:
+                            # 通貨を検出してログ出力
+                            logger.info(f"価格検出: {text[:50]}...")
+                            return price
 
             # テーブルで見つからない場合、他のセレクタを試す
             return self._extract_price_fallback()
@@ -59,29 +73,35 @@ class BullionstarScraper(BaseScraper):
         フォールバック: 別のセレクタで価格を探す
         """
         try:
+            # 通貨パターン
+            currency_patterns = [
+                (r'¥([\d,]+\.?\d*)', '¥'),
+                (r'S\$([\d,]+\.?\d*)', 'S$'),
+                (r'\$([\d,]+\.?\d*)', '$'),
+                (r'€([\d,]+\.?\d*)', '€'),
+                (r'£([\d,]+\.?\d*)', '£'),
+            ]
+
             # プロモーション価格を試す
             price_new = self.page.query_selector(".price-new")
             if price_new:
                 text = price_new.inner_text().strip()
-                match = re.search(r'¥([\d,]+\.?\d*)', text)
-                if match:
-                    price_str = match.group(1).replace(',', '')
-                    return float(price_str)
-
-            # ページ内の全span要素から円価格を探す
-            spans = self.page.query_selector_all("span")
-            for span in spans:
-                if not span.is_visible():
-                    continue
-                text = span.inner_text().strip()
-                if text.startswith("¥") and len(text) > 2:
-                    match = re.search(r'¥([\d,]+\.?\d*)', text)
+                for pattern, symbol in currency_patterns:
+                    match = re.search(pattern, text)
                     if match:
                         price_str = match.group(1).replace(',', '')
-                        price = float(price_str)
-                        # 極端に小さい価格は除外（アクセサリなど）
-                        if price > 1000:
-                            return price
+                        return float(price_str)
+
+            # ページ全体のテキストから価格を探す
+            body_text = self.page.inner_text("body")
+            for pattern, symbol in currency_patterns:
+                matches = re.findall(pattern, body_text)
+                for price_str in matches:
+                    price = float(price_str.replace(',', ''))
+                    # 妥当な価格範囲（10以上）
+                    if price > 10:
+                        logger.info(f"フォールバックで価格検出: {symbol}{price_str}")
+                        return price
 
             return None
 
