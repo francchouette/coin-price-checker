@@ -1,0 +1,19 @@
+# Web scraping
+playwright==1.49.0
+
+# Google Sheets API
+gspread==6.1.4
+google-auth==2.36.0
+google-auth-oauthlib==1.2.1
+
+# Data processing
+pandas==2.2.3
+
+# HTTP requests (for notifications)
+requests==2.32.3
+
+# Environment variables
+python-dotenv==1.0.1
+
+# Testing
+pytest==8.3.3

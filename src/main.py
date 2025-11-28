@@ -1,0 +1,198 @@
+"""
+メインエントリーポイント
+
+価格追跡プログラムの全体フローを制御する。
+"""
+
+import sys
+import logging
+from datetime import datetime
+from typing import Optional
+
+from .config import Config
+from .spreadsheet import SpreadsheetClient, PriceRecord, TrackingTarget
+from .scraper import ScraperManager, ScrapeTarget, detect_shop_from_url
+from .shops import ScrapedData
+from .notifier import (
+    SlackNotifier,
+    ConsoleNotifier,
+    PriceAlert,
+    calculate_change_rate,
+    check_alert_threshold,
+)
+
+# ロギング設定
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
+
+def run():
+    """メイン処理を実行する"""
+    logger.info("=" * 60)
+    logger.info("価格追跡プログラムを開始します")
+    logger.info("=" * 60)
+
+    start_time = datetime.now()
+
+    # 設定の検証
+    errors = Config.validate()
+    if errors:
+        for error in errors:
+            logger.error(error)
+        logger.error("設定エラーのため終了します")
+        sys.exit(1)
+
+    # スプレッドシートに接続
+    logger.info("スプレッドシートに接続中...")
+    sheet_client = SpreadsheetClient()
+    if not sheet_client.connect():
+        logger.error("スプレッドシートへの接続に失敗しました")
+        sys.exit(1)
+
+    # トラッキング対象を取得
+    targets = sheet_client.get_tracking_targets()
+    if not targets:
+        logger.warning("トラッキング対象が見つかりません")
+        sys.exit(0)
+
+    logger.info(f"トラッキング対象: {len(targets)}件")
+
+    # アラート閾値を取得
+    alert_threshold = sheet_client.get_alert_threshold()
+    logger.info(f"アラート閾値: ±{alert_threshold}%")
+
+    # 直近の価格を事前に取得
+    urls = [t.url for t in targets]
+    previous_prices = sheet_client.get_latest_prices(urls)
+    logger.info(f"直近価格データ: {len(previous_prices)}件")
+
+    # スクレイピング実行
+    logger.info("スクレイピングを開始します...")
+    scraped_results = scrape_targets(targets)
+
+    # 結果を処理
+    logger.info("結果を処理中...")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    price_records = []
+    alerts = []
+
+    for target, result in zip(targets, scraped_results):
+        if result.error:
+            logger.warning(f"スクレイピング失敗: {target.url} - {result.error}")
+            continue
+
+        # 価格レコードを作成
+        record = PriceRecord(
+            timestamp=timestamp,
+            shop_name=target.shop_name,
+            product_name=result.product_name,
+            price=result.price,
+            currency=result.currency,
+            url=target.url
+        )
+        price_records.append(record)
+
+        # 価格変動をチェック
+        previous_price = previous_prices.get(target.url)
+        if previous_price is not None:
+            change_rate = calculate_change_rate(result.price, previous_price)
+
+            if check_alert_threshold(change_rate, alert_threshold):
+                alert = PriceAlert(
+                    product_name=result.product_name,
+                    shop_name=target.shop_name,
+                    current_price=result.price,
+                    previous_price=previous_price,
+                    change_rate=change_rate,
+                    currency=result.currency,
+                    url=target.url,
+                    timestamp=timestamp
+                )
+                alerts.append(alert)
+                logger.info(
+                    f"アラート検出: {result.product_name} "
+                    f"({previous_price:,.2f} → {result.price:,.2f}, "
+                    f"{change_rate:+.2f}%)"
+                )
+
+    # 価格履歴を保存
+    if price_records:
+        logger.info(f"価格履歴を保存中... ({len(price_records)}件)")
+        if sheet_client.save_price_records(price_records):
+            logger.info("価格履歴を保存しました")
+        else:
+            logger.error("価格履歴の保存に失敗しました")
+
+    # アラートを送信
+    if alerts:
+        logger.info(f"アラートを送信中... ({len(alerts)}件)")
+        send_alerts(alerts)
+    else:
+        logger.info("アラートはありません")
+
+    # 完了
+    elapsed = (datetime.now() - start_time).total_seconds()
+    logger.info("=" * 60)
+    logger.info(f"価格追跡プログラムが完了しました（{elapsed:.1f}秒）")
+    logger.info(f"  - 処理件数: {len(price_records)}件")
+    logger.info(f"  - アラート: {len(alerts)}件")
+    logger.info("=" * 60)
+
+
+def scrape_targets(targets: list[TrackingTarget]) -> list[ScrapedData]:
+    """
+    トラッキング対象をスクレイピングする
+
+    Args:
+        targets: トラッキング対象のリスト
+
+    Returns:
+        list[ScrapedData]: スクレイピング結果のリスト
+    """
+    scrape_targets_list = []
+
+    for target in targets:
+        # ショップ名が空の場合はURLから推定
+        shop_name = target.shop_name
+        if not shop_name:
+            shop_name = detect_shop_from_url(target.url)
+
+        scrape_targets_list.append(ScrapeTarget(
+            shop_name=shop_name,
+            url=target.url,
+            product_name_hint=target.product_name
+        ))
+
+    with ScraperManager() as manager:
+        return manager.scrape_all(scrape_targets_list)
+
+
+def send_alerts(alerts: list[PriceAlert]):
+    """
+    アラートを送信する
+
+    Args:
+        alerts: 価格アラートのリスト
+    """
+    # Slackが設定されている場合はSlackに送信
+    if Config.is_slack_enabled():
+        notifier = SlackNotifier()
+        if notifier.send_batch(alerts):
+            logger.info("Slackにアラートを送信しました")
+        else:
+            logger.warning("Slackへのアラート送信に失敗しました")
+    else:
+        # コンソールに出力
+        logger.info("Slack未設定のため、コンソールに出力します")
+        notifier = ConsoleNotifier()
+        notifier.send_batch(alerts)
+
+
+if __name__ == "__main__":
+    run()
