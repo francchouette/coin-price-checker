@@ -61,6 +61,10 @@ class ColorMeClient:
         Returns:
             dict: 商品情報（取得失敗時はNone）
         """
+        if not self.access_token:
+            logger.error("カラーミーアクセストークンが設定されていません")
+            return None
+
         try:
             response = requests.get(
                 f"{self.API_BASE}/products/{product_id}.json",
@@ -73,6 +77,23 @@ class ColorMeClient:
         except requests.RequestException as e:
             logger.error(f"商品取得エラー (ID: {product_id}): {e}")
             return None
+
+    def get_current_prices(self, product_ids: list[int]) -> dict[int, int]:
+        """
+        複数商品の現在価格を取得する
+
+        Args:
+            product_ids: 商品IDのリスト
+
+        Returns:
+            dict: 商品ID -> 現在価格 の辞書
+        """
+        prices = {}
+        for product_id in product_ids:
+            product = self.get_product(product_id)
+            if product and "price" in product:
+                prices[product_id] = int(product["price"])
+        return prices
 
     def update_product(self, product_id: int, updates: dict) -> bool:
         """
@@ -146,6 +167,12 @@ class ColorMeClient:
         """
         result = {"success": 0, "failed": 0, "skipped": 0}
 
+        # カラーミーから現在価格を取得
+        product_ids = [p.product_id for p in products]
+        logger.info("カラーミーから現在価格を取得中...")
+        current_prices = self.get_current_prices(product_ids)
+        logger.info(f"カラーミー価格取得完了: {len(current_prices)}件")
+
         for product in products:
             # Bullionstar価格と在庫を取得
             usd_price = bullionstar_prices.get(product.bullionstar_url)
@@ -158,9 +185,20 @@ class ColorMeClient:
                 result["skipped"] += 1
                 continue
 
+            # カラーミーの現在価格
+            colorme_current_price = current_prices.get(product.product_id, 0)
+
             # 新価格を計算: USD価格 × 為替レート × 枚数 × マージン率
             new_price = int(
                 usd_price * exchange_rate * product.quantity * product.margin_rate
+            )
+
+            # 価格情報をログ出力
+            logger.info(
+                f"[価格計算] {product.name}\n"
+                f"    カラーミー現在価格: {colorme_current_price:,}円\n"
+                f"    Bullionstar価格: ${usd_price:,.2f}\n"
+                f"    計算価格（反映候補）: {new_price:,}円"
             )
 
             # 更新内容を構築
@@ -168,9 +206,9 @@ class ColorMeClient:
             log_parts = []
 
             # 価格更新
-            if product.update_enabled and new_price != product.current_price:
+            if product.update_enabled and new_price != colorme_current_price:
                 updates["price"] = new_price
-                log_parts.append(f"価格: {product.current_price:,}円 → {new_price:,}円")
+                log_parts.append(f"価格: {colorme_current_price:,}円 → {new_price:,}円")
 
             # 在庫更新
             if product.stock_sync:
@@ -196,14 +234,10 @@ class ColorMeClient:
 
             # 更新がない場合
             if not updates:
-                if not product.update_enabled:
-                    logger.info(
-                        f"[計算のみ] {product.name}: {product.current_price:,}円 → {new_price:,}円 (更新OFF)"
-                    )
+                if not product.update_enabled and new_price != colorme_current_price:
+                    logger.info(f"    → 価格更新OFF（差額: {new_price - colorme_current_price:+,}円）")
                 else:
-                    logger.info(
-                        f"スキップ: {product.name} - 変更なし"
-                    )
+                    logger.info(f"    → 変更なし")
                 result["skipped"] += 1
                 continue
 
