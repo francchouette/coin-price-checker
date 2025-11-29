@@ -261,6 +261,7 @@ class ColorMeClient:
                 "product_name": product.name,
                 "colorme_price": colorme_current_price,
                 "source_price": source_price,
+                "exchange_rate": exchange_rate,
                 "calculated_price": new_price,
                 "price_diff": price_diff,
                 "update_enabled": product.update_enabled,

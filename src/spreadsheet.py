@@ -537,10 +537,11 @@ class SpreadsheetClient:
 
         シート列（新構成）:
         C: 現在価格（カラーミーAPIから取得）
-        M: 取得元価格
-        N: 計算価格（反映候補）
-        O: 差額
-        P: 最終更新
+        M: 為替レート
+        N: 取得元価格
+        O: 計算価格（反映候補）
+        P: 差額
+        Q: 最終更新
 
         Args:
             results: 計算結果のリスト
@@ -579,10 +580,11 @@ class SpreadsheetClient:
                         'range': f'C{row_num}',
                         'values': [[r["colorme_price"]]]
                     })
-                    # M-P列: 取得元価格, 計算価格, 差額, 最終更新
+                    # M-Q列: 為替レート, 取得元価格, 計算価格, 差額, 最終更新
                     updates.append({
-                        'range': f'M{row_num}:P{row_num}',
+                        'range': f'M{row_num}:Q{row_num}',
                         'values': [[
+                            r["exchange_rate"],
                             r["source_price"],
                             r["calculated_price"],
                             r["price_diff"],
