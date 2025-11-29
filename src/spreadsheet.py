@@ -503,12 +503,12 @@ class SpreadsheetClient:
         """
         カラーミー商品管理シートに計算結果を更新する
 
-        シート列（追加分）:
-        10: カラーミー現在価格 (K列)
-        11: Bullionstar価格(USD) (L列)
-        12: 計算価格 (M列)
-        13: 差額 (N列)
-        14: 最終更新 (O列)
+        シート列:
+        C: 現在価格（カラーミーAPIから取得）
+        K: Bullionstar価格(USD)
+        L: 計算価格（反映候補）
+        M: 差額
+        N: 最終更新
 
         Args:
             results: 計算結果のリスト
@@ -542,10 +542,15 @@ class SpreadsheetClient:
             for r in results:
                 row_num = id_to_row.get(r["product_id"])
                 if row_num:
+                    # C列: 現在価格（カラーミーAPIから取得）
                     updates.append({
-                        'range': f'K{row_num}:O{row_num}',
+                        'range': f'C{row_num}',
+                        'values': [[r["colorme_price"]]]
+                    })
+                    # K-N列: Bullionstar価格, 計算価格, 差額, 最終更新
+                    updates.append({
+                        'range': f'K{row_num}:N{row_num}',
                         'values': [[
-                            r["colorme_price"],
                             r["bullionstar_price"],
                             r["calculated_price"],
                             r["price_diff"],
@@ -555,7 +560,7 @@ class SpreadsheetClient:
 
             if updates:
                 sheet.batch_update(updates)
-                logger.info(f"カラーミー商品管理シートを更新しました: {len(updates)}件")
+                logger.info(f"カラーミー商品管理シートを更新しました: {len(results)}件")
 
             return True
 
