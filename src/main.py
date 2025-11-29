@@ -300,6 +300,11 @@ def update_colorme_prices(sheet_client: SpreadsheetClient, price_records: list[P
         f"スキップ {result['skipped']}件"
     )
 
+    # 計算結果をスプレッドシートに保存
+    if result.get("calc_results"):
+        timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+        sheet_client.update_colorme_calc_results(result["calc_results"], timestamp)
+
 
 def send_alerts(alerts: list[PriceAlert]):
     """

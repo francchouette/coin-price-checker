@@ -499,6 +499,70 @@ class SpreadsheetClient:
             logger.warning(f"カラーミー商品管理シートの取得エラー: {e}")
             return []
 
+    def update_colorme_calc_results(self, results: list[dict], timestamp: str) -> bool:
+        """
+        カラーミー商品管理シートに計算結果を更新する
+
+        シート列（追加分）:
+        10: カラーミー現在価格 (K列)
+        11: Bullionstar価格(USD) (L列)
+        12: 計算価格 (M列)
+        13: 差額 (N列)
+        14: 最終更新 (O列)
+
+        Args:
+            results: 計算結果のリスト
+            timestamp: 更新日時
+
+        Returns:
+            bool: 保存成功時True
+        """
+        if not self._spreadsheet:
+            logger.error("スプレッドシートに接続されていません")
+            return False
+
+        if not results:
+            return True
+
+        try:
+            sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME)
+            all_data = sheet.get_all_values()
+
+            # 商品ID -> 行番号のマッピング
+            id_to_row = {}
+            for i, row in enumerate(all_data[1:], start=2):  # ヘッダーをスキップ
+                if len(row) >= 1 and row[0].strip():
+                    try:
+                        id_to_row[int(row[0].strip())] = i
+                    except ValueError:
+                        continue
+
+            # 更新データを準備
+            updates = []
+            for r in results:
+                row_num = id_to_row.get(r["product_id"])
+                if row_num:
+                    updates.append({
+                        'range': f'K{row_num}:O{row_num}',
+                        'values': [[
+                            r["colorme_price"],
+                            r["bullionstar_price"],
+                            r["calculated_price"],
+                            r["price_diff"],
+                            timestamp
+                        ]]
+                    })
+
+            if updates:
+                sheet.batch_update(updates)
+                logger.info(f"カラーミー商品管理シートを更新しました: {len(updates)}件")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"カラーミー商品管理シートの更新エラー: {e}")
+            return False
+
     def update_dashboard(self, records: list[PriceRecord]) -> bool:
         """
         ダッシュボードシートを更新する（最新の価格のみ）

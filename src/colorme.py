@@ -163,9 +163,14 @@ class ColorMeClient:
             exchange_rate: USD/JPY為替レート
 
         Returns:
-            dict: {"success": int, "failed": int, "skipped": int}
+            dict: {
+                "success": int,
+                "failed": int,
+                "skipped": int,
+                "calc_results": list  # 計算結果のリスト
+            }
         """
-        result = {"success": 0, "failed": 0, "skipped": 0}
+        result = {"success": 0, "failed": 0, "skipped": 0, "calc_results": []}
 
         # カラーミーから現在価格を取得
         product_ids = [p.product_id for p in products]
@@ -193,12 +198,16 @@ class ColorMeClient:
                 usd_price * exchange_rate * product.quantity * product.margin_rate
             )
 
+            # 価格差額
+            price_diff = new_price - colorme_current_price
+
             # 価格情報をログ出力
             logger.info(
                 f"[価格計算] {product.name}\n"
                 f"    カラーミー現在価格: {colorme_current_price:,}円\n"
                 f"    Bullionstar価格: ${usd_price:,.2f}\n"
-                f"    計算価格（反映候補）: {new_price:,}円"
+                f"    計算価格（反映候補）: {new_price:,}円\n"
+                f"    差額: {price_diff:+,}円"
             )
 
             # 更新内容を構築
@@ -232,13 +241,26 @@ class ColorMeClient:
                     updates["display_state"] = "hidden"
                     log_parts.append("表示: 非表示")
 
+            # 計算結果を記録
+            calc_result = {
+                "product_id": product.product_id,
+                "product_name": product.name,
+                "colorme_price": colorme_current_price,
+                "bullionstar_price": usd_price,
+                "calculated_price": new_price,
+                "price_diff": price_diff,
+                "update_enabled": product.update_enabled,
+                "updated": False
+            }
+
             # 更新がない場合
             if not updates:
                 if not product.update_enabled and new_price != colorme_current_price:
-                    logger.info(f"    → 価格更新OFF（差額: {new_price - colorme_current_price:+,}円）")
+                    logger.info(f"    → 価格更新OFF")
                 else:
                     logger.info(f"    → 変更なし")
                 result["skipped"] += 1
+                result["calc_results"].append(calc_result)
                 continue
 
             # 更新実行
@@ -247,8 +269,11 @@ class ColorMeClient:
 
             if self.update_product(product.product_id, updates):
                 result["success"] += 1
+                calc_result["updated"] = True
             else:
                 result["failed"] += 1
+
+            result["calc_results"].append(calc_result)
 
         return result
 
