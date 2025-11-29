@@ -433,10 +433,10 @@ class SpreadsheetClient:
         I: 表示連動 (8) - 連動/表示/非表示/変更しない
         --- 以下は計算結果（自動更新） ---
         J: 現在価格 (9) - カラーミーAPIから取得
-        K: 為替種類 (10) - クレカ, Wise
-        L: 為替レート (11)
-        M: 取得元価格 (12)
-        N: 取得通貨 (13) - USD, SGD, EUR等
+        K: 取得元価格 (10)
+        L: 取得通貨 (11) - USD, SGD, EUR等
+        M: 為替種類 (12) - クレカ, Wise
+        N: 為替レート (13)
         O: 計算価格 (14)
         P: 差額 (15)
         Q: 最終更新 (16)
@@ -510,15 +510,15 @@ class SpreadsheetClient:
                                 except ValueError:
                                     pass
 
-                            # 為替種類（K列、index 10）
-                            exchange_type = "クレカ"
-                            if len(row) >= 11 and row[10].strip():
-                                exchange_type = row[10].strip()
-
-                            # 取得通貨（N列、index 13）- 計算結果エリアに配置
+                            # 取得通貨（L列、index 11）
                             source_currency = "USD"
-                            if len(row) >= 14 and row[13].strip():
-                                source_currency = row[13].strip().upper()
+                            if len(row) >= 12 and row[11].strip():
+                                source_currency = row[11].strip().upper()
+
+                            # 為替種類（M列、index 12）
+                            exchange_type = "クレカ"
+                            if len(row) >= 13 and row[12].strip():
+                                exchange_type = row[12].strip()
 
                             products.append(ColorMeProduct(
                                 product_id=int(product_id),
@@ -551,10 +551,10 @@ class SpreadsheetClient:
 
         シート列（計算結果部分）:
         J: 現在価格（カラーミーAPIから取得）
-        K: 為替種類（クレカ/Wise）
-        L: 為替レート
-        M: 取得元価格
-        N: 取得通貨（USD/SGD等）
+        K: 取得元価格
+        L: 取得通貨（USD/SGD等）
+        M: 為替種類（クレカ/Wise）
+        N: 為替レート
         O: 計算価格（反映候補）
         P: 差額
         Q: 最終更新
@@ -591,15 +591,15 @@ class SpreadsheetClient:
             for r in results:
                 row_num = id_to_row.get(r["product_id"])
                 if row_num:
-                    # J-Q列: 現在価格, 為替種類, 為替レート, 取得元価格, 取得通貨, 計算価格, 差額, 最終更新
+                    # J-Q列: 現在価格, 取得元価格, 取得通貨, 為替種類, 為替レート, 計算価格, 差額, 最終更新
                     updates.append({
                         'range': f'J{row_num}:Q{row_num}',
                         'values': [[
                             r["colorme_price"],
-                            r["exchange_type"],
-                            r["exchange_rate"],
                             r["source_price"],
                             r["source_currency"],
+                            r["exchange_type"],
+                            r["exchange_rate"],
                             r["calculated_price"],
                             r["price_diff"],
                             timestamp
