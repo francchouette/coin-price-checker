@@ -31,12 +31,14 @@ class ColorMeClient:
 
     API_BASE = "https://api.shop-pro.jp/v1"
 
-    def __init__(self, access_token: Optional[str] = None):
+    def __init__(self, access_token: Optional[str] = None, dry_run: Optional[bool] = None):
         """
         Args:
             access_token: アクセストークン（省略時は環境変数から取得）
+            dry_run: ドライランモード（省略時は環境変数から取得）
         """
         self.access_token = access_token or Config.COLORME_ACCESS_TOKEN
+        self.dry_run = dry_run if dry_run is not None else Config.COLORME_DRY_RUN
 
     def _headers(self) -> dict:
         """APIリクエスト用ヘッダーを返す"""
@@ -82,6 +84,11 @@ class ColorMeClient:
         if not self.access_token:
             logger.error("カラーミーアクセストークンが設定されていません")
             return False
+
+        # ドライランモードの場合は実際に更新しない
+        if self.dry_run:
+            logger.info(f"[DRY RUN] 価格更新: 商品ID {product_id} → {new_price:,}円")
+            return True
 
         try:
             response = requests.put(

@@ -192,7 +192,10 @@ def run():
     # カラーミー価格更新
     if Config.is_colorme_enabled():
         logger.info("=" * 60)
-        logger.info("カラーミー価格更新を開始します")
+        if Config.COLORME_DRY_RUN:
+            logger.info("カラーミー価格更新を開始します（ドライランモード - 実際の更新なし）")
+        else:
+            logger.info("カラーミー価格更新を開始します")
         update_colorme_prices(sheet_client, price_records)
     else:
         logger.info("カラーミー連携は無効です（COLORME_ACCESS_TOKEN未設定）")

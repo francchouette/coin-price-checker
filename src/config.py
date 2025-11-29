@@ -33,6 +33,7 @@ class Config:
 
     # カラーミーショップAPI設定
     COLORME_ACCESS_TOKEN: str = os.getenv("COLORME_ACCESS_TOKEN", "")
+    COLORME_DRY_RUN: bool = os.getenv("COLORME_DRY_RUN", "true").lower() == "true"  # デフォルトはドライラン（更新しない）
 
     # スクレイピング設定
     SCRAPE_MIN_WAIT: float = 2.0  # 最小待機時間（秒）
