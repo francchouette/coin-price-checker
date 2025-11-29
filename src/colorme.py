@@ -24,6 +24,7 @@ class ColorMeProduct:
     bullionstar_url: str
     quantity: int  # セット枚数
     margin_rate: float  # マージン率（1.1 = 10%）
+    update_enabled: bool = False  # 価格更新ON/OFF
 
 
 class ColorMeClient:
@@ -144,6 +145,14 @@ class ColorMeClient:
             if new_price == product.current_price:
                 logger.info(
                     f"スキップ: {product.name} - 価格変更なし ({new_price:,}円)"
+                )
+                result["skipped"] += 1
+                continue
+
+            # 商品個別の更新設定を確認
+            if not product.update_enabled:
+                logger.info(
+                    f"[計算のみ] {product.name}: {product.current_price:,}円 → {new_price:,}円 (更新OFF)"
                 )
                 result["skipped"] += 1
                 continue

@@ -192,11 +192,14 @@ def run():
     # カラーミー価格更新
     if Config.is_colorme_enabled():
         logger.info("=" * 60)
-        if Config.COLORME_DRY_RUN:
-            logger.info("カラーミー価格更新を開始します（ドライランモード - 実際の更新なし）")
+        # スプレッドシートの設定シートから更新フラグを取得
+        colorme_update_enabled = sheet_client.get_colorme_update_enabled()
+        if colorme_update_enabled:
+            logger.info("カラーミー価格更新を開始します（実際に更新します）")
         else:
-            logger.info("カラーミー価格更新を開始します")
-        update_colorme_prices(sheet_client, price_records)
+            logger.info("カラーミー価格更新を開始します（ドライランモード - 実際の更新なし）")
+            logger.info("  → 実際に更新するには設定シートで COLORME_UPDATE_ENABLED を ON にしてください")
+        update_colorme_prices(sheet_client, price_records, dry_run=not colorme_update_enabled)
     else:
         logger.info("カラーミー連携は無効です（COLORME_ACCESS_TOKEN未設定）")
 
@@ -237,13 +240,14 @@ def scrape_targets(targets: list[TrackingTarget]) -> list[ScrapedData]:
         return manager.scrape_all(scrape_targets_list)
 
 
-def update_colorme_prices(sheet_client: SpreadsheetClient, price_records: list[PriceRecord]):
+def update_colorme_prices(sheet_client: SpreadsheetClient, price_records: list[PriceRecord], dry_run: bool = True):
     """
     カラーミーショップの価格を更新する
 
     Args:
         sheet_client: スプレッドシートクライアント
         price_records: 今回取得した価格レコードのリスト
+        dry_run: ドライランモード（Trueの場合は実際に更新しない）
     """
     # カラーミー商品リストを取得
     colorme_products = sheet_client.get_colorme_products()
@@ -280,7 +284,7 @@ def update_colorme_prices(sheet_client: SpreadsheetClient, price_records: list[P
     logger.info(f"為替レート: 1 USD = {exchange_rate:.2f} JPY")
 
     # カラーミー価格を更新
-    colorme_client = ColorMeClient()
+    colorme_client = ColorMeClient(dry_run=dry_run)
     result = colorme_client.update_prices_batch(
         colorme_products,
         bullionstar_prices,

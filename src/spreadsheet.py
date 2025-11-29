@@ -173,6 +173,17 @@ class SpreadsheetClient:
         except ValueError:
             return Config.DEFAULT_ALERT_THRESHOLD
 
+    def get_colorme_update_enabled(self) -> bool:
+        """
+        カラーミー価格更新が有効かどうかを取得する
+
+        Returns:
+            bool: 更新が有効な場合True
+        """
+        settings = self.get_settings()
+        value = settings.get("COLORME_UPDATE_ENABLED", "OFF")
+        return value.upper() == "ON"
+
     def _retry_operation(self, operation, *args, **kwargs):
         """
         リトライ機構付きで操作を実行する
@@ -408,6 +419,8 @@ class SpreadsheetClient:
         """
         カラーミー商品管理シートから商品リストを取得する
 
+        シート列: カラーミー商品ID, 商品名, 現在価格, BullionstarURL, 枚数, マージン率, 更新
+
         Returns:
             list: ColorMeProduct のリスト
         """
@@ -430,13 +443,19 @@ class SpreadsheetClient:
                     # 商品IDとURLが両方ある場合のみ追加
                     if product_id and bullionstar_url:
                         try:
+                            # 7列目（index 6）が更新フラグ（ON/OFF）
+                            update_enabled = False
+                            if len(row) >= 7 and row[6].strip().upper() == "ON":
+                                update_enabled = True
+
                             products.append(ColorMeProduct(
                                 product_id=int(product_id),
                                 name=row[1].strip(),
                                 current_price=int(row[2]) if row[2] else 0,
                                 bullionstar_url=bullionstar_url,
                                 quantity=int(row[4]) if row[4] else 1,
-                                margin_rate=float(row[5]) if row[5] else 1.1
+                                margin_rate=float(row[5]) if row[5] else 1.1,
+                                update_enabled=update_enabled
                             ))
                         except ValueError as e:
                             logger.warning(f"行のパースエラー: {row} - {e}")
