@@ -423,7 +423,7 @@ class SpreadsheetClient:
         0: カラーミー商品ID
         1: 商品名
         2: 現在価格
-        3: BullionstarURL
+        3: 取得元URL（Bullionstar, APMEXなど）
         4: 枚数
         5: マージン率
         6: 価格更新 (ON/OFF)
@@ -448,10 +448,10 @@ class SpreadsheetClient:
             for row in records[1:]:  # ヘッダーをスキップ
                 if len(row) >= 6:
                     product_id = row[0].strip()
-                    bullionstar_url = row[3].strip()
+                    source_url = row[3].strip()
 
                     # 商品IDとURLが両方ある場合のみ追加
-                    if product_id and bullionstar_url:
+                    if product_id and source_url:
                         try:
                             # 7列目（index 6）が価格更新フラグ（ON/OFF）
                             update_enabled = False
@@ -480,7 +480,7 @@ class SpreadsheetClient:
                                 product_id=int(product_id),
                                 name=row[1].strip(),
                                 current_price=int(row[2]) if row[2] else 0,
-                                bullionstar_url=bullionstar_url,
+                                source_url=source_url,
                                 quantity=int(row[4]) if row[4] else 1,
                                 margin_rate=float(row[5]) if row[5] else 1.1,
                                 update_enabled=update_enabled,
@@ -505,7 +505,7 @@ class SpreadsheetClient:
 
         シート列:
         C: 現在価格（カラーミーAPIから取得）
-        K: Bullionstar価格(USD)
+        K: 取得元価格(USD)
         L: 計算価格（反映候補）
         M: 差額
         N: 最終更新
@@ -547,11 +547,11 @@ class SpreadsheetClient:
                         'range': f'C{row_num}',
                         'values': [[r["colorme_price"]]]
                     })
-                    # K-N列: Bullionstar価格, 計算価格, 差額, 最終更新
+                    # K-N列: 取得元価格, 計算価格, 差額, 最終更新
                     updates.append({
                         'range': f'K{row_num}:N{row_num}',
                         'values': [[
-                            r["bullionstar_price"],
+                            r["source_price"],
                             r["calculated_price"],
                             r["price_diff"],
                             timestamp

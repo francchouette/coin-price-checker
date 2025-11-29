@@ -21,7 +21,7 @@ class ColorMeProduct:
     product_id: int
     name: str
     current_price: int
-    bullionstar_url: str
+    source_url: str  # 価格取得元URL（Bullionstar, APMEXなど）
     quantity: int  # セット枚数
     margin_rate: float  # マージン率（1.1 = 10%）
     update_enabled: bool = False  # 価格更新ON/OFF
@@ -149,8 +149,8 @@ class ColorMeClient:
     def update_products_batch(
         self,
         products: list[ColorMeProduct],
-        bullionstar_prices: dict[str, float],
-        bullionstar_stock: dict[str, bool],
+        source_prices: dict[str, float],
+        source_stock: dict[str, bool],
         exchange_rate: float
     ) -> dict:
         """
@@ -158,8 +158,8 @@ class ColorMeClient:
 
         Args:
             products: カラーミー商品リスト
-            bullionstar_prices: BullionstarURL -> USD価格 の辞書
-            bullionstar_stock: BullionstarURL -> 在庫状況(True=在庫あり) の辞書
+            source_prices: 取得元URL -> USD価格 の辞書
+            source_stock: 取得元URL -> 在庫状況(True=在庫あり) の辞書
             exchange_rate: USD/JPY為替レート
 
         Returns:
@@ -179,13 +179,13 @@ class ColorMeClient:
         logger.info(f"カラーミー価格取得完了: {len(current_prices)}件")
 
         for product in products:
-            # Bullionstar価格と在庫を取得
-            usd_price = bullionstar_prices.get(product.bullionstar_url)
-            is_in_stock = bullionstar_stock.get(product.bullionstar_url, True)
+            # 取得元サイトの価格と在庫を取得
+            source_price = source_prices.get(product.source_url)
+            is_in_stock = source_stock.get(product.source_url, True)
 
-            if usd_price is None:
+            if source_price is None:
                 logger.warning(
-                    f"スキップ: {product.name} - Bullionstar価格なし"
+                    f"スキップ: {product.name} - 取得元価格なし"
                 )
                 result["skipped"] += 1
                 continue
@@ -193,9 +193,9 @@ class ColorMeClient:
             # カラーミーの現在価格
             colorme_current_price = current_prices.get(product.product_id, 0)
 
-            # 新価格を計算: USD価格 × 為替レート × 枚数 × マージン率
+            # 新価格を計算: 取得価格 × 為替レート × 枚数 × マージン率
             new_price = int(
-                usd_price * exchange_rate * product.quantity * product.margin_rate
+                source_price * exchange_rate * product.quantity * product.margin_rate
             )
 
             # 価格差額
@@ -205,7 +205,7 @@ class ColorMeClient:
             logger.info(
                 f"[価格計算] {product.name}\n"
                 f"    カラーミー現在価格: {colorme_current_price:,}円\n"
-                f"    Bullionstar価格: ${usd_price:,.2f}\n"
+                f"    取得元価格: ${source_price:,.2f}\n"
                 f"    計算価格（反映候補）: {new_price:,}円\n"
                 f"    差額: {price_diff:+,}円"
             )
@@ -246,7 +246,7 @@ class ColorMeClient:
                 "product_id": product.product_id,
                 "product_name": product.name,
                 "colorme_price": colorme_current_price,
-                "bullionstar_price": usd_price,
+                "source_price": source_price,
                 "calculated_price": new_price,
                 "price_diff": price_diff,
                 "update_enabled": product.update_enabled,

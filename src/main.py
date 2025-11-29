@@ -257,19 +257,18 @@ def update_colorme_prices(sheet_client: SpreadsheetClient, price_records: list[P
 
     logger.info(f"カラーミー更新対象: {len(colorme_products)}件")
 
-    # 今回取得したBullionstarデータをURL -> 価格/在庫の辞書に変換
-    bullionstar_prices = {}
-    bullionstar_stock = {}
+    # 今回取得した価格データをURL -> 価格/在庫の辞書に変換
+    source_prices = {}
+    source_stock = {}
     for record in price_records:
-        if "bullionstar" in record.url.lower():
-            bullionstar_prices[record.url] = record.price
-            bullionstar_stock[record.url] = record.in_stock
+        source_prices[record.url] = record.price
+        source_stock[record.url] = record.in_stock
 
-    if not bullionstar_prices:
-        logger.warning("Bullionstarの価格データがありません")
+    if not source_prices:
+        logger.warning("価格データがありません")
         return
 
-    logger.info(f"Bullionstarデータ: {len(bullionstar_prices)}件")
+    logger.info(f"取得元価格データ: {len(source_prices)}件")
 
     # 為替レートを取得
     exchange_client = ExchangeRateClient()
@@ -288,8 +287,8 @@ def update_colorme_prices(sheet_client: SpreadsheetClient, price_records: list[P
     colorme_client = ColorMeClient(dry_run=dry_run)
     result = colorme_client.update_products_batch(
         colorme_products,
-        bullionstar_prices,
-        bullionstar_stock,
+        source_prices,
+        source_stock,
         exchange_rate
     )
 
