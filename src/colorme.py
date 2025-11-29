@@ -263,6 +263,7 @@ class ColorMeClient:
                 "exchange_type": product.exchange_type,
                 "exchange_rate": exchange_rate,
                 "source_price": source_price,
+                "source_currency": product.source_currency,
                 "calculated_price": new_price,
                 "price_diff": price_diff,
                 "update_enabled": product.update_enabled,
