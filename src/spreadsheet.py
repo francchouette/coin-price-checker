@@ -426,15 +426,15 @@ class SpreadsheetClient:
         B: 商品名 (1)
         C: 取得元URL (2)
         D: 取得通貨 (3) - USD, SGD, EUR等
-        E: 為替種類 (4) - クレカ, Wise
-        F: 枚数 (5)
-        G: マージン率 (6)
-        H: 価格更新 (7) - ON/OFF
-        I: 在庫連動 (8) - ON/OFF
-        J: 在庫数量 (9)
-        K: 表示連動 (10) - 連動/表示/非表示/変更しない
+        E: 枚数 (4)
+        F: マージン率 (5)
+        G: 価格更新 (6) - ON/OFF
+        H: 在庫連動 (7) - ON/OFF
+        I: 在庫数量 (8)
+        J: 表示連動 (9) - 連動/表示/非表示/変更しない
         --- 以下は計算結果（自動更新） ---
-        L: 現在価格 (11) - カラーミーAPIから取得
+        K: 現在価格 (10) - カラーミーAPIから取得
+        L: 為替種類 (11) - クレカ, Wise（入力項目だが為替レートの前に配置）
         M: 為替レート (12)
         N: 取得元価格 (13)
         O: 計算価格 (14)
@@ -468,57 +468,57 @@ class SpreadsheetClient:
                             if len(row) >= 4 and row[3].strip():
                                 source_currency = row[3].strip().upper()
 
-                            # 為替種類（E列、index 4）
-                            exchange_type = "クレカ"
-                            if len(row) >= 5 and row[4].strip():
-                                exchange_type = row[4].strip()
-
-                            # 枚数（F列、index 5）
+                            # 枚数（E列、index 4）
                             quantity = 1
+                            if len(row) >= 5 and row[4].strip():
+                                try:
+                                    quantity = int(row[4].strip())
+                                except ValueError:
+                                    pass
+
+                            # マージン率（F列、index 5）
+                            margin_rate = 1.1
                             if len(row) >= 6 and row[5].strip():
                                 try:
-                                    quantity = int(row[5].strip())
+                                    margin_rate = float(row[5].strip())
                                 except ValueError:
                                     pass
 
-                            # マージン率（G列、index 6）
-                            margin_rate = 1.1
-                            if len(row) >= 7 and row[6].strip():
-                                try:
-                                    margin_rate = float(row[6].strip())
-                                except ValueError:
-                                    pass
-
-                            # 価格更新（H列、index 7）
+                            # 価格更新（G列、index 6）
                             update_enabled = False
-                            if len(row) >= 8 and row[7].strip().upper() == "ON":
+                            if len(row) >= 7 and row[6].strip().upper() == "ON":
                                 update_enabled = True
 
-                            # 在庫連動（I列、index 8）
+                            # 在庫連動（H列、index 7）
                             stock_sync = False
-                            if len(row) >= 9 and row[8].strip().upper() == "ON":
+                            if len(row) >= 8 and row[7].strip().upper() == "ON":
                                 stock_sync = True
 
-                            # 在庫数量（J列、index 9）
+                            # 在庫数量（I列、index 8）
                             stock_quantity = 10
-                            if len(row) >= 10 and row[9].strip():
+                            if len(row) >= 9 and row[8].strip():
                                 try:
-                                    stock_quantity = int(row[9].strip())
+                                    stock_quantity = int(row[8].strip())
                                 except ValueError:
                                     pass
 
-                            # 表示連動（K列、index 10）
+                            # 表示連動（J列、index 9）
                             display_control = ""
-                            if len(row) >= 11:
-                                display_control = row[10].strip()
+                            if len(row) >= 10:
+                                display_control = row[9].strip()
 
-                            # 現在価格（L列、index 11）- 計算結果から読み取り
+                            # 現在価格（K列、index 10）- 計算結果から読み取り
                             current_price = 0
-                            if len(row) >= 12 and row[11].strip():
+                            if len(row) >= 11 and row[10].strip():
                                 try:
-                                    current_price = int(row[11].strip())
+                                    current_price = int(row[10].strip())
                                 except ValueError:
                                     pass
+
+                            # 為替種類（L列、index 11）- 為替レートの前に配置
+                            exchange_type = "クレカ"
+                            if len(row) >= 12 and row[11].strip():
+                                exchange_type = row[11].strip()
 
                             products.append(ColorMeProduct(
                                 product_id=int(product_id),
@@ -550,7 +550,8 @@ class SpreadsheetClient:
         カラーミー商品管理シートに計算結果を更新する
 
         シート列（計算結果部分）:
-        L: 現在価格（カラーミーAPIから取得）
+        K: 現在価格（カラーミーAPIから取得）
+        L: 為替種類（クレカ/Wise）
         M: 為替レート
         N: 取得元価格
         O: 計算価格（反映候補）
@@ -589,11 +590,12 @@ class SpreadsheetClient:
             for r in results:
                 row_num = id_to_row.get(r["product_id"])
                 if row_num:
-                    # L-Q列: 現在価格, 為替レート, 取得元価格, 計算価格, 差額, 最終更新
+                    # K-Q列: 現在価格, 為替種類, 為替レート, 取得元価格, 計算価格, 差額, 最終更新
                     updates.append({
-                        'range': f'L{row_num}:Q{row_num}',
+                        'range': f'K{row_num}:Q{row_num}',
                         'values': [[
                             r["colorme_price"],
+                            r["exchange_type"],
                             r["exchange_rate"],
                             r["source_price"],
                             r["calculated_price"],
