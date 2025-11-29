@@ -242,7 +242,7 @@ def scrape_targets(targets: list[TrackingTarget]) -> list[ScrapedData]:
 
 def update_colorme_prices(sheet_client: SpreadsheetClient, price_records: list[PriceRecord], dry_run: bool = True):
     """
-    カラーミーショップの価格を更新する
+    カラーミーショップの価格・在庫・表示状態を更新する
 
     Args:
         sheet_client: スプレッドシートクライアント
@@ -255,20 +255,21 @@ def update_colorme_prices(sheet_client: SpreadsheetClient, price_records: list[P
         logger.info("カラーミー商品管理シートに対象商品がありません")
         return
 
-    logger.info(f"カラーミー価格更新対象: {len(colorme_products)}件")
+    logger.info(f"カラーミー更新対象: {len(colorme_products)}件")
 
-    # 今回取得したBullionstar価格をURL -> 価格の辞書に変換
-    # Bullionstarの価格のみを対象とする
+    # 今回取得したBullionstarデータをURL -> 価格/在庫の辞書に変換
     bullionstar_prices = {}
+    bullionstar_stock = {}
     for record in price_records:
         if "bullionstar" in record.url.lower():
             bullionstar_prices[record.url] = record.price
+            bullionstar_stock[record.url] = record.in_stock
 
     if not bullionstar_prices:
         logger.warning("Bullionstarの価格データがありません")
         return
 
-    logger.info(f"Bullionstar価格データ: {len(bullionstar_prices)}件")
+    logger.info(f"Bullionstarデータ: {len(bullionstar_prices)}件")
 
     # 為替レートを取得
     exchange_client = ExchangeRateClient()
@@ -283,16 +284,17 @@ def update_colorme_prices(sheet_client: SpreadsheetClient, price_records: list[P
 
     logger.info(f"為替レート: 1 USD = {exchange_rate:.2f} JPY")
 
-    # カラーミー価格を更新
+    # カラーミー商品を更新
     colorme_client = ColorMeClient(dry_run=dry_run)
-    result = colorme_client.update_prices_batch(
+    result = colorme_client.update_products_batch(
         colorme_products,
         bullionstar_prices,
+        bullionstar_stock,
         exchange_rate
     )
 
     logger.info(
-        f"カラーミー価格更新完了: "
+        f"カラーミー更新完了: "
         f"成功 {result['success']}件, "
         f"失敗 {result['failed']}件, "
         f"スキップ {result['skipped']}件"

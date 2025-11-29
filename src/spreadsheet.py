@@ -419,7 +419,16 @@ class SpreadsheetClient:
         """
         カラーミー商品管理シートから商品リストを取得する
 
-        シート列: カラーミー商品ID, 商品名, 現在価格, BullionstarURL, 枚数, マージン率, 更新
+        シート列:
+        0: カラーミー商品ID
+        1: 商品名
+        2: 現在価格
+        3: BullionstarURL
+        4: 枚数
+        5: マージン率
+        6: 価格更新 (ON/OFF)
+        7: 在庫連動 (sync/数字/空)
+        8: 表示連動 (sync/show/hide/空)
 
         Returns:
             list: ColorMeProduct のリスト
@@ -443,10 +452,20 @@ class SpreadsheetClient:
                     # 商品IDとURLが両方ある場合のみ追加
                     if product_id and bullionstar_url:
                         try:
-                            # 7列目（index 6）が更新フラグ（ON/OFF）
+                            # 7列目（index 6）が価格更新フラグ（ON/OFF）
                             update_enabled = False
                             if len(row) >= 7 and row[6].strip().upper() == "ON":
                                 update_enabled = True
+
+                            # 8列目（index 7）が在庫連動
+                            stock_control = ""
+                            if len(row) >= 8:
+                                stock_control = row[7].strip()
+
+                            # 9列目（index 8）が表示連動
+                            display_control = ""
+                            if len(row) >= 9:
+                                display_control = row[8].strip()
 
                             products.append(ColorMeProduct(
                                 product_id=int(product_id),
@@ -455,7 +474,9 @@ class SpreadsheetClient:
                                 bullionstar_url=bullionstar_url,
                                 quantity=int(row[4]) if row[4] else 1,
                                 margin_rate=float(row[5]) if row[5] else 1.1,
-                                update_enabled=update_enabled
+                                update_enabled=update_enabled,
+                                stock_control=stock_control,
+                                display_control=display_control
                             ))
                         except ValueError as e:
                             logger.warning(f"行のパースエラー: {row} - {e}")

@@ -25,6 +25,8 @@ class ColorMeProduct:
     quantity: int  # セット枚数
     margin_rate: float  # マージン率（1.1 = 10%）
     update_enabled: bool = False  # 価格更新ON/OFF
+    stock_control: str = ""  # 在庫連動: "sync" = Bullionstarに連動, 数字 = 固定値, 空 = 変更しない
+    display_control: str = ""  # 表示連動: "sync" = 在庫に連動, "show" = 常に表示, "hide" = 常に非表示, 空 = 変更しない
 
 
 class ColorMeClient:
@@ -71,6 +73,44 @@ class ColorMeClient:
             logger.error(f"商品取得エラー (ID: {product_id}): {e}")
             return None
 
+    def update_product(self, product_id: int, updates: dict) -> bool:
+        """
+        商品情報を更新する
+
+        Args:
+            product_id: 商品ID
+            updates: 更新する項目の辞書（price, stocks, display_stateなど）
+
+        Returns:
+            bool: 更新成功時True
+        """
+        if not self.access_token:
+            logger.error("カラーミーアクセストークンが設定されていません")
+            return False
+
+        if not updates:
+            return True
+
+        # ドライランモードの場合は実際に更新しない
+        if self.dry_run:
+            logger.info(f"[DRY RUN] 商品更新: 商品ID {product_id} → {updates}")
+            return True
+
+        try:
+            response = requests.put(
+                f"{self.API_BASE}/products/{product_id}.json",
+                headers=self._headers(),
+                json={"product": updates},
+                timeout=10
+            )
+            response.raise_for_status()
+            logger.info(f"商品更新成功: 商品ID {product_id} → {updates}")
+            return True
+
+        except requests.RequestException as e:
+            logger.error(f"商品更新エラー (ID: {product_id}): {e}")
+            return False
+
     def update_price(self, product_id: int, new_price: int) -> bool:
         """
         商品価格を更新する
@@ -82,42 +122,22 @@ class ColorMeClient:
         Returns:
             bool: 更新成功時True
         """
-        if not self.access_token:
-            logger.error("カラーミーアクセストークンが設定されていません")
-            return False
+        return self.update_product(product_id, {"price": new_price})
 
-        # ドライランモードの場合は実際に更新しない
-        if self.dry_run:
-            logger.info(f"[DRY RUN] 価格更新: 商品ID {product_id} → {new_price:,}円")
-            return True
-
-        try:
-            response = requests.put(
-                f"{self.API_BASE}/products/{product_id}.json",
-                headers=self._headers(),
-                json={"product": {"price": new_price}},
-                timeout=10
-            )
-            response.raise_for_status()
-            logger.info(f"価格更新成功: 商品ID {product_id} → {new_price:,}円")
-            return True
-
-        except requests.RequestException as e:
-            logger.error(f"価格更新エラー (ID: {product_id}): {e}")
-            return False
-
-    def update_prices_batch(
+    def update_products_batch(
         self,
         products: list[ColorMeProduct],
         bullionstar_prices: dict[str, float],
+        bullionstar_stock: dict[str, bool],
         exchange_rate: float
     ) -> dict:
         """
-        複数商品の価格を一括更新する
+        複数商品の価格・在庫・表示状態を一括更新する
 
         Args:
             products: カラーミー商品リスト
             bullionstar_prices: BullionstarURL -> USD価格 の辞書
+            bullionstar_stock: BullionstarURL -> 在庫状況(True=在庫あり) の辞書
             exchange_rate: USD/JPY為替レート
 
         Returns:
@@ -126,8 +146,9 @@ class ColorMeClient:
         result = {"success": 0, "failed": 0, "skipped": 0}
 
         for product in products:
-            # Bullionstar価格を取得
+            # Bullionstar価格と在庫を取得
             usd_price = bullionstar_prices.get(product.bullionstar_url)
+            is_in_stock = bullionstar_stock.get(product.bullionstar_url, True)
 
             if usd_price is None:
                 logger.warning(
@@ -141,31 +162,76 @@ class ColorMeClient:
                 usd_price * exchange_rate * product.quantity * product.margin_rate
             )
 
-            # 価格が変わらない場合はスキップ
-            if new_price == product.current_price:
-                logger.info(
-                    f"スキップ: {product.name} - 価格変更なし ({new_price:,}円)"
-                )
+            # 更新内容を構築
+            updates = {}
+            log_parts = []
+
+            # 価格更新
+            if product.update_enabled and new_price != product.current_price:
+                updates["price"] = new_price
+                log_parts.append(f"価格: {product.current_price:,}円 → {new_price:,}円")
+
+            # 在庫更新
+            if product.stock_control:
+                if product.stock_control.lower() == "sync":
+                    # Bullionstarの在庫に連動
+                    new_stock = 10 if is_in_stock else 0
+                    updates["stocks"] = new_stock
+                    log_parts.append(f"在庫: {new_stock} ({'在庫あり' if is_in_stock else '在庫なし'}連動)")
+                elif product.stock_control.isdigit():
+                    # 固定値
+                    new_stock = int(product.stock_control)
+                    updates["stocks"] = new_stock
+                    log_parts.append(f"在庫: {new_stock} (固定)")
+
+            # 表示状態更新
+            if product.display_control:
+                if product.display_control.lower() == "sync":
+                    # 在庫に連動（在庫あり=表示、なし=非表示）
+                    display_state = "showing" if is_in_stock else "hidden"
+                    updates["display_state"] = display_state
+                    log_parts.append(f"表示: {display_state} (在庫連動)")
+                elif product.display_control.lower() == "show":
+                    updates["display_state"] = "showing"
+                    log_parts.append("表示: showing")
+                elif product.display_control.lower() == "hide":
+                    updates["display_state"] = "hidden"
+                    log_parts.append("表示: hidden")
+
+            # 更新がない場合
+            if not updates:
+                if not product.update_enabled:
+                    logger.info(
+                        f"[計算のみ] {product.name}: {product.current_price:,}円 → {new_price:,}円 (更新OFF)"
+                    )
+                else:
+                    logger.info(
+                        f"スキップ: {product.name} - 変更なし"
+                    )
                 result["skipped"] += 1
                 continue
 
-            # 商品個別の更新設定を確認
-            if not product.update_enabled:
-                logger.info(
-                    f"[計算のみ] {product.name}: {product.current_price:,}円 → {new_price:,}円 (更新OFF)"
-                )
-                result["skipped"] += 1
-                continue
+            # 更新実行
+            log_msg = f"{product.name}: {', '.join(log_parts)}"
+            logger.info(f"更新: {log_msg}")
 
-            # 価格を更新
-            logger.info(
-                f"価格更新: {product.name} "
-                f"({product.current_price:,}円 → {new_price:,}円)"
-            )
-
-            if self.update_price(product.product_id, new_price):
+            if self.update_product(product.product_id, updates):
                 result["success"] += 1
             else:
                 result["failed"] += 1
 
         return result
+
+    def update_prices_batch(
+        self,
+        products: list[ColorMeProduct],
+        bullionstar_prices: dict[str, float],
+        exchange_rate: float
+    ) -> dict:
+        """
+        複数商品の価格を一括更新する（後方互換性のため残す）
+        """
+        # 在庫情報なしで呼び出し
+        return self.update_products_batch(
+            products, bullionstar_prices, {}, exchange_rate
+        )
