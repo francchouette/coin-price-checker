@@ -429,7 +429,7 @@ class SpreadsheetClient:
         6: 価格更新 (ON/OFF)
         7: 在庫連動 (ON/OFF)
         8: 在庫数量 (在庫あり時の数量)
-        9: 表示連動 (連動/表示/非表示/空)
+        9: 表示連動 (連動/表示/非表示/変更しない)
 
         Returns:
             list: ColorMeProduct のリスト

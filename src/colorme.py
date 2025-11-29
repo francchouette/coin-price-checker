@@ -27,7 +27,7 @@ class ColorMeProduct:
     update_enabled: bool = False  # 価格更新ON/OFF
     stock_sync: bool = False  # 在庫連動ON/OFF
     stock_quantity: int = 10  # 在庫あり時の数量
-    display_control: str = ""  # 表示連動: "連動" = 在庫に連動, "表示" = 常に表示, "非表示" = 常に非表示, 空 = 変更しない
+    display_control: str = ""  # 表示連動: "連動" = 在庫に連動, "表示" = 常に表示, "非表示" = 常に非表示, "変更しない" or 空 = 変更しない
 
 
 class ColorMeClient:
@@ -180,7 +180,7 @@ class ColorMeClient:
                 log_parts.append(f"在庫: {new_stock} ({'在庫あり' if is_in_stock else '在庫なし'}連動)")
 
             # 表示状態更新
-            if product.display_control:
+            if product.display_control and product.display_control != "変更しない":
                 if product.display_control == "連動":
                     # 在庫に連動（在庫あり=表示、なし=非表示）
                     display_state = "showing" if is_in_stock else "hidden"
