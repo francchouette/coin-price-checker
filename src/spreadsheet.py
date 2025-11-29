@@ -427,8 +427,9 @@ class SpreadsheetClient:
         4: 枚数
         5: マージン率
         6: 価格更新 (ON/OFF)
-        7: 在庫連動 (sync/数字/空)
-        8: 表示連動 (sync/show/hide/空)
+        7: 在庫連動 (ON/OFF)
+        8: 在庫数量 (在庫あり時の数量)
+        9: 表示連動 (sync/show/hide/空)
 
         Returns:
             list: ColorMeProduct のリスト
@@ -457,15 +458,23 @@ class SpreadsheetClient:
                             if len(row) >= 7 and row[6].strip().upper() == "ON":
                                 update_enabled = True
 
-                            # 8列目（index 7）が在庫連動
-                            stock_control = ""
-                            if len(row) >= 8:
-                                stock_control = row[7].strip()
+                            # 8列目（index 7）が在庫連動（ON/OFF）
+                            stock_sync = False
+                            if len(row) >= 8 and row[7].strip().upper() == "ON":
+                                stock_sync = True
 
-                            # 9列目（index 8）が表示連動
+                            # 9列目（index 8）が在庫数量
+                            stock_quantity = 10  # デフォルト
+                            if len(row) >= 9 and row[8].strip():
+                                try:
+                                    stock_quantity = int(row[8].strip())
+                                except ValueError:
+                                    pass
+
+                            # 10列目（index 9）が表示連動
                             display_control = ""
-                            if len(row) >= 9:
-                                display_control = row[8].strip()
+                            if len(row) >= 10:
+                                display_control = row[9].strip()
 
                             products.append(ColorMeProduct(
                                 product_id=int(product_id),
@@ -475,7 +484,8 @@ class SpreadsheetClient:
                                 quantity=int(row[4]) if row[4] else 1,
                                 margin_rate=float(row[5]) if row[5] else 1.1,
                                 update_enabled=update_enabled,
-                                stock_control=stock_control,
+                                stock_sync=stock_sync,
+                                stock_quantity=stock_quantity,
                                 display_control=display_control
                             ))
                         except ValueError as e:

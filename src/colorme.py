@@ -25,7 +25,8 @@ class ColorMeProduct:
     quantity: int  # セット枚数
     margin_rate: float  # マージン率（1.1 = 10%）
     update_enabled: bool = False  # 価格更新ON/OFF
-    stock_control: str = ""  # 在庫連動: "sync" = Bullionstarに連動, 数字 = 固定値, 空 = 変更しない
+    stock_sync: bool = False  # 在庫連動ON/OFF
+    stock_quantity: int = 10  # 在庫あり時の数量
     display_control: str = ""  # 表示連動: "sync" = 在庫に連動, "show" = 常に表示, "hide" = 常に非表示, 空 = 変更しない
 
 
@@ -172,17 +173,11 @@ class ColorMeClient:
                 log_parts.append(f"価格: {product.current_price:,}円 → {new_price:,}円")
 
             # 在庫更新
-            if product.stock_control:
-                if product.stock_control.lower() == "sync":
-                    # Bullionstarの在庫に連動
-                    new_stock = 10 if is_in_stock else 0
-                    updates["stocks"] = new_stock
-                    log_parts.append(f"在庫: {new_stock} ({'在庫あり' if is_in_stock else '在庫なし'}連動)")
-                elif product.stock_control.isdigit():
-                    # 固定値
-                    new_stock = int(product.stock_control)
-                    updates["stocks"] = new_stock
-                    log_parts.append(f"在庫: {new_stock} (固定)")
+            if product.stock_sync:
+                # Bullionstarの在庫に連動
+                new_stock = product.stock_quantity if is_in_stock else 0
+                updates["stocks"] = new_stock
+                log_parts.append(f"在庫: {new_stock} ({'在庫あり' if is_in_stock else '在庫なし'}連動)")
 
             # 表示状態更新
             if product.display_control:
