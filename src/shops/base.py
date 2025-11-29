@@ -80,7 +80,18 @@ class BaseScraper(ABC):
             # 価格を取得
             price = self._extract_price()
             if price is None:
-                # デバッグ: ページタイトルをログ出力
+                # 在庫切れの場合は価格0で在庫なしとして記録（エラーではない）
+                if not in_stock:
+                    logger.info(f"在庫切れ商品: {product_name}")
+                    return ScrapedData(
+                        product_name=product_name,
+                        price=0.0,
+                        currency=self.CURRENCY,
+                        url=url,
+                        in_stock=False,
+                        error=None  # 在庫切れはエラーではない
+                    )
+                # 在庫ありなのに価格が取れない場合はエラー
                 try:
                     page_title = self.page.title()
                     logger.warning(f"価格取得失敗 - ページタイトル: {page_title}")

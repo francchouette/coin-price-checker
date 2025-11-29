@@ -120,7 +120,12 @@ def run():
 
         # ログ出力
         stock_status = "In Stock" if result.in_stock else "Out of Stock"
-        if previous_price:
+        if not result.in_stock:
+            # 在庫切れの場合
+            logger.info(
+                f"取得: {result.product_name} - [{stock_status}]"
+            )
+        elif previous_price:
             logger.info(
                 f"取得: {result.product_name} - {currency} {result.price:,.2f} "
                 f"(前回: {previous_price:,.2f}, 変動: {change_rate:+.2f}%) [{stock_status}]"

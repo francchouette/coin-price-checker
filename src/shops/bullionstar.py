@@ -32,15 +32,10 @@ class BullionstarScraper(BaseScraper):
         最初の価格行（1-9個の価格）を取得
         複数の通貨（JPY, USD, SGD等）に対応
 
-        注意: 在庫切れ商品は価格テーブルが表示されないため、
-        フォールバックは使用せずNoneを返す（誤った価格を記録しないため）
+        在庫切れ商品でも価格テーブルがあれば価格を取得する
+        （在庫状態は別途_check_stockで確認）
         """
         try:
-            # まず在庫状態を確認 - 在庫切れの場合は価格取得をスキップ
-            if not self._check_stock():
-                logger.info("在庫切れのため価格取得をスキップ")
-                return None
-
             rows = self.page.query_selector_all(self.PRICE_TABLE_SELECTOR)
 
             # 複数通貨パターン: US$, S$, ¥, €, £
@@ -73,8 +68,7 @@ class BullionstarScraper(BaseScraper):
                             logger.info(f"価格検出: {currency} {price} ({text[:50]}...)")
                             return price
 
-            # 価格テーブルで見つからない場合はNoneを返す
-            # （フォールバックは誤った価格を拾うリスクがあるため使用しない）
+            # 価格テーブルで見つからない場合
             logger.warning("価格テーブルから価格を取得できませんでした")
             return None
 
