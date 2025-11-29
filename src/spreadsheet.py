@@ -29,6 +29,7 @@ class TrackingTarget:
     url: str
     price_selector: str
     name_selector: str
+    currency: str  # 取得通貨（USD, SGD, EUR等）
     row_index: int  # スプレッドシート上の行番号
 
 
@@ -123,6 +124,7 @@ class SpreadsheetClient:
                         url=row[3],
                         price_selector=row[4] if len(row) > 4 else "",
                         name_selector=row[5] if len(row) > 5 else "",
+                        currency=row[6].upper() if len(row) > 6 and row[6] else "USD",
                         row_index=i
                     ))
 
@@ -420,16 +422,18 @@ class SpreadsheetClient:
         カラーミー商品管理シートから商品リストを取得する
 
         シート列:
-        0: カラーミー商品ID
-        1: 商品名
-        2: 現在価格
-        3: 取得元URL（Bullionstar, APMEXなど）
-        4: 枚数
-        5: マージン率
-        6: 価格更新 (ON/OFF)
-        7: 在庫連動 (ON/OFF)
-        8: 在庫数量 (在庫あり時の数量)
-        9: 表示連動 (連動/表示/非表示/変更しない)
+        0: カラーミー商品ID (A)
+        1: 商品名 (B)
+        2: 現在価格 (C)
+        3: 取得元URL (D)
+        4: 取得通貨 (E) - USD, SGD, EUR等
+        5: 為替種類 (F) - クレカ, Wise
+        6: 枚数 (G)
+        7: マージン率 (H)
+        8: 価格更新 (I) - ON/OFF
+        9: 在庫連動 (J) - ON/OFF
+        10: 在庫数量 (K)
+        11: 表示連動 (L) - 連動/表示/非表示/変更しない
 
         Returns:
             list: ColorMeProduct のリスト
@@ -446,47 +450,75 @@ class SpreadsheetClient:
 
             products = []
             for row in records[1:]:  # ヘッダーをスキップ
-                if len(row) >= 6:
+                if len(row) >= 4:
                     product_id = row[0].strip()
                     source_url = row[3].strip()
 
                     # 商品IDとURLが両方ある場合のみ追加
                     if product_id and source_url:
                         try:
-                            # 7列目（index 6）が価格更新フラグ（ON/OFF）
-                            update_enabled = False
-                            if len(row) >= 7 and row[6].strip().upper() == "ON":
-                                update_enabled = True
+                            # 取得通貨（E列、index 4）
+                            source_currency = "USD"
+                            if len(row) >= 5 and row[4].strip():
+                                source_currency = row[4].strip().upper()
 
-                            # 8列目（index 7）が在庫連動（ON/OFF）
-                            stock_sync = False
-                            if len(row) >= 8 and row[7].strip().upper() == "ON":
-                                stock_sync = True
+                            # 為替種類（F列、index 5）
+                            exchange_type = "クレカ"
+                            if len(row) >= 6 and row[5].strip():
+                                exchange_type = row[5].strip()
 
-                            # 9列目（index 8）が在庫数量
-                            stock_quantity = 10  # デフォルト
-                            if len(row) >= 9 and row[8].strip():
+                            # 枚数（G列、index 6）
+                            quantity = 1
+                            if len(row) >= 7 and row[6].strip():
                                 try:
-                                    stock_quantity = int(row[8].strip())
+                                    quantity = int(row[6].strip())
                                 except ValueError:
                                     pass
 
-                            # 10列目（index 9）が表示連動
+                            # マージン率（H列、index 7）
+                            margin_rate = 1.1
+                            if len(row) >= 8 and row[7].strip():
+                                try:
+                                    margin_rate = float(row[7].strip())
+                                except ValueError:
+                                    pass
+
+                            # 価格更新（I列、index 8）
+                            update_enabled = False
+                            if len(row) >= 9 and row[8].strip().upper() == "ON":
+                                update_enabled = True
+
+                            # 在庫連動（J列、index 9）
+                            stock_sync = False
+                            if len(row) >= 10 and row[9].strip().upper() == "ON":
+                                stock_sync = True
+
+                            # 在庫数量（K列、index 10）
+                            stock_quantity = 10
+                            if len(row) >= 11 and row[10].strip():
+                                try:
+                                    stock_quantity = int(row[10].strip())
+                                except ValueError:
+                                    pass
+
+                            # 表示連動（L列、index 11）
                             display_control = ""
-                            if len(row) >= 10:
-                                display_control = row[9].strip()
+                            if len(row) >= 12:
+                                display_control = row[11].strip()
 
                             products.append(ColorMeProduct(
                                 product_id=int(product_id),
                                 name=row[1].strip(),
                                 current_price=int(row[2]) if row[2] else 0,
                                 source_url=source_url,
-                                quantity=int(row[4]) if row[4] else 1,
-                                margin_rate=float(row[5]) if row[5] else 1.1,
+                                quantity=quantity,
+                                margin_rate=margin_rate,
                                 update_enabled=update_enabled,
                                 stock_sync=stock_sync,
                                 stock_quantity=stock_quantity,
-                                display_control=display_control
+                                display_control=display_control,
+                                source_currency=source_currency,
+                                exchange_type=exchange_type
                             ))
                         except ValueError as e:
                             logger.warning(f"行のパースエラー: {row} - {e}")
@@ -503,12 +535,12 @@ class SpreadsheetClient:
         """
         カラーミー商品管理シートに計算結果を更新する
 
-        シート列:
+        シート列（新構成）:
         C: 現在価格（カラーミーAPIから取得）
-        K: 取得元価格(USD)
-        L: 計算価格（反映候補）
-        M: 差額
-        N: 最終更新
+        M: 取得元価格
+        N: 計算価格（反映候補）
+        O: 差額
+        P: 最終更新
 
         Args:
             results: 計算結果のリスト
@@ -547,9 +579,9 @@ class SpreadsheetClient:
                         'range': f'C{row_num}',
                         'values': [[r["colorme_price"]]]
                     })
-                    # K-N列: 取得元価格, 計算価格, 差額, 最終更新
+                    # M-P列: 取得元価格, 計算価格, 差額, 最終更新
                     updates.append({
-                        'range': f'K{row_num}:N{row_num}',
+                        'range': f'M{row_num}:P{row_num}',
                         'values': [[
                             r["source_price"],
                             r["calculated_price"],

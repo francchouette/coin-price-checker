@@ -24,7 +24,7 @@ from .notifier import (
     calculate_change_rate,
     check_alert_threshold,
 )
-from .exchange_rate import ExchangeRateClient
+from .exchange_rate import ExchangeRateClient, WiseRateClient
 from .colorme import ColorMeClient
 
 # ロギング設定
@@ -101,13 +101,16 @@ def run():
         if previous_price is not None and previous_price > 0:
             change_rate = calculate_change_rate(result.price, previous_price)
 
+        # 通貨はトラッキング対象で設定されたものを優先
+        currency = target.currency if target.currency else result.currency
+
         # 価格レコードを作成（在庫状況・差分を含む）
         record = PriceRecord(
             timestamp=timestamp,
             shop_name=target.shop_name,
             product_name=result.product_name,
             price=result.price,
-            currency=result.currency,
+            currency=currency,
             previous_price=previous_price if previous_price else 0.0,
             change_rate=change_rate,
             in_stock=result.in_stock,
@@ -119,12 +122,12 @@ def run():
         stock_status = "In Stock" if result.in_stock else "Out of Stock"
         if previous_price:
             logger.info(
-                f"取得: {result.product_name} - {result.currency} {result.price:,.2f} "
+                f"取得: {result.product_name} - {currency} {result.price:,.2f} "
                 f"(前回: {previous_price:,.2f}, 変動: {change_rate:+.2f}%) [{stock_status}]"
             )
         else:
             logger.info(
-                f"取得: {result.product_name} - {result.currency} {result.price:,.2f} "
+                f"取得: {result.product_name} - {currency} {result.price:,.2f} "
                 f"(初回取得) [{stock_status}]"
             )
 
@@ -270,18 +273,42 @@ def update_colorme_prices(sheet_client: SpreadsheetClient, price_records: list[P
 
     logger.info(f"取得元価格データ: {len(source_prices)}件")
 
-    # 為替レートを取得
+    # 必要な通貨を特定
+    currencies_needed = set()
+    for product in colorme_products:
+        currencies_needed.add(product.source_currency)
+
+    logger.info(f"必要な通貨: {currencies_needed}")
+
+    # 為替レートを取得（通貨別・種類別）
     exchange_client = ExchangeRateClient()
+    wise_client = WiseRateClient()
+
     if not exchange_client.fetch_rates():
         logger.error("為替レートの取得に失敗しました")
         return
 
-    exchange_rate = exchange_client.get_rate("USD", "JPY")
-    if not exchange_rate:
-        logger.error("USD/JPY為替レートが取得できません")
-        return
+    # 為替レートを通貨・種類別に取得
+    exchange_rates = {}
+    for currency in currencies_needed:
+        # クレカレート
+        credit_rate = exchange_client.get_credit_card_rate(currency, "JPY")
+        if credit_rate:
+            exchange_rates[f"{currency}_クレカ"] = credit_rate
+            logger.info(f"クレカレート: 1 {currency} = {credit_rate:.2f} JPY")
 
-    logger.info(f"為替レート: 1 USD = {exchange_rate:.2f} JPY")
+        # Wiseレート
+        wise_rate = wise_client.get_rate(currency, "JPY")
+        if wise_rate:
+            exchange_rates[f"{currency}_Wise"] = wise_rate
+            logger.info(f"Wiseレート: 1 {currency} = {wise_rate:.2f} JPY")
+
+        # Wiseが取得できない場合は一般レートで代用
+        if not wise_rate:
+            general_rate = exchange_client.get_rate(currency, "JPY")
+            if general_rate:
+                exchange_rates[f"{currency}_Wise"] = general_rate
+                logger.info(f"Wiseレート（代替）: 1 {currency} = {general_rate:.2f} JPY")
 
     # カラーミー商品を更新
     colorme_client = ColorMeClient(dry_run=dry_run)
@@ -289,7 +316,7 @@ def update_colorme_prices(sheet_client: SpreadsheetClient, price_records: list[P
         colorme_products,
         source_prices,
         source_stock,
-        exchange_rate
+        exchange_rates
     )
 
     logger.info(

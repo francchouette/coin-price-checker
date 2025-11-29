@@ -28,6 +28,8 @@ class ColorMeProduct:
     stock_sync: bool = False  # 在庫連動ON/OFF
     stock_quantity: int = 10  # 在庫あり時の数量
     display_control: str = ""  # 表示連動: "連動" = 在庫に連動, "表示" = 常に表示, "非表示" = 常に非表示, "変更しない" or 空 = 変更しない
+    source_currency: str = "USD"  # 取得元の通貨
+    exchange_type: str = "クレカ"  # 為替種類: "クレカ" or "Wise"
 
 
 class ColorMeClient:
@@ -151,16 +153,16 @@ class ColorMeClient:
         products: list[ColorMeProduct],
         source_prices: dict[str, float],
         source_stock: dict[str, bool],
-        exchange_rate: float
+        exchange_rates: dict[str, float]
     ) -> dict:
         """
         複数商品の価格・在庫・表示状態を一括更新する
 
         Args:
             products: カラーミー商品リスト
-            source_prices: 取得元URL -> USD価格 の辞書
+            source_prices: 取得元URL -> 価格 の辞書
             source_stock: 取得元URL -> 在庫状況(True=在庫あり) の辞書
-            exchange_rate: USD/JPY為替レート
+            exchange_rates: "通貨_種類" -> 為替レート の辞書（例: "USD_クレカ": 155.0）
 
         Returns:
             dict: {
@@ -193,6 +195,17 @@ class ColorMeClient:
             # カラーミーの現在価格
             colorme_current_price = current_prices.get(product.product_id, 0)
 
+            # 商品ごとの為替レートを取得
+            rate_key = f"{product.source_currency}_{product.exchange_type}"
+            exchange_rate = exchange_rates.get(rate_key)
+
+            if not exchange_rate:
+                logger.warning(
+                    f"スキップ: {product.name} - 為替レートなし ({rate_key})"
+                )
+                result["skipped"] += 1
+                continue
+
             # 新価格を計算: 取得価格 × 為替レート × 枚数 × マージン率
             new_price = int(
                 source_price * exchange_rate * product.quantity * product.margin_rate
@@ -205,7 +218,8 @@ class ColorMeClient:
             logger.info(
                 f"[価格計算] {product.name}\n"
                 f"    カラーミー現在価格: {colorme_current_price:,}円\n"
-                f"    取得元価格: ${source_price:,.2f}\n"
+                f"    取得元価格: {product.source_currency} {source_price:,.2f}\n"
+                f"    為替レート: {exchange_rate:.2f} ({product.exchange_type})\n"
                 f"    計算価格（反映候補）: {new_price:,}円\n"
                 f"    差額: {price_diff:+,}円"
             )
