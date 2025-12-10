@@ -118,3 +118,6 @@ class Config:
 
     # シート名
     SHEET_COLORME: str = "カラーミー商品管理"
+
+    # 商品マスタシート名（サイト別）
+    SHEET_MASTER_BRITANNIA: str = "商品マスタ_Britannia"
