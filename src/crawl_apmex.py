@@ -221,6 +221,40 @@ class BrightDataBrowserClient:
             logger.error(f"HTML取得エラー: {e}")
             return ""
 
+    async def fetch_product_detail(self, url: str, timeout: int = 30000) -> str:
+        """
+        商品詳細ページのHTMLを取得する（新しいページで開く）
+
+        Args:
+            url: 商品詳細ページのURL
+            timeout: タイムアウト（ミリ秒）
+
+        Returns:
+            str: HTML文字列（失敗時は空文字列）
+        """
+        detail_page = None
+        try:
+            detail_page = await self._context.new_page()
+            await detail_page.goto(url, timeout=timeout, wait_until="domcontentloaded")
+
+            # 商品情報が読み込まれるまで待機
+            try:
+                await detail_page.wait_for_selector('.product-description, .mod-product-description, #product-description', timeout=10000)
+            except Exception:
+                pass
+
+            await detail_page.wait_for_timeout(2000)
+
+            html = await detail_page.content()
+            return html
+
+        except Exception as e:
+            logger.warning(f"詳細ページ取得エラー ({url}): {e}")
+            return ""
+        finally:
+            if detail_page:
+                await detail_page.close()
+
 
 class ProgressTracker:
     """クロール進捗管理クラス"""
@@ -558,6 +592,78 @@ def has_next_page(html: str, current_page: int) -> bool:
         return False
 
 
+def parse_product_detail(html: str) -> dict:
+    """商品詳細ページから説明・仕様を取得"""
+    result = {
+        "description": "",
+        "specification": "",
+        "images": [],
+    }
+
+    try:
+        soup = BeautifulSoup(html, 'html.parser')
+
+        # 商品説明を取得（複数のセレクタを試す）
+        desc_selectors = [
+            '.product-description',
+            '[data-testid="product-description"]',
+            '.mod-product-description',
+            '#product-description',
+            '.description-content',
+            '.product-details-description',
+        ]
+        for selector in desc_selectors:
+            desc_elem = soup.select_one(selector)
+            if desc_elem:
+                result["description"] = desc_elem.get_text(separator=' ', strip=True)[:1000]
+                break
+
+        # 仕様を取得（スペック表やリストから）
+        spec_selectors = [
+            '.product-specifications',
+            '.mod-product-specs',
+            '.specifications-table',
+            '#product-specs',
+            '.product-attributes',
+            'table.specs',
+        ]
+        for selector in spec_selectors:
+            spec_elem = soup.select_one(selector)
+            if spec_elem:
+                result["specification"] = spec_elem.get_text(separator=' | ', strip=True)[:500]
+                break
+
+        # 仕様が見つからない場合、リスト形式を試す
+        if not result["specification"]:
+            spec_list = soup.select('.product-spec-item, .spec-row, .attribute-row')
+            if spec_list:
+                specs = []
+                for item in spec_list[:10]:
+                    specs.append(item.get_text(separator=': ', strip=True))
+                result["specification"] = ' | '.join(specs)[:500]
+
+        # 追加の画像を取得
+        img_selectors = [
+            '.product-gallery img',
+            '.product-images img',
+            '.mod-product-image img',
+            '[data-testid="product-image"] img',
+        ]
+        for selector in img_selectors:
+            imgs = soup.select(selector)
+            if imgs:
+                for img in imgs[:5]:
+                    src = img.get('src') or img.get('data-src')
+                    if src and not src.startswith('data:') and src not in result["images"]:
+                        result["images"].append(src)
+                break
+
+    except Exception as e:
+        logger.warning(f"詳細ページパースエラー: {e}")
+
+    return result
+
+
 async def run_incremental_async(category: str = None, reset: bool = False, max_pages: int = None):
     """インクリメンタル方式でクロール実行（非同期）"""
     logger.info("=" * 60)
@@ -662,6 +768,30 @@ async def run_incremental_async(category: str = None, reset: bool = False, max_p
                     # デバッグ: 最初の3件の商品URLを表示
                     for i, p in enumerate(products[:3]):
                         logger.info(f"    [{i+1}] {p.url}")
+
+                    # 新規商品の詳細ページを取得
+                    new_products = [p for p in products if p.url not in saver._existing_urls]
+                    if new_products:
+                        logger.info(f"    新規商品 {len(new_products)}件の詳細を取得中...")
+                        for i, product in enumerate(new_products):
+                            try:
+                                detail_html = await client.fetch_product_detail(product.url)
+                                if detail_html:
+                                    detail = parse_product_detail(detail_html)
+                                    if detail["description"]:
+                                        product.description = detail["description"]
+                                    if detail["specification"]:
+                                        product.specification = detail["specification"]
+                                    if detail["images"]:
+                                        # 既存の画像に追加
+                                        for img in detail["images"]:
+                                            if img not in product.images and len(product.images) < 5:
+                                                product.images.append(img)
+                                    logger.info(f"      [{i+1}/{len(new_products)}] 詳細取得完了: {product.name[:30]}...")
+                                # レート制限対策
+                                await asyncio.sleep(random.uniform(1.0, 2.0))
+                            except Exception as e:
+                                logger.warning(f"      詳細取得エラー: {e}")
 
                     # スプレッドシートに保存
                     new_count, update_count = saver.save_products(products)
