@@ -93,8 +93,11 @@ class ColorMeClient:
         prices = {}
         for product_id in product_ids:
             product = self.get_product(product_id)
-            if product and "price" in product:
-                prices[product_id] = int(product["price"])
+            if product and "price" in product and product["price"] is not None:
+                try:
+                    prices[product_id] = int(product["price"])
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"価格変換エラー (ID: {product_id}): {product['price']} - {e}")
         return prices
 
     def update_product(self, product_id: int, updates: dict) -> bool:
