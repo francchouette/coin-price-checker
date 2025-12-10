@@ -2,6 +2,7 @@
 メインエントリーポイント
 
 価格追跡プログラムの全体フローを制御する。
+カラーミー商品管理シートを基準にスクレイピングを行う。
 """
 
 import sys
@@ -13,7 +14,7 @@ from typing import Optional
 JST = timezone(timedelta(hours=9))
 
 from .config import Config
-from .spreadsheet import SpreadsheetClient, PriceRecord, TrackingTarget
+from .spreadsheet import SpreadsheetClient, PriceRecord
 from .scraper import ScraperManager, ScrapeTarget, detect_shop_from_url
 from .shops import ScrapedData
 from .notifier import (
@@ -25,7 +26,7 @@ from .notifier import (
     check_alert_threshold,
 )
 from .exchange_rate import ExchangeRateClient, WiseRateClient
-from .colorme import ColorMeClient
+from .colorme import ColorMeClient, ColorMeProduct
 
 # ロギング設定
 logging.basicConfig(
@@ -39,7 +40,12 @@ logger = logging.getLogger(__name__)
 
 
 def run():
-    """メイン処理を実行する"""
+    """
+    メイン処理を実行する
+
+    カラーミー商品管理シートを基準にスクレイピングを行う。
+    トラッキング対象シートは使用しない。
+    """
     logger.info("=" * 60)
     logger.info("価格追跡プログラムを開始します")
     logger.info("=" * 60)
@@ -61,28 +67,29 @@ def run():
         logger.error("スプレッドシートへの接続に失敗しました")
         sys.exit(1)
 
-    # トラッキング対象を取得
-    targets = sheet_client.get_tracking_targets()
-    if not targets:
-        logger.warning("トラッキング対象が見つかりません")
+    # カラーミー商品管理シートから対象を取得
+    colorme_products = sheet_client.get_colorme_products()
+    if not colorme_products:
+        logger.warning("カラーミー商品管理シートに対象商品がありません")
         sys.exit(0)
 
-    logger.info(f"トラッキング対象: {len(targets)}件")
+    # 重複を除いたURLリストを作成
+    unique_urls = list(set(p.source_url for p in colorme_products if p.source_url))
+    logger.info(f"スクレイピング対象URL: {len(unique_urls)}件（カラーミー商品: {len(colorme_products)}件）")
 
     # アラート閾値を取得
     alert_threshold = sheet_client.get_alert_threshold()
     logger.info(f"アラート閾値: ±{alert_threshold}%")
 
     # 直近の価格と在庫状況を事前に取得
-    urls = [t.url for t in targets]
-    previous_prices = sheet_client.get_latest_prices(urls)
-    previous_stock = sheet_client.get_latest_stock_status(urls)
+    previous_prices = sheet_client.get_latest_prices(unique_urls)
+    previous_stock = sheet_client.get_latest_stock_status(unique_urls)
     logger.info(f"直近価格データ: {len(previous_prices)}件")
     logger.info(f"直近在庫データ: {len(previous_stock)}件")
 
     # スクレイピング実行
     logger.info("スクレイピングを開始します...")
-    scraped_results = scrape_targets(targets)
+    scraped_results = scrape_urls(unique_urls)
 
     # 結果を処理
     logger.info("結果を処理中...")
@@ -90,49 +97,49 @@ def run():
     price_records = []
     alerts = []
 
-    for target, result in zip(targets, scraped_results):
+    # URL -> スクレイピング結果の辞書を作成
+    url_to_result = {url: result for url, result in zip(unique_urls, scraped_results)}
+
+    for url, result in url_to_result.items():
         if result.error:
-            logger.warning(f"スクレイピング失敗: {target.url} - {result.error}")
+            logger.warning(f"スクレイピング失敗: {url} - {result.error}")
             continue
 
         # 価格変動を計算
-        previous_price = previous_prices.get(target.url)
+        previous_price = previous_prices.get(url)
         change_rate = 0.0
         if previous_price is not None and previous_price > 0:
             change_rate = calculate_change_rate(result.price, previous_price)
 
-        # 通貨はトラッキング対象で設定されたものを優先
-        currency = target.currency if target.currency else result.currency
+        # ショップ名をURLから推定
+        shop_name = detect_shop_from_url(url)
 
         # 価格レコードを作成（在庫状況・差分を含む）
         record = PriceRecord(
             timestamp=timestamp,
-            shop_name=target.shop_name,
+            shop_name=shop_name,
             product_name=result.product_name,
             price=result.price,
-            currency=currency,
+            currency=result.currency,
             previous_price=previous_price if previous_price else 0.0,
             change_rate=change_rate,
             in_stock=result.in_stock,
-            url=target.url
+            url=url
         )
         price_records.append(record)
 
         # ログ出力
         stock_status = "In Stock" if result.in_stock else "Out of Stock"
         if not result.in_stock:
-            # 在庫切れの場合
-            logger.info(
-                f"取得: {result.product_name} - [{stock_status}]"
-            )
+            logger.info(f"取得: {result.product_name} - [{stock_status}]")
         elif previous_price:
             logger.info(
-                f"取得: {result.product_name} - {currency} {result.price:,.2f} "
+                f"取得: {result.product_name} - {result.currency} {result.price:,.2f} "
                 f"(前回: {previous_price:,.2f}, 変動: {change_rate:+.2f}%) [{stock_status}]"
             )
         else:
             logger.info(
-                f"取得: {result.product_name} - {currency} {result.price:,.2f} "
+                f"取得: {result.product_name} - {result.currency} {result.price:,.2f} "
                 f"(初回取得) [{stock_status}]"
             )
 
@@ -140,12 +147,12 @@ def run():
         if previous_price is not None and check_alert_threshold(change_rate, alert_threshold):
             alert = PriceAlert(
                 product_name=result.product_name,
-                shop_name=target.shop_name,
+                shop_name=shop_name,
                 current_price=result.price,
                 previous_price=previous_price,
                 change_rate=change_rate,
                 currency=result.currency,
-                url=target.url,
+                url=url,
                 timestamp=timestamp,
                 alert_type="price",
                 in_stock=result.in_stock
@@ -153,21 +160,20 @@ def run():
             alerts.append(alert)
             logger.info(
                 f"価格アラート検出: {result.product_name} "
-                f"({previous_price:,.2f} → {result.price:,.2f}, "
-                f"{change_rate:+.2f}%)"
+                f"({previous_price:,.2f} → {result.price:,.2f}, {change_rate:+.2f}%)"
             )
 
         # 在庫切れアラートをチェック（前回In Stock → 今回Out of Stock）
-        was_in_stock = previous_stock.get(target.url, True)
+        was_in_stock = previous_stock.get(url, True)
         if was_in_stock and not result.in_stock:
             alert = PriceAlert(
                 product_name=result.product_name,
-                shop_name=target.shop_name,
+                shop_name=shop_name,
                 current_price=result.price,
                 previous_price=previous_price if previous_price else result.price,
                 change_rate=0.0,
                 currency=result.currency,
-                url=target.url,
+                url=url,
                 timestamp=timestamp,
                 alert_type="stock",
                 in_stock=False
@@ -200,14 +206,13 @@ def run():
     # カラーミー価格更新
     if Config.is_colorme_enabled():
         logger.info("=" * 60)
-        # スプレッドシートの設定シートから更新フラグを取得
         colorme_update_enabled = sheet_client.get_colorme_update_enabled()
         if colorme_update_enabled:
             logger.info("カラーミー価格更新を開始します（実際に更新します）")
         else:
             logger.info("カラーミー価格更新を開始します（ドライランモード - 実際の更新なし）")
             logger.info("  → 実際に更新するには設定シートで COLORME_UPDATE_ENABLED を ON にしてください")
-        update_colorme_prices(sheet_client, price_records, dry_run=not colorme_update_enabled)
+        update_colorme_prices(sheet_client, colorme_products, price_records, dry_run=not colorme_update_enabled)
     else:
         logger.info("カラーミー連携は無効です（COLORME_ACCESS_TOKEN未設定）")
 
@@ -220,45 +225,47 @@ def run():
     logger.info("=" * 60)
 
 
-def scrape_targets(targets: list[TrackingTarget]) -> list[ScrapedData]:
+def scrape_urls(urls: list[str]) -> list[ScrapedData]:
     """
-    トラッキング対象をスクレイピングする
+    URLリストをスクレイピングする
 
     Args:
-        targets: トラッキング対象のリスト
+        urls: スクレイピング対象のURLリスト
 
     Returns:
         list[ScrapedData]: スクレイピング結果のリスト
     """
     scrape_targets_list = []
 
-    for target in targets:
-        # ショップ名が空の場合はURLから推定
-        shop_name = target.shop_name
-        if not shop_name:
-            shop_name = detect_shop_from_url(target.url)
+    for url in urls:
+        # ショップ名はURLから推定
+        shop_name = detect_shop_from_url(url)
 
         scrape_targets_list.append(ScrapeTarget(
             shop_name=shop_name,
-            url=target.url,
-            product_name_hint=target.product_name
+            url=url,
+            product_name_hint=""
         ))
 
     with ScraperManager() as manager:
         return manager.scrape_all(scrape_targets_list)
 
 
-def update_colorme_prices(sheet_client: SpreadsheetClient, price_records: list[PriceRecord], dry_run: bool = True):
+def update_colorme_prices(
+    sheet_client: SpreadsheetClient,
+    colorme_products: list[ColorMeProduct],
+    price_records: list[PriceRecord],
+    dry_run: bool = True
+):
     """
     カラーミーショップの価格・在庫・表示状態を更新する
 
     Args:
         sheet_client: スプレッドシートクライアント
+        colorme_products: カラーミー商品リスト
         price_records: 今回取得した価格レコードのリスト
         dry_run: ドライランモード（Trueの場合は実際に更新しない）
     """
-    # カラーミー商品リストを取得
-    colorme_products = sheet_client.get_colorme_products()
     if not colorme_products:
         logger.info("カラーミー商品管理シートに対象商品がありません")
         return
