@@ -108,13 +108,20 @@ class BrightDataBrowserClient:
             # 商品カードが読み込まれるまで待機
             if wait_selector:
                 try:
-                    await page.wait_for_selector(wait_selector, timeout=30000)
+                    await page.wait_for_selector(wait_selector, timeout=45000)
+                    logger.info(f"セレクタ '{wait_selector}' を検出")
                 except Exception:
-                    # セレクタが見つからなくても続行
-                    logger.warning(f"セレクタ '{wait_selector}' が見つかりませんでした")
+                    # セレクタが見つからない場合は追加待機してリトライ
+                    logger.warning(f"セレクタ '{wait_selector}' が見つかりません、追加待機します")
+                    await page.wait_for_timeout(5000)
+                    try:
+                        await page.wait_for_selector(wait_selector, timeout=15000)
+                        logger.info(f"リトライでセレクタを検出")
+                    except Exception:
+                        logger.warning(f"セレクタ検出失敗、続行します")
 
             # 追加の待機（動的コンテンツ用）
-            await page.wait_for_timeout(3000)
+            await page.wait_for_timeout(5000)
 
             # HTMLを取得
             html = await page.content()
@@ -244,14 +251,25 @@ class SpreadsheetSaver:
                 logger.info(f"新規シート '{sheet_name}' を作成")
 
             existing_data = self._sheet.get_all_values()
+
+            # ヘッダーがない場合は追加
             if not existing_data:
+                # データが空の場合はヘッダーを追加
                 self._sheet.append_row(SHEET_HEADERS, value_input_option='RAW')
-                logger.info("ヘッダー行を追加")
+                logger.info("ヘッダー行を追加（空シート）")
                 existing_data = [SHEET_HEADERS]
+            elif existing_data[0] != SHEET_HEADERS and existing_data[0][0] != "URL":
+                # 1行目がヘッダーではない場合、ヘッダーを先頭に挿入
+                self._sheet.insert_row(SHEET_HEADERS, 1, value_input_option='RAW')
+                logger.info("ヘッダー行を先頭に挿入")
+                # 行番号がずれるので再取得
+                existing_data = self._sheet.get_all_values()
+            else:
+                logger.info("ヘッダー行を確認")
 
             if len(existing_data) > 1:
                 for i, row in enumerate(existing_data[1:], start=2):
-                    if row:
+                    if row and row[0]:
                         self._existing_urls.add(row[0])
                         self._url_to_row[row[0]] = i
 
@@ -564,6 +582,10 @@ async def run_incremental_async(category: str = None, reset: bool = False, max_p
                         break
 
                     logger.info(f"  ページ{page_num}: {len(products)}件を取得")
+
+                    # デバッグ: 最初の3件の商品URLを表示
+                    for i, p in enumerate(products[:3]):
+                        logger.info(f"    [{i+1}] {p.url}")
 
                     # スプレッドシートに保存
                     new_count, update_count = saver.save_products(products)
