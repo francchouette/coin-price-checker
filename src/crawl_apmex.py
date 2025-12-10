@@ -539,6 +539,12 @@ def run_incremental(category: str = None, reset: bool = False, max_pages: int = 
                     logger.info(f"  /product/ リンク数: {len(product_links)}")
                     if product_links:
                         logger.info(f"  サンプルリンク: {product_links[0].get('href')}")
+                        # 親要素のクラスを確認
+                        for i, link in enumerate(product_links[:3]):
+                            parent = link.parent
+                            grandparent = parent.parent if parent else None
+                            logger.info(f"  リンク{i+1}の親: {parent.name if parent else 'なし'} class={parent.get('class') if parent else 'なし'}")
+                            logger.info(f"  リンク{i+1}の祖父: {grandparent.name if grandparent else 'なし'} class={grandparent.get('class') if grandparent else 'なし'}")
                     # HTMLの一部を出力（先頭1000文字）
                     logger.info(f"  HTML先頭1000文字: {html[:1000]}")
 
