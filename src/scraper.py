@@ -73,12 +73,12 @@ class ScraperManager:
                 "Chrome/131.0.0.0 Safari/537.36"
             ),
             viewport={"width": 1920, "height": 1080},
-            locale="en-US",
+            locale="ja-JP",  # 日本円表示のため日本ロケールを使用
             java_script_enabled=True,
             ignore_https_errors=True,
             extra_http_headers={
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
                 "Accept-Encoding": "gzip, deflate, br",
                 "Connection": "keep-alive",
                 "Upgrade-Insecure-Requests": "1",
