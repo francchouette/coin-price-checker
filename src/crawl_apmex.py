@@ -828,44 +828,10 @@ async def run_incremental_async(category: str = None, reset: bool = False, max_p
             # カテゴリ間で待機
             await asyncio.sleep(2)
 
-        # === 詳細ページ取得フェーズ ===
-        # 詳細未取得の商品を取得
+        # 詳細未取得件数を表示
         if saver._urls_need_detail:
-            logger.info(f"\n=== 詳細ページ取得フェーズ ===")
-            logger.info(f"詳細未取得: {len(saver._urls_need_detail)}件")
-
-            # 最大取得数を制限（API費用対策）
-            max_detail_fetch = 50
-            urls_to_fetch = list(saver._urls_need_detail)[:max_detail_fetch]
-            logger.info(f"今回取得: {len(urls_to_fetch)}件（最大{max_detail_fetch}件）")
-
-            detail_success = 0
-            for i, url in enumerate(urls_to_fetch):
-                try:
-                    detail_html = await client.fetch_product_detail(url)
-                    if detail_html:
-                        detail = parse_product_detail(detail_html)
-                        if detail["description"] or detail["specification"]:
-                            # スプレッドシートを更新
-                            row_num = saver._url_to_row.get(url)
-                            if row_num:
-                                try:
-                                    # 説明(H列=8)と仕様(I列=9)を更新
-                                    saver._sheet.update(f'H{row_num}:I{row_num}', [[
-                                        detail["description"][:500] if detail["description"] else "",
-                                        detail["specification"][:200] if detail["specification"] else ""
-                                    ]], value_input_option='RAW')
-                                    saver.mark_detail_updated(url)
-                                    detail_success += 1
-                                    logger.info(f"  [{i+1}/{len(urls_to_fetch)}] 詳細更新完了: {url[-50:]}")
-                                except Exception as e:
-                                    logger.warning(f"  詳細更新エラー: {e}")
-                    # レート制限対策
-                    await asyncio.sleep(random.uniform(1.5, 3.0))
-                except Exception as e:
-                    logger.warning(f"  詳細取得エラー: {e}")
-
-            logger.info(f"詳細取得完了: {detail_success}件成功")
+            logger.info(f"\n※ 詳細未取得: {len(saver._urls_need_detail)}件")
+            logger.info("  詳細取得は別ワークフロー(crawl-apmex-detail.yml)で実行してください")
 
     finally:
         await client.close()
@@ -885,10 +851,106 @@ def run_incremental(category: str = None, reset: bool = False, max_pages: int = 
     asyncio.run(run_incremental_async(category=category, reset=reset, max_pages=max_pages))
 
 
+async def run_detail_fetch_async(max_items: int = 20):
+    """詳細ページ取得専用（非同期）"""
+    logger.info("=" * 60)
+    logger.info("APMEX 商品詳細取得（Browser API方式）")
+    logger.info("=" * 60)
+
+    start_time = datetime.now()
+
+    # Browser API確認
+    if not Config.is_brightdata_browser_enabled():
+        logger.error("BRIGHTDATA_BROWSER_WS が設定されていません")
+        sys.exit(1)
+
+    # 設定検証
+    errors = Config.validate()
+    if errors:
+        for error in errors:
+            logger.error(error)
+        sys.exit(1)
+
+    # スプレッドシートに接続
+    saver = SpreadsheetSaver()
+    if not saver.connect():
+        logger.error("スプレッドシート接続に失敗")
+        sys.exit(1)
+
+    if not saver._urls_need_detail:
+        logger.info("詳細未取得の商品はありません")
+        return
+
+    logger.info(f"詳細未取得: {len(saver._urls_need_detail)}件")
+
+    # 取得対象を制限
+    urls_to_fetch = list(saver._urls_need_detail)[:max_items]
+    logger.info(f"今回取得: {len(urls_to_fetch)}件（最大{max_items}件）")
+
+    # Bright Data Browser クライアント
+    client = BrightDataBrowserClient(Config.BRIGHTDATA_BROWSER_WS)
+    await client.connect()
+
+    detail_success = 0
+
+    try:
+        for i, url in enumerate(urls_to_fetch):
+            try:
+                logger.info(f"  [{i+1}/{len(urls_to_fetch)}] {url[-60:]}")
+                detail_html = await client.fetch_product_detail(url)
+
+                if detail_html:
+                    detail = parse_product_detail(detail_html)
+                    if detail["description"] or detail["specification"]:
+                        # スプレッドシートを更新
+                        row_num = saver._url_to_row.get(url)
+                        if row_num:
+                            try:
+                                # 説明(H列=8)と仕様(I列=9)を更新
+                                saver._sheet.update(f'H{row_num}:I{row_num}', [[
+                                    detail["description"][:500] if detail["description"] else "",
+                                    detail["specification"][:200] if detail["specification"] else ""
+                                ]], value_input_option='RAW')
+                                saver.mark_detail_updated(url)
+                                detail_success += 1
+                                logger.info(f"    → 詳細更新完了")
+                            except Exception as e:
+                                logger.warning(f"    → 更新エラー: {e}")
+                    else:
+                        logger.info(f"    → 詳細情報なし")
+                else:
+                    logger.warning(f"    → HTML取得失敗")
+
+                # レート制限対策
+                await asyncio.sleep(random.uniform(2.0, 4.0))
+
+            except Exception as e:
+                logger.warning(f"    → エラー: {e}")
+
+    finally:
+        await client.close()
+
+    # 完了
+    elapsed = (datetime.now() - start_time).total_seconds()
+    logger.info("\n" + "=" * 60)
+    logger.info(f"詳細取得完了")
+    logger.info(f"  成功: {detail_success}件")
+    logger.info(f"  残り: {len(saver._urls_need_detail)}件")
+    logger.info(f"  所要時間: {elapsed:.1f}秒（{elapsed/60:.1f}分）")
+    logger.info("=" * 60)
+
+
+def run_detail_fetch(max_items: int = 20):
+    """詳細ページ取得専用（同期ラッパー）"""
+    asyncio.run(run_detail_fetch_async(max_items=max_items))
+
+
 if __name__ == "__main__":
     category = None
     reset = False
     max_pages = None
+    mode = "list"  # list or detail
+    max_items = 20
 
     for arg in sys.argv:
         if arg.startswith("--category="):
@@ -897,5 +959,12 @@ if __name__ == "__main__":
             reset = True
         elif arg.startswith("--max-pages="):
             max_pages = int(arg.split("=")[1])
+        elif arg == "--detail":
+            mode = "detail"
+        elif arg.startswith("--max-items="):
+            max_items = int(arg.split("=")[1])
 
-    run_incremental(category=category, reset=reset, max_pages=max_pages)
+    if mode == "detail":
+        run_detail_fetch(max_items=max_items)
+    else:
+        run_incremental(category=category, reset=reset, max_pages=max_pages)
