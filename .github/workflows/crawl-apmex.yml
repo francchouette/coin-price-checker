@@ -72,6 +72,9 @@ jobs:
       - name: Crawl gold-coins
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          BRIGHTDATA_HOST: ${{ secrets.BRIGHTDATA_HOST }}
+          BRIGHTDATA_USERNAME: ${{ secrets.BRIGHTDATA_USERNAME }}
+          BRIGHTDATA_PASSWORD: ${{ secrets.BRIGHTDATA_PASSWORD }}
         run: |
           RESET_FLAG=""
           MAX_PAGES_FLAG=""
@@ -123,6 +126,9 @@ jobs:
       - name: Crawl silver-coins
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          BRIGHTDATA_HOST: ${{ secrets.BRIGHTDATA_HOST }}
+          BRIGHTDATA_USERNAME: ${{ secrets.BRIGHTDATA_USERNAME }}
+          BRIGHTDATA_PASSWORD: ${{ secrets.BRIGHTDATA_PASSWORD }}
         run: |
           RESET_FLAG=""
           MAX_PAGES_FLAG=""

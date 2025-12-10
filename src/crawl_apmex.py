@@ -349,6 +349,15 @@ def run_incremental(category: str = None, reset: bool = False, max_pages: int = 
 
     BASE_URL = "https://www.apmex.com"
 
+    # Bright Data Proxy設定
+    proxy_config = None
+    if Config.is_brightdata_enabled():
+        proxy_url = Config.get_brightdata_proxy_url()
+        proxy_config = {"server": proxy_url}
+        logger.info("Bright Data Proxy: 有効")
+    else:
+        logger.warning("Bright Data Proxy: 無効（環境変数が設定されていません）")
+
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
@@ -360,16 +369,22 @@ def run_incremental(category: str = None, reset: bool = False, max_pages: int = 
                 "--disable-features=IsolateOrigins,site-per-process",
             ]
         )
-        context = browser.new_context(
-            user_agent=(
+
+        # コンテキスト作成（Proxy設定を含む）
+        context_options = {
+            "user_agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/131.0.0.0 Safari/537.36"
             ),
-            viewport={"width": 1920, "height": 1080},
-            locale="en-US",
-            timezone_id="America/New_York",
-        )
+            "viewport": {"width": 1920, "height": 1080},
+            "locale": "en-US",
+            "timezone_id": "America/New_York",
+        }
+        if proxy_config:
+            context_options["proxy"] = proxy_config
+
+        context = browser.new_context(**context_options)
 
         # ボット検出回避
         context.add_init_script("""

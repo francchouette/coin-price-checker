@@ -122,3 +122,20 @@ class Config:
     # 商品マスタシート名（サイト別）
     SHEET_MASTER_BRITANNIA: str = "商品マスタ_Britannia"
     SHEET_MASTER_APMEX: str = "商品マスタ_APMEX"
+
+    # Bright Data Proxy設定
+    BRIGHTDATA_HOST: str = os.getenv("BRIGHTDATA_HOST", "")
+    BRIGHTDATA_USERNAME: str = os.getenv("BRIGHTDATA_USERNAME", "")
+    BRIGHTDATA_PASSWORD: str = os.getenv("BRIGHTDATA_PASSWORD", "")
+
+    @classmethod
+    def is_brightdata_enabled(cls) -> bool:
+        """Bright Data Proxyが有効かどうかを返す"""
+        return bool(cls.BRIGHTDATA_HOST and cls.BRIGHTDATA_USERNAME and cls.BRIGHTDATA_PASSWORD)
+
+    @classmethod
+    def get_brightdata_proxy_url(cls) -> str:
+        """Bright DataのProxy URLを返す"""
+        if not cls.is_brightdata_enabled():
+            return ""
+        return f"http://{cls.BRIGHTDATA_USERNAME}:{cls.BRIGHTDATA_PASSWORD}@{cls.BRIGHTDATA_HOST}"
