@@ -64,19 +64,33 @@ class BrightDataBrowserClient:
         self._playwright = None
         self._browser = None
 
-    async def connect(self, timeout: int = 120000):
-        """ブラウザに接続"""
+    async def connect(self, timeout: int = 120000, max_retries: int = 3):
+        """ブラウザに接続（リトライ機能付き）"""
         self._playwright = await async_playwright().start()
         logger.info(f"Bright Data Browser APIに接続中... (タイムアウト: {timeout/1000}秒)")
-        try:
-            self._browser = await self._playwright.chromium.connect_over_cdp(
-                self.ws_endpoint,
-                timeout=timeout
-            )
-            logger.info("Bright Data Browser APIに接続しました")
-        except Exception as e:
-            logger.error(f"Browser API接続エラー: {e}")
-            raise
+
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                self._browser = await self._playwright.chromium.connect_over_cdp(
+                    self.ws_endpoint,
+                    timeout=timeout
+                )
+                logger.info("Bright Data Browser APIに接続しました")
+                return
+            except Exception as e:
+                last_error = e
+                error_msg = str(e)
+                if "503" in error_msg or "No free browsers" in error_msg:
+                    wait_time = 60 * (attempt + 1)  # 60秒, 120秒, 180秒
+                    logger.warning(f"ブラウザプールが空いていません。{wait_time}秒後にリトライします... (試行 {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"Browser API接続エラー: {e}")
+                    raise
+
+        logger.error(f"Browser API接続エラー（リトライ上限）: {last_error}")
+        raise last_error
 
     async def close(self):
         """ブラウザを閉じる"""
