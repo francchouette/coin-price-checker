@@ -64,17 +64,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install Playwright browsers
-        run: |
-          python -m playwright install chromium
-          python -m playwright install-deps chromium
-
       - name: Crawl gold-coins
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-          BRIGHTDATA_HOST: ${{ secrets.BRIGHTDATA_HOST }}
-          BRIGHTDATA_USERNAME: ${{ secrets.BRIGHTDATA_USERNAME }}
-          BRIGHTDATA_PASSWORD: ${{ secrets.BRIGHTDATA_PASSWORD }}
+          BRIGHTDATA_API_KEY: ${{ secrets.BRIGHTDATA_API_KEY }}
         run: |
           RESET_FLAG=""
           MAX_PAGES_FLAG=""
@@ -118,17 +111,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install Playwright browsers
-        run: |
-          python -m playwright install chromium
-          python -m playwright install-deps chromium
-
       - name: Crawl silver-coins
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-          BRIGHTDATA_HOST: ${{ secrets.BRIGHTDATA_HOST }}
-          BRIGHTDATA_USERNAME: ${{ secrets.BRIGHTDATA_USERNAME }}
-          BRIGHTDATA_PASSWORD: ${{ secrets.BRIGHTDATA_PASSWORD }}
+          BRIGHTDATA_API_KEY: ${{ secrets.BRIGHTDATA_API_KEY }}
         run: |
           RESET_FLAG=""
           MAX_PAGES_FLAG=""

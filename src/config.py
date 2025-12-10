@@ -123,15 +123,24 @@ class Config:
     SHEET_MASTER_BRITANNIA: str = "商品マスタ_Britannia"
     SHEET_MASTER_APMEX: str = "商品マスタ_APMEX"
 
-    # Bright Data Proxy設定
+    # Bright Data Proxy設定（レガシー）
     BRIGHTDATA_HOST: str = os.getenv("BRIGHTDATA_HOST", "")
     BRIGHTDATA_USERNAME: str = os.getenv("BRIGHTDATA_USERNAME", "")
     BRIGHTDATA_PASSWORD: str = os.getenv("BRIGHTDATA_PASSWORD", "")
+
+    # Bright Data Web Unlocker API設定
+    BRIGHTDATA_API_KEY: str = os.getenv("BRIGHTDATA_API_KEY", "")
+    BRIGHTDATA_ZONE: str = os.getenv("BRIGHTDATA_ZONE", "web_unlocker1")
 
     @classmethod
     def is_brightdata_enabled(cls) -> bool:
         """Bright Data Proxyが有効かどうかを返す"""
         return bool(cls.BRIGHTDATA_HOST and cls.BRIGHTDATA_USERNAME and cls.BRIGHTDATA_PASSWORD)
+
+    @classmethod
+    def is_brightdata_api_enabled(cls) -> bool:
+        """Bright Data Web Unlocker APIが有効かどうかを返す"""
+        return bool(cls.BRIGHTDATA_API_KEY)
 
     @classmethod
     def get_brightdata_proxy_url(cls) -> str:
