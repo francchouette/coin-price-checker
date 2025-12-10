@@ -65,16 +65,10 @@ class BritanniaCrawler:
     BASE_URL = "https://britanniacoincompany.com"
 
     # メインカテゴリ（これらの配下を全てクロール）
+    # 仕入れ対象として金貨・銀貨に絞る
     MAIN_CATEGORIES = [
-        "gold-coins",
-        "silver-coins",
-        "proof-sets",
-        "bu-coins",
-        "graded-coins",
-        "coin-sets",
-        "world-coins",
-        "best-value",
-        "bulk-coins",
+        "gold-coins",    # 金貨（約1400件）
+        "silver-coins",  # 銀貨（約400件）
     ]
 
     # 待機時間設定
