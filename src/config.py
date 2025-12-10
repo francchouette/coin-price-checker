@@ -132,6 +132,9 @@ class Config:
     BRIGHTDATA_API_KEY: str = os.getenv("BRIGHTDATA_API_KEY", "")
     BRIGHTDATA_ZONE: str = os.getenv("BRIGHTDATA_ZONE", "web_unlocker1")
 
+    # Bright Data Browser API設定
+    BRIGHTDATA_BROWSER_WS: str = os.getenv("BRIGHTDATA_BROWSER_WS", "")
+
     @classmethod
     def is_brightdata_enabled(cls) -> bool:
         """Bright Data Proxyが有効かどうかを返す"""
@@ -141,6 +144,11 @@ class Config:
     def is_brightdata_api_enabled(cls) -> bool:
         """Bright Data Web Unlocker APIが有効かどうかを返す"""
         return bool(cls.BRIGHTDATA_API_KEY)
+
+    @classmethod
+    def is_brightdata_browser_enabled(cls) -> bool:
+        """Bright Data Browser APIが有効かどうかを返す"""
+        return bool(cls.BRIGHTDATA_BROWSER_WS)
 
     @classmethod
     def get_brightdata_proxy_url(cls) -> str:

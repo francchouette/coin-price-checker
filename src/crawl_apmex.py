@@ -2,7 +2,7 @@
 APMEX 商品一覧クロール実行スクリプト
 
 商品一覧を取得してスプレッドシートに保存する。
-Bright Data Web Unlocker APIを使用してCloudflareをバイパスする。
+Bright Data Browser APIを使用してJavaScriptレンダリングを行う。
 """
 
 import sys
@@ -10,13 +10,14 @@ import logging
 import time
 import random
 import re
-import requests
+import asyncio
 from datetime import datetime, timezone, timedelta
 from bs4 import BeautifulSoup
 
 import gspread
 from google.auth import default
 from google.oauth2.service_account import Credentials
+from playwright.async_api import async_playwright
 
 from .config import Config
 from .crawlers.apmex import ApmexProduct
@@ -54,67 +55,69 @@ SHEET_HEADERS = [
 # 進捗管理シート名
 PROGRESS_SHEET_NAME = "クロール進捗_APMEX"
 
-# Bright Data Web Unlocker API エンドポイント
-BRIGHTDATA_API_URL = "https://api.brightdata.com/request"
 
+class BrightDataBrowserClient:
+    """Bright Data Browser APIクライアント（Playwright使用）"""
 
-class BrightDataClient:
-    """Bright Data Web Unlocker APIクライアント"""
+    def __init__(self, ws_endpoint: str):
+        self.ws_endpoint = ws_endpoint
+        self._playwright = None
+        self._browser = None
 
-    def __init__(self, api_key: str, zone: str = "web_unlocker1"):
-        self.api_key = api_key
-        self.zone = zone
-        self.session = requests.Session()
-        self.session.headers.update({
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        })
+    async def connect(self):
+        """ブラウザに接続"""
+        self._playwright = await async_playwright().start()
+        self._browser = await self._playwright.chromium.connect_over_cdp(self.ws_endpoint)
+        logger.info("Bright Data Browser APIに接続しました")
 
-    def fetch(self, url: str, timeout: int = 120) -> str:
+    async def close(self):
+        """ブラウザを閉じる"""
+        if self._browser:
+            await self._browser.close()
+        if self._playwright:
+            await self._playwright.stop()
+
+    async def fetch(self, url: str, wait_selector: str = None, timeout: int = 60000) -> str:
         """
-        URLのHTMLを取得する
+        URLのHTMLを取得する（JavaScript実行後）
 
         Args:
             url: 取得するURL
-            timeout: タイムアウト秒数
+            wait_selector: 待機するセレクタ
+            timeout: タイムアウト（ミリ秒）
 
         Returns:
             str: HTML文字列（失敗時は空文字列）
         """
+        page = None
         try:
-            # Web Unlocker APIでJSレンダリング後のHTMLを取得
-            # expectパラメータで商品要素の読み込みを待機
-            payload = {
-                "zone": self.zone,
-                "url": url,
-                "format": "raw",
-                "country": "us",
-                # 商品カードまたは商品リストが読み込まれるまで待機
-                "expect": [
-                    {"type": "selector", "value": ".mod-product-card"},
-                    {"type": "selector", "value": "[class*='product-item']"},
-                    {"type": "selector", "value": ".product-list"},
-                ]
-            }
+            context = await self._browser.new_context()
+            page = await context.new_page()
 
-            response = self.session.post(
-                BRIGHTDATA_API_URL,
-                json=payload,
-                timeout=timeout
-            )
+            # ページ遷移
+            await page.goto(url, timeout=timeout, wait_until="domcontentloaded")
 
-            if response.status_code == 200:
-                return response.text
-            else:
-                logger.error(f"Bright Data API エラー: {response.status_code} - {response.text[:200]}")
-                return ""
+            # 商品カードが読み込まれるまで待機
+            if wait_selector:
+                try:
+                    await page.wait_for_selector(wait_selector, timeout=30000)
+                except Exception:
+                    # セレクタが見つからなくても続行
+                    logger.warning(f"セレクタ '{wait_selector}' が見つかりませんでした")
 
-        except requests.Timeout:
-            logger.error(f"Bright Data API タイムアウト: {url}")
-            return ""
+            # 追加の待機（動的コンテンツ用）
+            await page.wait_for_timeout(3000)
+
+            # HTMLを取得
+            html = await page.content()
+            return html
+
         except Exception as e:
-            logger.error(f"Bright Data API 例外: {e}")
+            logger.error(f"Browser API エラー: {e}")
             return ""
+        finally:
+            if page:
+                await page.close()
 
 
 class ProgressTracker:
@@ -442,20 +445,20 @@ def has_next_page(html: str, current_page: int) -> bool:
         return False
 
 
-def run_incremental(category: str = None, reset: bool = False, max_pages: int = None):
-    """インクリメンタル方式でクロール実行"""
+async def run_incremental_async(category: str = None, reset: bool = False, max_pages: int = None):
+    """インクリメンタル方式でクロール実行（非同期）"""
     logger.info("=" * 60)
-    logger.info("APMEX 商品一覧クロール（Web Unlocker API方式）")
+    logger.info("APMEX 商品一覧クロール（Browser API方式）")
     logger.info("=" * 60)
 
     start_time = datetime.now()
 
-    # Web Unlocker API確認
-    if not Config.is_brightdata_api_enabled():
-        logger.error("BRIGHTDATA_API_KEY が設定されていません")
+    # Browser API確認
+    if not Config.is_brightdata_browser_enabled():
+        logger.error("BRIGHTDATA_BROWSER_WS が設定されていません")
         sys.exit(1)
 
-    logger.info("Bright Data Web Unlocker API: 有効")
+    logger.info("Bright Data Browser API: 有効")
 
     # 設定検証
     errors = Config.validate()
@@ -470,136 +473,123 @@ def run_incremental(category: str = None, reset: bool = False, max_pages: int = 
         logger.error("スプレッドシート接続に失敗")
         sys.exit(1)
 
-    # Bright Data クライアント
-    client = BrightDataClient(Config.BRIGHTDATA_API_KEY, Config.BRIGHTDATA_ZONE)
+    # Bright Data Browser クライアント
+    client = BrightDataBrowserClient(Config.BRIGHTDATA_BROWSER_WS)
+    await client.connect()
 
-    # カテゴリ設定
-    MAIN_CATEGORIES = [
-        {"slug": "25000/gold-coins", "name": "gold-coins"},
-        {"slug": "26000/silver-coins", "name": "silver-coins"},
-    ]
+    try:
+        # カテゴリ設定
+        MAIN_CATEGORIES = [
+            {"slug": "25000/gold-coins", "name": "gold-coins"},
+            {"slug": "26000/silver-coins", "name": "silver-coins"},
+        ]
 
-    if category:
-        MAIN_CATEGORIES = [c for c in MAIN_CATEGORIES if c["name"] == category]
+        if category:
+            MAIN_CATEGORIES = [c for c in MAIN_CATEGORIES if c["name"] == category]
 
-    total_new = 0
-    total_update = 0
+        total_new = 0
+        total_update = 0
 
-    BASE_URL = "https://www.apmex.com"
+        BASE_URL = "https://www.apmex.com"
+        WAIT_SELECTOR = ".mod-product-card, [class*='product-item'], .product-list"
 
-    for cat_info in MAIN_CATEGORIES:
-        cat_slug = cat_info["slug"]
-        cat_name = cat_info["name"]
-        logger.info(f"\n=== カテゴリ: {cat_name} ===")
+        for cat_info in MAIN_CATEGORIES:
+            cat_slug = cat_info["slug"]
+            cat_name = cat_info["name"]
+            logger.info(f"\n=== カテゴリ: {cat_name} ===")
 
-        if reset:
-            start_page = 1
-            logger.info("  進捗リセット: ページ1から開始")
-        else:
-            start_page = saver.get_start_page(cat_name)
-            if start_page > 1:
-                logger.info(f"  前回の続きから再開: ページ{start_page}から")
+            if reset:
+                start_page = 1
+                logger.info("  進捗リセット: ページ1から開始")
             else:
-                logger.info("  新規開始: ページ1から")
-
-        page_num = start_page
-        last_page = page_num
-
-        while True:
-            if max_pages and page_num > max_pages:
-                logger.info(f"  最大ページ数({max_pages})に達しました")
-                break
-
-            url = f"{BASE_URL}/category/{cat_slug}" if page_num == 1 else f"{BASE_URL}/category/{cat_slug}?page={page_num}"
-
-            try:
-                logger.info(f"  ページ{page_num}を取得中: {url}")
-
-                # Web Unlocker APIでHTML取得
-                html = client.fetch(url)
-
-                if not html:
-                    logger.error(f"  HTMLの取得に失敗しました")
-                    break
-
-                # デバッグ: HTMLの長さと内容の一部を出力
-                logger.info(f"  HTML取得成功: {len(html)} bytes")
-                logger.debug(f"  HTML先頭500文字: {html[:500]}")
-
-                # 商品セレクタの存在確認
-                if "mod-product-card" in html:
-                    logger.info("  ✓ mod-product-card クラスを検出")
-                elif "product-card" in html:
-                    logger.info("  ✓ product-card クラスを検出")
+                start_page = saver.get_start_page(cat_name)
+                if start_page > 1:
+                    logger.info(f"  前回の続きから再開: ページ{start_page}から")
                 else:
-                    logger.warning("  ✗ 商品カードクラスが見つかりません")
-                    # HTMLの構造を確認するためタイトルを出力
-                    from bs4 import BeautifulSoup as BS
-                    soup = BS(html, 'html.parser')
-                    title = soup.find('title')
-                    logger.info(f"  ページタイトル: {title.text if title else 'なし'}")
-                    # 主要なクラス名を出力
-                    classes = set()
-                    for elem in soup.find_all(class_=True)[:100]:
-                        classes.update(elem.get('class', []))
-                    logger.info(f"  検出されたクラス(最初の100要素): {sorted(classes)}")
-                    # 商品リンクの存在確認
-                    product_links = soup.select('a[href*="/product/"]')
-                    logger.info(f"  /product/ リンク数: {len(product_links)}")
-                    if product_links:
-                        logger.info(f"  サンプルリンク: {product_links[0].get('href')}")
-                        # 親要素のクラスを確認
-                        for i, link in enumerate(product_links[:3]):
-                            parent = link.parent
-                            grandparent = parent.parent if parent else None
-                            logger.info(f"  リンク{i+1}の親: {parent.name if parent else 'なし'} class={parent.get('class') if parent else 'なし'}")
-                            logger.info(f"  リンク{i+1}の祖父: {grandparent.name if grandparent else 'なし'} class={grandparent.get('class') if grandparent else 'なし'}")
-                    # HTMLの一部を出力（先頭1000文字）
-                    logger.info(f"  HTML先頭1000文字: {html[:1000]}")
+                    logger.info("  新規開始: ページ1から")
 
-                # Cloudflareチャレンジページかどうか確認
-                if "Just a moment" in html or "challenge-platform" in html:
-                    logger.error(f"  Cloudflareチャレンジが解決されませんでした")
+            page_num = start_page
+            last_page = page_num
+
+            while True:
+                if max_pages and page_num > max_pages:
+                    logger.info(f"  最大ページ数({max_pages})に達しました")
                     break
 
-                # 商品をパース
-                timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
-                products = parse_html_products(html, cat_name, timestamp, BASE_URL)
+                url = f"{BASE_URL}/category/{cat_slug}" if page_num == 1 else f"{BASE_URL}/category/{cat_slug}?page={page_num}"
 
-                if not products:
-                    logger.info(f"  ページ{page_num}: 商品なし - 終了")
+                try:
+                    logger.info(f"  ページ{page_num}を取得中: {url}")
+
+                    # Browser APIでHTML取得（JSレンダリング後）
+                    html = await client.fetch(url, wait_selector=WAIT_SELECTOR)
+
+                    if not html:
+                        logger.error(f"  HTMLの取得に失敗しました")
+                        break
+
+                    # デバッグ: HTMLの長さを出力
+                    logger.info(f"  HTML取得成功: {len(html)} bytes")
+
+                    # 商品セレクタの存在確認
+                    if "mod-product-card" in html:
+                        logger.info("  ✓ mod-product-card クラスを検出")
+                    elif "product-card" in html:
+                        logger.info("  ✓ product-card クラスを検出")
+                    else:
+                        logger.warning("  ✗ 商品カードクラスが見つかりません")
+                        soup = BeautifulSoup(html, 'html.parser')
+                        title = soup.find('title')
+                        logger.info(f"  ページタイトル: {title.text if title else 'なし'}")
+
+                    # Cloudflareチャレンジページかどうか確認
+                    if "Just a moment" in html or "challenge-platform" in html:
+                        logger.error(f"  Cloudflareチャレンジが解決されませんでした")
+                        break
+
+                    # 商品をパース
+                    timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+                    products = parse_html_products(html, cat_name, timestamp, BASE_URL)
+
+                    if not products:
+                        logger.info(f"  ページ{page_num}: 商品なし - 終了")
+                        break
+
+                    logger.info(f"  ページ{page_num}: {len(products)}件を取得")
+
+                    # スプレッドシートに保存
+                    new_count, update_count = saver.save_products(products)
+                    total_new += new_count
+                    total_update += update_count
+                    logger.info(f"    → 保存完了: 新規 {new_count}件, 更新 {update_count}件")
+
+                    # 進捗を更新
+                    saver.update_progress(cat_name, page_num)
+                    last_page = page_num
+
+                    # 次ページがあるかチェック
+                    if not has_next_page(html, page_num):
+                        logger.info(f"  最終ページ: {page_num}")
+                        saver.mark_category_complete(cat_name, page_num)
+                        break
+
+                    page_num += 1
+
+                    # レート制限対策
+                    await asyncio.sleep(random.uniform(2.0, 4.0))
+
+                except Exception as e:
+                    logger.error(f"ページ取得エラー: {url} - {e}")
+                    import traceback
+                    traceback.print_exc()
+                    saver.update_progress(cat_name, last_page)
                     break
 
-                logger.info(f"  ページ{page_num}: {len(products)}件を取得")
+            # カテゴリ間で待機
+            await asyncio.sleep(2)
 
-                # スプレッドシートに保存
-                new_count, update_count = saver.save_products(products)
-                total_new += new_count
-                total_update += update_count
-                logger.info(f"    → 保存完了: 新規 {new_count}件, 更新 {update_count}件")
-
-                # 進捗を更新
-                saver.update_progress(cat_name, page_num)
-                last_page = page_num
-
-                # 次ページがあるかチェック
-                if not has_next_page(html, page_num):
-                    logger.info(f"  最終ページ: {page_num}")
-                    saver.mark_category_complete(cat_name, page_num)
-                    break
-
-                page_num += 1
-
-                # レート制限対策
-                time.sleep(random.uniform(2.0, 4.0))
-
-            except Exception as e:
-                logger.error(f"ページ取得エラー: {url} - {e}")
-                saver.update_progress(cat_name, last_page)
-                break
-
-        # カテゴリ間で待機
-        time.sleep(2)
+    finally:
+        await client.close()
 
     # 完了
     elapsed = (datetime.now() - start_time).total_seconds()
@@ -609,6 +599,11 @@ def run_incremental(category: str = None, reset: bool = False, max_pages: int = 
     logger.info(f"  更新: {total_update}件")
     logger.info(f"  所要時間: {elapsed:.1f}秒（{elapsed/60:.1f}分）")
     logger.info("=" * 60)
+
+
+def run_incremental(category: str = None, reset: bool = False, max_pages: int = None):
+    """インクリメンタル方式でクロール実行（同期ラッパー）"""
+    asyncio.run(run_incremental_async(category=category, reset=reset, max_pages=max_pages))
 
 
 if __name__ == "__main__":
