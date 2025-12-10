@@ -64,11 +64,19 @@ class BrightDataBrowserClient:
         self._playwright = None
         self._browser = None
 
-    async def connect(self):
+    async def connect(self, timeout: int = 120000):
         """ブラウザに接続"""
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.connect_over_cdp(self.ws_endpoint)
-        logger.info("Bright Data Browser APIに接続しました")
+        logger.info(f"Bright Data Browser APIに接続中... (タイムアウト: {timeout/1000}秒)")
+        try:
+            self._browser = await self._playwright.chromium.connect_over_cdp(
+                self.ws_endpoint,
+                timeout=timeout
+            )
+            logger.info("Bright Data Browser APIに接続しました")
+        except Exception as e:
+            logger.error(f"Browser API接続エラー: {e}")
+            raise
 
     async def close(self):
         """ブラウザを閉じる"""
