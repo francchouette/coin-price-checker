@@ -67,6 +67,10 @@ def run():
         logger.error("スプレッドシートへの接続に失敗しました")
         sys.exit(1)
 
+    # カラーミー商品一覧をシートに同期
+    if Config.is_colorme_enabled():
+        sync_colorme_to_sheet(sheet_client)
+
     # カラーミー商品管理シートから対象を取得
     colorme_products = sheet_client.get_colorme_products()
     if not colorme_products:
@@ -241,6 +245,36 @@ def run():
     logger.info(f"  - 処理件数: {len(price_records)}件")
     logger.info(f"  - アラート: {len(alerts)}件")
     logger.info("=" * 60)
+
+
+def sync_colorme_to_sheet(sheet_client: SpreadsheetClient):
+    """
+    カラーミーAPIから商品一覧を取得し、シートに同期する
+
+    - 新規商品は追加（取得元URLは空欄）
+    - 既存商品は商品名を更新
+    - シートにあってAPIにない商品はそのまま保持
+
+    Args:
+        sheet_client: スプレッドシートクライアント
+    """
+    logger.info("カラーミー商品一覧をシートに同期中...")
+
+    colorme_client = ColorMeClient(dry_run=True)
+    api_products = colorme_client.get_all_products()
+
+    if not api_products:
+        logger.warning("カラーミーAPIから商品を取得できませんでした")
+        return
+
+    result = sheet_client.sync_colorme_products(api_products)
+
+    logger.info(
+        f"カラーミー商品同期完了: "
+        f"追加 {result['added']}件, "
+        f"更新 {result['updated']}件, "
+        f"変更なし {result['unchanged']}件"
+    )
 
 
 def scrape_urls(urls: list[str]) -> list[ScrapedData]:
