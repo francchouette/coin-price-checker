@@ -85,18 +85,25 @@ def save_to_spreadsheet(products: list[BritanniaProduct]) -> bool:
 
         # シートを取得または作成
         sheet_name = Config.SHEET_MASTER_BRITANNIA
+        is_new_sheet = False
         try:
             sheet = spreadsheet.worksheet(sheet_name)
             logger.info(f"既存シート '{sheet_name}' を使用")
         except gspread.WorksheetNotFound:
             sheet = spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=20)
+            is_new_sheet = True
             logger.info(f"新規シート '{sheet_name}' を作成")
 
-        # 既存データを取得
+        # 新規シートまたは空シートの場合はヘッダーを追加
         existing_data = sheet.get_all_values()
+        if is_new_sheet or not existing_data:
+            sheet.append_row(SHEET_HEADERS, value_input_option='RAW')
+            logger.info("ヘッダー行を追加")
+            existing_data = [SHEET_HEADERS]
+
         existing_urls = set()
 
-        if existing_data and len(existing_data) > 1:
+        if len(existing_data) > 1:
             # ヘッダー行をスキップして既存URLを取得
             for row in existing_data[1:]:
                 if row:
@@ -142,11 +149,6 @@ def save_to_spreadsheet(products: list[BritanniaProduct]) -> bool:
             else:
                 # 新規追加
                 new_rows.append(row_data)
-
-        # ヘッダーがない場合は追加
-        if not existing_data:
-            sheet.append_row(SHEET_HEADERS, value_input_option='RAW')
-            logger.info("ヘッダー行を追加")
 
         # 既存行を更新
         if update_rows:
