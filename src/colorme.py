@@ -100,6 +100,55 @@ class ColorMeClient:
                     logger.warning(f"価格変換エラー (ID: {product_id}): {product['price']} - {e}")
         return prices
 
+    def get_all_products(self, limit: int = 100) -> list[dict]:
+        """
+        全商品一覧を取得する
+
+        Args:
+            limit: 取得件数上限
+
+        Returns:
+            list: 商品情報のリスト
+        """
+        if not self.access_token:
+            logger.error("カラーミーアクセストークンが設定されていません")
+            return []
+
+        try:
+            products = []
+            offset = 0
+
+            while True:
+                response = requests.get(
+                    f"{self.API_BASE}/products.json",
+                    headers=self._headers(),
+                    params={"limit": min(limit, 100), "offset": offset},
+                    timeout=30
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                batch = data.get("products", [])
+                if not batch:
+                    break
+
+                products.extend(batch)
+                logger.info(f"商品取得: {len(products)}件")
+
+                if len(batch) < 100:
+                    break
+
+                offset += len(batch)
+                if len(products) >= limit:
+                    break
+
+            logger.info(f"全商品取得完了: {len(products)}件")
+            return products
+
+        except requests.RequestException as e:
+            logger.error(f"商品一覧取得エラー: {e}")
+            return []
+
     def update_product(self, product_id: int, updates: dict) -> bool:
         """
         商品情報を更新する
@@ -198,16 +247,22 @@ class ColorMeClient:
             # カラーミーの現在価格
             colorme_current_price = current_prices.get(product.product_id, 0)
 
-            # 商品ごとの為替レートを取得
-            rate_key = f"{product.source_currency}_{product.exchange_type}"
-            exchange_rate = exchange_rates.get(rate_key)
+            # JPYの場合は為替レート不要（1:1）
+            if product.source_currency == "JPY":
+                exchange_rate = 1.0
+                exchange_rate_display = ""  # シートには空白を記録
+            else:
+                # 商品ごとの為替レートを取得
+                rate_key = f"{product.source_currency}_{product.exchange_type}"
+                exchange_rate = exchange_rates.get(rate_key)
+                exchange_rate_display = exchange_rate
 
-            if not exchange_rate:
-                logger.warning(
-                    f"スキップ: {product.name} - 為替レートなし ({rate_key})"
-                )
-                result["skipped"] += 1
-                continue
+                if not exchange_rate:
+                    logger.warning(
+                        f"スキップ: {product.name} - 為替レートなし ({rate_key})"
+                    )
+                    result["skipped"] += 1
+                    continue
 
             # 新価格を計算: 取得価格 × 為替レート × 枚数 × マージン率
             new_price = int(
@@ -218,14 +273,23 @@ class ColorMeClient:
             price_diff = new_price - colorme_current_price
 
             # 価格情報をログ出力
-            logger.info(
-                f"[価格計算] {product.name}\n"
-                f"    カラーミー現在価格: {colorme_current_price:,}円\n"
-                f"    取得元価格: {product.source_currency} {source_price:,.2f}\n"
-                f"    為替レート: {exchange_rate:.2f} ({product.exchange_type})\n"
-                f"    計算価格（反映候補）: {new_price:,}円\n"
-                f"    差額: {price_diff:+,}円"
-            )
+            if product.source_currency == "JPY":
+                logger.info(
+                    f"[価格計算] {product.name}\n"
+                    f"    カラーミー現在価格: {colorme_current_price:,}円\n"
+                    f"    取得元価格: {source_price:,.0f}円\n"
+                    f"    計算価格（反映候補）: {new_price:,}円\n"
+                    f"    差額: {price_diff:+,}円"
+                )
+            else:
+                logger.info(
+                    f"[価格計算] {product.name}\n"
+                    f"    カラーミー現在価格: {colorme_current_price:,}円\n"
+                    f"    取得元価格: {product.source_currency} {source_price:,.2f}\n"
+                    f"    為替レート: {exchange_rate:.2f} ({product.exchange_type})\n"
+                    f"    計算価格（反映候補）: {new_price:,}円\n"
+                    f"    差額: {price_diff:+,}円"
+                )
 
             # 更新内容を構築
             updates = {}
@@ -258,13 +322,13 @@ class ColorMeClient:
                     updates["display_state"] = "hidden"
                     log_parts.append("表示: 非表示")
 
-            # 計算結果を記録
+            # 計算結果を記録（JPYの場合は為替レートを空白に）
             calc_result = {
                 "product_id": product.product_id,
                 "product_name": product.name,
                 "colorme_price": colorme_current_price,
                 "exchange_type": product.exchange_type,
-                "exchange_rate": exchange_rate,
+                "exchange_rate": exchange_rate_display,  # JPYの場合は空白
                 "source_price": source_price,
                 "source_currency": product.source_currency,
                 "calculated_price": new_price,

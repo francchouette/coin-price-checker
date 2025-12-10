@@ -650,6 +650,118 @@ class SpreadsheetClient:
             logger.error(f"カラーミー商品管理シートの更新エラー: {e}")
             return False
 
+    def sync_colorme_products(self, api_products: list[dict]) -> dict:
+        """
+        カラーミーAPIから取得した商品一覧をシートに同期する
+
+        - 新規商品は追加
+        - 既存商品は商品名を更新
+        - シートにあってAPIにない商品はそのまま（削除しない）
+
+        Args:
+            api_products: カラーミーAPIから取得した商品一覧
+
+        Returns:
+            dict: {"added": int, "updated": int, "unchanged": int}
+        """
+        if not self._spreadsheet:
+            logger.error("スプレッドシートに接続されていません")
+            return {"added": 0, "updated": 0, "unchanged": 0}
+
+        result = {"added": 0, "updated": 0, "unchanged": 0}
+
+        try:
+            sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME)
+            all_data = sheet.get_all_values()
+
+            # 既存の商品ID -> 行番号・商品名のマッピング
+            existing_products = {}
+            for i, row in enumerate(all_data[1:], start=2):  # ヘッダーをスキップ
+                if len(row) >= 2 and row[0].strip():
+                    try:
+                        product_id = int(row[0].strip())
+                        existing_products[product_id] = {
+                            "row": i,
+                            "name": row[1].strip() if len(row) > 1 else ""
+                        }
+                    except ValueError:
+                        continue
+
+            # 更新・追加データを準備
+            updates = []
+            new_rows = []
+
+            for product in api_products:
+                product_id = product.get("id")
+                product_name = product.get("name", "")
+
+                if not product_id:
+                    continue
+
+                if product_id in existing_products:
+                    # 既存商品：商品名が変わっていれば更新
+                    existing = existing_products[product_id]
+                    if existing["name"] != product_name:
+                        updates.append({
+                            'range': f'B{existing["row"]}',
+                            'values': [[product_name]]
+                        })
+                        result["updated"] += 1
+                        logger.info(f"更新: {product_id} - {existing['name']} → {product_name}")
+                    else:
+                        result["unchanged"] += 1
+                else:
+                    # 新規商品：行を追加
+                    # A: 商品ID, B: 商品名, C-W: 空（手動入力待ち）
+                    new_rows.append([
+                        str(product_id),  # A: カラーミー商品ID
+                        product_name,      # B: 商品名
+                        "",                # C: 取得元URL
+                        "1",               # D: 枚数
+                        "1.1",             # E: マージン率
+                        "OFF",             # F: 価格更新
+                        "OFF",             # G: 在庫連動
+                        "10",              # H: 在庫数量
+                        "",                # I: 表示連動
+                        "",                # J: 現在価格
+                        "",                # K: 取得元価格
+                        "USD",             # L: 取得通貨（デフォルト）
+                        "クレカ",           # M: 為替種類（デフォルト）
+                        "",                # N: 為替レート
+                        "",                # O: 本体計算価格
+                        "",                # P: 送料
+                        "",                # Q: 諸経費
+                        "",                # R: 販売価格（数式で入力）
+                        "",                # S: 原価（諸経費込み）
+                        "",                # T: 販売粗利
+                        "",                # U: 販売粗利率（数式で入力）
+                        "",                # V: 差額
+                        ""                 # W: 最終更新
+                    ])
+                    result["added"] += 1
+                    logger.info(f"追加: {product_id} - {product_name}")
+
+            # 既存行の更新
+            if updates:
+                sheet.batch_update(updates)
+
+            # 新規行の追加
+            if new_rows:
+                sheet.append_rows(new_rows, value_input_option='RAW')
+
+            logger.info(
+                f"カラーミー商品同期完了: "
+                f"追加 {result['added']}件, "
+                f"更新 {result['updated']}件, "
+                f"変更なし {result['unchanged']}件"
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"カラーミー商品同期エラー: {e}")
+            return result
+
     def update_dashboard(self, records: list[PriceRecord]) -> bool:
         """
         ダッシュボードシートを更新する（最新の価格のみ）
