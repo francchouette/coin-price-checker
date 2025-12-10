@@ -531,9 +531,16 @@ def run_incremental(category: str = None, reset: bool = False, max_pages: int = 
                     logger.info(f"  ページタイトル: {title.text if title else 'なし'}")
                     # 主要なクラス名を出力
                     classes = set()
-                    for elem in soup.find_all(class_=True)[:50]:
+                    for elem in soup.find_all(class_=True)[:100]:
                         classes.update(elem.get('class', []))
-                    logger.info(f"  検出されたクラス(最初の50要素): {sorted(classes)[:20]}")
+                    logger.info(f"  検出されたクラス(最初の100要素): {sorted(classes)}")
+                    # 商品リンクの存在確認
+                    product_links = soup.select('a[href*="/product/"]')
+                    logger.info(f"  /product/ リンク数: {len(product_links)}")
+                    if product_links:
+                        logger.info(f"  サンプルリンク: {product_links[0].get('href')}")
+                    # HTMLの一部を出力（先頭1000文字）
+                    logger.info(f"  HTML先頭1000文字: {html[:1000]}")
 
                 # Cloudflareチャレンジページかどうか確認
                 if "Just a moment" in html or "challenge-platform" in html:
