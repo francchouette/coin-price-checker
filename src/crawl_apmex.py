@@ -431,11 +431,21 @@ def run_incremental(category: str = None, reset: bool = False, max_pages: int = 
                 try:
                     logger.info(f"  ページ{page_num}を取得中: {url}")
 
-                    response = page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                    # Proxy経由は遅いのでタイムアウトを長めに設定
+                    response = page.goto(url, wait_until="domcontentloaded", timeout=120000)
 
                     if response and response.status == 403:
                         logger.error(f"  403 Forbidden - ボット検出されました")
                         break
+
+                    # Cloudflareチャレンジを待つ（最大30秒）
+                    page.wait_for_timeout(10000)
+
+                    # Cloudflareチャレンジページかどうか確認
+                    page_content = page.content()
+                    if "Just a moment" in page_content or "challenge" in page_content.lower():
+                        logger.info("  Cloudflareチャレンジを検出、待機中...")
+                        page.wait_for_timeout(15000)
 
                     page.wait_for_timeout(5000)
 
