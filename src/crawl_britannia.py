@@ -3,15 +3,20 @@ Britannia Coin Company 商品一覧クロール実行スクリプト
 
 商品一覧を取得してスプレッドシートに保存する。
 ページごとに保存することで、途中で中断しても取得済みデータは保持される。
+進捗を記録し、中断した場所から再開可能。
 """
 
 import sys
 import logging
+import time
+import random
+import re
 from datetime import datetime, timezone, timedelta
 
 import gspread
 from google.auth import default
 from google.oauth2.service_account import Credentials
+from playwright.sync_api import sync_playwright
 
 from .config import Config
 from .crawlers.britannia import BritanniaProduct
@@ -45,15 +50,108 @@ SHEET_HEADERS = [
     "取得日時",
 ]
 
+# 進捗管理シート名
+PROGRESS_SHEET_NAME = "クロール進捗_Britannia"
+
+
+class ProgressTracker:
+    """クロール進捗管理クラス"""
+
+    def __init__(self, spreadsheet):
+        self._spreadsheet = spreadsheet
+        self._sheet = None
+        self._progress = {}  # {category: last_page}
+
+    def connect(self) -> bool:
+        """進捗シートに接続"""
+        try:
+            try:
+                self._sheet = self._spreadsheet.worksheet(PROGRESS_SHEET_NAME)
+                logger.info(f"進捗シート '{PROGRESS_SHEET_NAME}' を使用")
+            except gspread.WorksheetNotFound:
+                self._sheet = self._spreadsheet.add_worksheet(
+                    title=PROGRESS_SHEET_NAME, rows=100, cols=5
+                )
+                self._sheet.append_row(
+                    ["カテゴリ", "最終ページ", "状態", "更新日時"],
+                    value_input_option='RAW'
+                )
+                logger.info(f"進捗シート '{PROGRESS_SHEET_NAME}' を作成")
+
+            # 既存の進捗を読み込み
+            data = self._sheet.get_all_values()
+            if len(data) > 1:
+                for row in data[1:]:
+                    if len(row) >= 3 and row[0]:
+                        category = row[0]
+                        last_page = int(row[1]) if row[1].isdigit() else 0
+                        status = row[2] if len(row) > 2 else ""
+                        # 完了していないカテゴリのみ進捗を記録
+                        if status != "完了":
+                            self._progress[category] = last_page
+
+            return True
+        except Exception as e:
+            logger.error(f"進捗シート接続エラー: {e}")
+            return False
+
+    def get_start_page(self, category: str) -> int:
+        """カテゴリの開始ページを取得"""
+        # 前回の最終ページの次から開始
+        last_page = self._progress.get(category, 0)
+        return last_page + 1 if last_page > 0 else 1
+
+    def update_progress(self, category: str, page: int, status: str = "進行中"):
+        """進捗を更新"""
+        try:
+            timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+
+            # 既存の行を探す
+            data = self._sheet.get_all_values()
+            row_num = None
+            for i, row in enumerate(data[1:], start=2):
+                if row and row[0] == category:
+                    row_num = i
+                    break
+
+            row_data = [category, str(page), status, timestamp]
+
+            if row_num:
+                # 更新
+                self._sheet.update(f'A{row_num}:D{row_num}', [row_data], value_input_option='RAW')
+            else:
+                # 新規追加
+                self._sheet.append_row(row_data, value_input_option='RAW')
+
+            self._progress[category] = page
+
+        except Exception as e:
+            logger.warning(f"進捗更新エラー: {e}")
+
+    def mark_complete(self, category: str, total_pages: int):
+        """カテゴリ完了をマーク"""
+        self.update_progress(category, total_pages, "完了")
+        # 完了したカテゴリは進捗から削除（次回は最初から）
+        if category in self._progress:
+            del self._progress[category]
+
+    def reset_progress(self, category: str):
+        """進捗をリセット"""
+        self.update_progress(category, 0, "リセット")
+        if category in self._progress:
+            del self._progress[category]
+
 
 class SpreadsheetSaver:
     """スプレッドシート保存クラス（インクリメンタル保存対応）"""
 
     def __init__(self):
         self._client = None
+        self._spreadsheet = None
         self._sheet = None
         self._existing_urls = set()
         self._url_to_row = {}
+        self._progress_tracker = None
 
     def connect(self) -> bool:
         """スプレッドシートに接続"""
@@ -72,15 +170,15 @@ class SpreadsheetSaver:
                 logger.info("ADC認証を使用")
 
             self._client = gspread.authorize(creds)
-            spreadsheet = self._client.open_by_key(Config.SPREADSHEET_ID)
+            self._spreadsheet = self._client.open_by_key(Config.SPREADSHEET_ID)
 
-            # シートを取得または作成
+            # 商品シートを取得または作成
             sheet_name = Config.SHEET_MASTER_BRITANNIA
             try:
-                self._sheet = spreadsheet.worksheet(sheet_name)
+                self._sheet = self._spreadsheet.worksheet(sheet_name)
                 logger.info(f"既存シート '{sheet_name}' を使用")
             except gspread.WorksheetNotFound:
-                self._sheet = spreadsheet.add_worksheet(title=sheet_name, rows=5000, cols=20)
+                self._sheet = self._spreadsheet.add_worksheet(title=sheet_name, rows=5000, cols=20)
                 logger.info(f"新規シート '{sheet_name}' を作成")
 
             # 既存データを読み込み
@@ -98,11 +196,33 @@ class SpreadsheetSaver:
                         self._url_to_row[row[0]] = i
 
             logger.info(f"既存商品数: {len(self._existing_urls)}件")
+
+            # 進捗トラッカーを初期化
+            self._progress_tracker = ProgressTracker(self._spreadsheet)
+            if not self._progress_tracker.connect():
+                logger.warning("進捗トラッカーの初期化に失敗（続行します）")
+
             return True
 
         except Exception as e:
             logger.error(f"スプレッドシート接続エラー: {e}")
             return False
+
+    def get_start_page(self, category: str) -> int:
+        """カテゴリの開始ページを取得"""
+        if self._progress_tracker:
+            return self._progress_tracker.get_start_page(category)
+        return 1
+
+    def update_progress(self, category: str, page: int):
+        """進捗を更新"""
+        if self._progress_tracker:
+            self._progress_tracker.update_progress(category, page)
+
+    def mark_category_complete(self, category: str, total_pages: int):
+        """カテゴリ完了をマーク"""
+        if self._progress_tracker:
+            self._progress_tracker.mark_complete(category, total_pages)
 
     def save_products(self, products: list[BritanniaProduct]) -> tuple[int, int]:
         """
@@ -167,20 +287,18 @@ class SpreadsheetSaver:
         return len(new_rows), update_count
 
 
-def run_incremental(category: str = None):
+def run_incremental(category: str = None, reset: bool = False):
     """
     インクリメンタル方式でクロール実行
 
     ページごとにスプレッドシートに保存することで、
     途中で中断しても取得済みデータは保持される。
+    進捗を記録し、中断した場所から再開可能。
 
     Args:
         category: 特定カテゴリのみ取得する場合に指定
+        reset: 進捗をリセットして最初から取得する場合True
     """
-    import time
-    import random
-    from playwright.sync_api import sync_playwright
-
     logger.info("=" * 60)
     logger.info("Britannia Coin Company 商品一覧クロール（インクリメンタル方式）")
     logger.info("=" * 60)
@@ -226,7 +344,20 @@ def run_incremental(category: str = None):
 
         for cat in categories:
             logger.info(f"\n=== カテゴリ: {cat} ===")
-            page_num = 1
+
+            # 開始ページを取得（リセットの場合は1から）
+            if reset:
+                start_page = 1
+                logger.info("  進捗リセット: ページ1から開始")
+            else:
+                start_page = saver.get_start_page(cat)
+                if start_page > 1:
+                    logger.info(f"  前回の続きから再開: ページ{start_page}から")
+                else:
+                    logger.info("  新規開始: ページ1から")
+
+            page_num = start_page
+            last_page = page_num
 
             while True:
                 url = f"{BASE_URL}/buy-coins/{cat}/" if page_num == 1 else f"{BASE_URL}/buy-coins/{cat}/?pg={page_num}"
@@ -272,7 +403,6 @@ def run_incremental(category: str = None):
                                 btn_text = buy_btn.inner_text().strip()
                                 if "buy" in btn_text.lower():
                                     in_stock = True
-                                    import re
                                     match = re.search(r'£([\d,]+\.?\d*)', btn_text)
                                     if match:
                                         price = float(match.group(1).replace(',', ''))
@@ -308,10 +438,16 @@ def run_incremental(category: str = None):
                         total_update += update_count
                         logger.info(f"    → 保存完了: 新規 {new_count}件, 更新 {update_count}件")
 
+                    # 進捗を更新
+                    saver.update_progress(cat, page_num)
+                    last_page = page_num
+
                     # 次ページがあるかチェック
                     next_link = page.query_selector(f"a[href*='pg={page_num + 1}']")
                     if not next_link:
                         logger.info(f"  最終ページ: {page_num}")
+                        # カテゴリ完了をマーク
+                        saver.mark_category_complete(cat, page_num)
                         break
 
                     page_num += 1
@@ -319,6 +455,8 @@ def run_incremental(category: str = None):
 
                 except Exception as e:
                     logger.error(f"ページ取得エラー: {url} - {e}")
+                    # エラー時も進捗を保存（次回はここから再開）
+                    saver.update_progress(cat, last_page)
                     break
 
             # カテゴリ間で少し待機
@@ -338,9 +476,14 @@ def run_incremental(category: str = None):
 
 if __name__ == "__main__":
     # --category=xxx で特定カテゴリのみ
+    # --reset で進捗をリセットして最初から
     category = None
+    reset = False
+
     for arg in sys.argv:
         if arg.startswith("--category="):
             category = arg.split("=")[1]
+        elif arg == "--reset":
+            reset = True
 
-    run_incremental(category=category)
+    run_incremental(category=category, reset=reset)

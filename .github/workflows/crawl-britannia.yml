@@ -17,6 +17,14 @@ on:
           - 'all'
           - 'gold-coins'
           - 'silver-coins'
+      reset:
+        description: '進捗をリセットして最初から取得'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 jobs:
   # 金貨カテゴリ
@@ -60,7 +68,11 @@ jobs:
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
         run: |
-          python -m src.crawl_britannia --category=gold-coins
+          RESET_FLAG=""
+          if [ "${{ github.event.inputs.reset }}" = "true" ]; then
+            RESET_FLAG="--reset"
+          fi
+          python -m src.crawl_britannia --category=gold-coins $RESET_FLAG
 
   # 銀貨カテゴリ
   crawl-silver:
@@ -103,7 +115,11 @@ jobs:
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
         run: |
-          python -m src.crawl_britannia --category=silver-coins
+          RESET_FLAG=""
+          if [ "${{ github.event.inputs.reset }}" = "true" ]; then
+            RESET_FLAG="--reset"
+          fi
+          python -m src.crawl_britannia --category=silver-coins $RESET_FLAG
 
   # 完了通知
   notify:
