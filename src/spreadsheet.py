@@ -421,7 +421,7 @@ class SpreadsheetClient:
         """
         カラーミー商品管理シートから商品リストを取得する
 
-        シート列（入力項目 → 計算結果の順）:
+        シート列（入力項目）:
         A: カラーミー商品ID (0)
         B: 商品名 (1)
         C: 取得元URL (2)
@@ -431,11 +431,11 @@ class SpreadsheetClient:
         G: 在庫連動 (6) - ON/OFF
         H: 在庫数量 (7)
         I: 表示連動 (8) - 連動/表示/非表示/変更しない
+        J: 現在価格 (9) - カラーミーAPIから取得（参照用）
+        K: 取得元価格 (10) - 計算結果
+        L: 取得通貨 (11) - USD, SGD, EUR等 ★入力項目★
+        M: 為替種類 (12) - クレカ, Wise ★入力項目★
         --- 以下は計算結果（自動更新） ---
-        J: 現在価格 (9) - カラーミーAPIから取得
-        K: 取得元価格 (10)
-        L: 取得通貨 (11) - USD, SGD, EUR等
-        M: 為替種類 (12) - クレカ, Wise
         N: 為替レート (13)
         O: 計算価格 (14)
         P: 差額 (15)
@@ -549,11 +549,9 @@ class SpreadsheetClient:
         """
         カラーミー商品管理シートに計算結果を更新する
 
-        シート列（計算結果部分）:
+        更新する列（L列「取得通貨」とM列「為替種類」は入力項目なので更新しない）:
         J: 現在価格（カラーミーAPIから取得）
         K: 取得元価格
-        L: 取得通貨（USD/SGD等）
-        M: 為替種類（クレカ/Wise）
         N: 為替レート
         O: 計算価格（反映候補）
         P: 差額
@@ -591,14 +589,19 @@ class SpreadsheetClient:
             for r in results:
                 row_num = id_to_row.get(r["product_id"])
                 if row_num:
-                    # J-Q列: 現在価格, 取得元価格, 取得通貨, 為替種類, 為替レート, 計算価格, 差額, 最終更新
+                    # J-K列: 現在価格, 取得元価格
                     updates.append({
-                        'range': f'J{row_num}:Q{row_num}',
+                        'range': f'J{row_num}:K{row_num}',
                         'values': [[
                             r["colorme_price"],
                             r["source_price"],
-                            r["source_currency"],
-                            r["exchange_type"],
+                        ]]
+                    })
+                    # N-Q列: 為替レート, 計算価格, 差額, 最終更新
+                    # （L列「取得通貨」とM列「為替種類」はスキップ）
+                    updates.append({
+                        'range': f'N{row_num}:Q{row_num}',
+                        'values': [[
                             r["exchange_rate"],
                             r["calculated_price"],
                             r["price_diff"],

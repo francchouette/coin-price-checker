@@ -75,6 +75,13 @@ def run():
 
     # 重複を除いたURLリストを作成
     unique_urls = list(set(p.source_url for p in colorme_products if p.source_url))
+
+    # URL → 指定通貨のマッピング（L列で指定された通貨を使用）
+    url_to_currency = {}
+    for p in colorme_products:
+        if p.source_url and p.source_currency:
+            url_to_currency[p.source_url] = p.source_currency
+
     logger.info(f"スクレイピング対象URL: {len(unique_urls)}件（カラーミー商品: {len(colorme_products)}件）")
 
     # アラート閾値を取得
@@ -114,13 +121,24 @@ def run():
         # ショップ名をURLから推定
         shop_name = detect_shop_from_url(url)
 
+        # 通貨：シートで指定された通貨を優先、なければ自動検出した通貨を使用
+        specified_currency = url_to_currency.get(url)
+        currency = specified_currency if specified_currency else result.currency
+
+        # 指定通貨と検出通貨が異なる場合は警告
+        if specified_currency and result.currency and specified_currency != result.currency:
+            logger.warning(
+                f"通貨不一致: {result.product_name} - "
+                f"指定={specified_currency}, 検出={result.currency} → 指定通貨を使用"
+            )
+
         # 価格レコードを作成（在庫状況・差分を含む）
         record = PriceRecord(
             timestamp=timestamp,
             shop_name=shop_name,
             product_name=result.product_name,
             price=result.price,
-            currency=result.currency,
+            currency=currency,
             previous_price=previous_price if previous_price else 0.0,
             change_rate=change_rate,
             in_stock=result.in_stock,
@@ -134,12 +152,12 @@ def run():
             logger.info(f"取得: {result.product_name} - [{stock_status}]")
         elif previous_price:
             logger.info(
-                f"取得: {result.product_name} - {result.currency} {result.price:,.2f} "
+                f"取得: {result.product_name} - {currency} {result.price:,.2f} "
                 f"(前回: {previous_price:,.2f}, 変動: {change_rate:+.2f}%) [{stock_status}]"
             )
         else:
             logger.info(
-                f"取得: {result.product_name} - {result.currency} {result.price:,.2f} "
+                f"取得: {result.product_name} - {currency} {result.price:,.2f} "
                 f"(初回取得) [{stock_status}]"
             )
 
