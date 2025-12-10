@@ -221,39 +221,45 @@ class BrightDataBrowserClient:
             logger.error(f"HTML取得エラー: {e}")
             return ""
 
-    async def fetch_product_detail(self, url: str, timeout: int = 30000) -> str:
+    async def fetch_product_detail(self, url: str, return_url: str = None, timeout: int = 30000) -> str:
         """
-        商品詳細ページのHTMLを取得する（新しいページで開く）
+        商品詳細ページのHTMLを取得する（同じページを再利用）
 
         Args:
             url: 商品詳細ページのURL
+            return_url: 戻り先URL（指定しない場合は戻らない）
             timeout: タイムアウト（ミリ秒）
 
         Returns:
             str: HTML文字列（失敗時は空文字列）
         """
-        detail_page = None
         try:
-            detail_page = await self._context.new_page()
-            await detail_page.goto(url, timeout=timeout, wait_until="domcontentloaded")
+            # 現在のURLを保存
+            current_url = self._page.url
+
+            # 詳細ページに遷移
+            await self._page.goto(url, timeout=timeout, wait_until="domcontentloaded")
 
             # 商品情報が読み込まれるまで待機
             try:
-                await detail_page.wait_for_selector('.product-description, .mod-product-description, #product-description', timeout=10000)
+                await self._page.wait_for_selector('.product-description, .mod-product-description, #product-description, .product-details', timeout=10000)
             except Exception:
                 pass
 
-            await detail_page.wait_for_timeout(2000)
+            await self._page.wait_for_timeout(2000)
 
-            html = await detail_page.content()
+            html = await self._page.content()
+
+            # 元のページに戻る
+            if return_url:
+                await self._page.goto(return_url, timeout=timeout, wait_until="domcontentloaded")
+                await self._page.wait_for_timeout(2000)
+
             return html
 
         except Exception as e:
             logger.warning(f"詳細ページ取得エラー ({url}): {e}")
             return ""
-        finally:
-            if detail_page:
-                await detail_page.close()
 
 
 class ProgressTracker:
@@ -788,36 +794,7 @@ async def run_incremental_async(category: str = None, reset: bool = False, max_p
                     for i, p in enumerate(products[:3]):
                         logger.info(f"    [{i+1}] {p.url}")
 
-                    # 詳細が未取得の商品を抽出（新規 or 説明・仕様が空）
-                    products_need_detail = [
-                        p for p in products
-                        if p.url not in saver._existing_urls or saver.needs_detail_update(p.url)
-                    ]
-                    if products_need_detail:
-                        logger.info(f"    詳細取得対象: {len(products_need_detail)}件")
-                        for i, product in enumerate(products_need_detail):
-                            try:
-                                detail_html = await client.fetch_product_detail(product.url)
-                                if detail_html:
-                                    detail = parse_product_detail(detail_html)
-                                    if detail["description"]:
-                                        product.description = detail["description"]
-                                    if detail["specification"]:
-                                        product.specification = detail["specification"]
-                                    if detail["images"]:
-                                        # 既存の画像に追加
-                                        for img in detail["images"]:
-                                            if img not in product.images and len(product.images) < 5:
-                                                product.images.append(img)
-                                    # 詳細取得完了をマーク
-                                    saver.mark_detail_updated(product.url)
-                                    logger.info(f"      [{i+1}/{len(products_need_detail)}] 詳細取得完了: {product.name[:30]}...")
-                                # レート制限対策
-                                await asyncio.sleep(random.uniform(1.0, 2.0))
-                            except Exception as e:
-                                logger.warning(f"      詳細取得エラー: {e}")
-
-                    # スプレッドシートに保存
+                    # スプレッドシートに保存（詳細は後で取得）
                     new_count, update_count = saver.save_products(products)
                     total_new += new_count
                     total_update += update_count
@@ -850,6 +827,45 @@ async def run_incremental_async(category: str = None, reset: bool = False, max_p
 
             # カテゴリ間で待機
             await asyncio.sleep(2)
+
+        # === 詳細ページ取得フェーズ ===
+        # 詳細未取得の商品を取得
+        if saver._urls_need_detail:
+            logger.info(f"\n=== 詳細ページ取得フェーズ ===")
+            logger.info(f"詳細未取得: {len(saver._urls_need_detail)}件")
+
+            # 最大取得数を制限（API費用対策）
+            max_detail_fetch = 50
+            urls_to_fetch = list(saver._urls_need_detail)[:max_detail_fetch]
+            logger.info(f"今回取得: {len(urls_to_fetch)}件（最大{max_detail_fetch}件）")
+
+            detail_success = 0
+            for i, url in enumerate(urls_to_fetch):
+                try:
+                    detail_html = await client.fetch_product_detail(url)
+                    if detail_html:
+                        detail = parse_product_detail(detail_html)
+                        if detail["description"] or detail["specification"]:
+                            # スプレッドシートを更新
+                            row_num = saver._url_to_row.get(url)
+                            if row_num:
+                                try:
+                                    # 説明(H列=8)と仕様(I列=9)を更新
+                                    saver._sheet.update(f'H{row_num}:I{row_num}', [[
+                                        detail["description"][:500] if detail["description"] else "",
+                                        detail["specification"][:200] if detail["specification"] else ""
+                                    ]], value_input_option='RAW')
+                                    saver.mark_detail_updated(url)
+                                    detail_success += 1
+                                    logger.info(f"  [{i+1}/{len(urls_to_fetch)}] 詳細更新完了: {url[-50:]}")
+                                except Exception as e:
+                                    logger.warning(f"  詳細更新エラー: {e}")
+                    # レート制限対策
+                    await asyncio.sleep(random.uniform(1.5, 3.0))
+                except Exception as e:
+                    logger.warning(f"  詳細取得エラー: {e}")
+
+            logger.info(f"詳細取得完了: {detail_success}件成功")
 
     finally:
         await client.close()
