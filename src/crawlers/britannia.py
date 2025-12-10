@@ -64,22 +64,23 @@ class BritanniaCrawler:
 
     BASE_URL = "https://britanniacoincompany.com"
 
-    # クロール対象のカテゴリURL
-    CATEGORY_URLS = [
-        # Gold Coins
-        ("/buy-coins/gold-coins/bullion/", "Gold Coins", "Bullion"),
-        ("/buy-coins/gold-coins/sovereign/", "Gold Coins", "Sovereign"),
-        ("/buy-coins/gold-coins/half-sovereign/", "Gold Coins", "Half Sovereign"),
-        # Silver Coins
-        ("/buy-coins/silver-coins/", "Silver Coins", "All"),
-        # Proof Sets
-        ("/buy-coins/proof-sets/", "Proof Sets", "All"),
+    # メインカテゴリ（これらの配下を全てクロール）
+    MAIN_CATEGORIES = [
+        "gold-coins",
+        "silver-coins",
+        "proof-sets",
+        "bu-coins",
+        "graded-coins",
+        "coin-sets",
+        "world-coins",
+        "best-value",
+        "bulk-coins",
     ]
 
     # 待機時間設定
-    MIN_WAIT = 2.0
-    MAX_WAIT = 4.0
-    PAGE_LOAD_WAIT = 3000  # ミリ秒
+    MIN_WAIT = 1.5
+    MAX_WAIT = 3.0
+    PAGE_LOAD_WAIT = 2000  # ミリ秒
 
     def __init__(self):
         self._browser: Optional[Browser] = None
@@ -158,11 +159,13 @@ class BritanniaCrawler:
         all_products = []
         seen_urls = set()
 
-        for path, category, subcategory in self.CATEGORY_URLS:
-            url = f"{self.BASE_URL}{path}"
-            logger.info(f"カテゴリ取得中: {category} > {subcategory}")
+        # メインカテゴリごとにクロール
+        for main_cat in self.MAIN_CATEGORIES:
+            logger.info(f"=== メインカテゴリ: {main_cat} ===")
 
-            products = self._crawl_category(url, category, subcategory)
+            # カテゴリページから全商品を取得（ページネーション対応）
+            base_url = f"{self.BASE_URL}/buy-coins/{main_cat}/"
+            products = self._crawl_category_with_pagination(base_url, main_cat)
 
             # 重複を除外
             for product in products:
@@ -170,6 +173,7 @@ class BritanniaCrawler:
                     seen_urls.add(product.url)
                     all_products.append(product)
 
+            logger.info(f"  → {main_cat}: {len(products)}件取得（累計: {len(all_products)}件）")
             self._wait()
 
         logger.info(f"商品一覧取得完了: {len(all_products)}件")
@@ -184,51 +188,71 @@ class BritanniaCrawler:
 
         return all_products
 
-    def _crawl_category(self, url: str, category: str, subcategory: str) -> list[BritanniaProduct]:
+    def _crawl_category_with_pagination(self, base_url: str, category: str) -> list[BritanniaProduct]:
         """
-        カテゴリページから商品一覧を取得
+        カテゴリページから全商品を取得（ページネーション対応）
 
         Args:
-            url: カテゴリページURL
+            base_url: カテゴリページURL
             category: カテゴリ名
-            subcategory: サブカテゴリ名
 
         Returns:
             list[BritanniaProduct]: 商品リスト
         """
         products = []
         timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+        page_num = 1
 
-        try:
-            self._page.goto(url, wait_until="networkidle", timeout=60000)
-            self._page.wait_for_timeout(self.PAGE_LOAD_WAIT)
+        while True:
+            url = base_url if page_num == 1 else f"{base_url}?pg={page_num}"
 
-            # 商品一覧を取得
-            items = self._page.query_selector_all(".product-listings__item")
-            logger.info(f"  {len(items)}件の商品を発見")
+            try:
+                self._page.goto(url, wait_until="networkidle", timeout=60000)
+                self._page.wait_for_timeout(self.PAGE_LOAD_WAIT)
 
-            for item in items:
-                try:
-                    product = self._parse_list_item(item, category, subcategory, timestamp)
-                    if product:
-                        products.append(product)
-                except Exception as e:
-                    logger.warning(f"商品パースエラー: {e}")
-                    continue
+                # 商品一覧を取得
+                items = self._page.query_selector_all(".product-listings__item")
 
-            # ページネーションがあれば次ページも取得
-            # TODO: 必要に応じて実装
+                if not items:
+                    logger.info(f"  ページ{page_num}: 商品なし - 終了")
+                    break
 
-        except Exception as e:
-            logger.error(f"カテゴリ取得エラー: {url} - {e}")
+                logger.info(f"  ページ{page_num}: {len(items)}件")
+
+                for item in items:
+                    try:
+                        product = self._parse_list_item(item, category, timestamp)
+                        if product:
+                            products.append(product)
+                    except Exception as e:
+                        logger.warning(f"商品パースエラー: {e}")
+                        continue
+
+                # 次ページがあるかチェック
+                next_link = self._page.query_selector(f"a[href*='pg={page_num + 1}']")
+                if not next_link:
+                    logger.info(f"  最終ページ: {page_num}")
+                    break
+
+                page_num += 1
+                self._wait()
+
+            except Exception as e:
+                logger.error(f"カテゴリ取得エラー: {url} - {e}")
+                break
 
         return products
+
+    def _crawl_category(self, url: str, category: str, subcategory: str) -> list[BritanniaProduct]:
+        """
+        カテゴリページから商品一覧を取得（後方互換性のため残す）
+        """
+        return self._crawl_category_with_pagination(url, category)
 
     def _parse_list_item(
         self,
         item,
         category: str,
-        subcategory: str,
         timestamp: str
     ) -> Optional[BritanniaProduct]:
         """
@@ -237,7 +261,6 @@ class BritanniaCrawler:
         Args:
             item: 商品要素
             category: カテゴリ名
-            subcategory: サブカテゴリ名
             timestamp: 取得日時
 
         Returns:
@@ -301,7 +324,7 @@ class BritanniaCrawler:
             in_stock=in_stock,
             images=images,
             category=category,
-            subcategory=subcategory,
+            subcategory="",  # ページネーション方式ではサブカテゴリは空
             scraped_at=timestamp,
         )
 
