@@ -82,13 +82,19 @@ class BrightDataClient:
             str: HTML文字列（失敗時は空文字列）
         """
         try:
-            # Web Unlocker APIはデフォルトでJSレンダリングを行う
-            # countryパラメータでUSからのアクセスを指定
+            # Web Unlocker APIでJSレンダリング後のHTMLを取得
+            # expectパラメータで商品要素の読み込みを待機
             payload = {
                 "zone": self.zone,
                 "url": url,
                 "format": "raw",
-                "country": "us",  # USからのアクセスとして処理
+                "country": "us",
+                # 商品カードまたは商品リストが読み込まれるまで待機
+                "expect": [
+                    {"type": "selector", "value": ".mod-product-card"},
+                    {"type": "selector", "value": "[class*='product-item']"},
+                    {"type": "selector", "value": ".product-list"},
+                ]
             }
 
             response = self.session.post(
