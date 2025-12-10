@@ -6,7 +6,7 @@ import re
 import logging
 from typing import Optional
 
-from .base import BaseScraper
+from .base import BaseScraper, ScrapedData
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ class BullionstarScraper(BaseScraper):
     """Bullionstar用スクレイパー"""
 
     SHOP_NAME = "Bullionstar"
-    CURRENCY = "USD"  # デフォルト（実際はサイト表示に依存）
+    CURRENCY = "JPY"  # デフォルトをJPYに変更
     WAIT_TIME_MS = 5000  # Bot検出対策のため長めに設定
 
     # セレクタ
@@ -26,6 +26,37 @@ class BullionstarScraper(BaseScraper):
     def __init__(self, page):
         super().__init__(page)
         self._detected_currency = None  # 検出された通貨（インスタンス変数）
+        self._currency_set = False  # 通貨設定済みフラグ
+
+    def _set_currency_cookie(self):
+        """JPY表示用のCookieを設定する"""
+        if self._currency_set:
+            return
+
+        try:
+            # Bullionstarの通貨設定Cookieを追加
+            context = self.page.context
+            context.add_cookies([
+                {
+                    "name": "currency",
+                    "value": "JPY",
+                    "domain": ".bullionstar.com",
+                    "path": "/"
+                }
+            ])
+            self._currency_set = True
+            logger.info("Bullionstar: JPY通貨Cookieを設定しました")
+        except Exception as e:
+            logger.warning(f"通貨Cookie設定エラー: {e}")
+
+    def scrape(self, url: str) -> ScrapedData:
+        """
+        商品ページをスクレイピングする（JPY通貨Cookie設定付き）
+        """
+        # ページアクセス前にJPY通貨Cookieを設定
+        self._set_currency_cookie()
+        # 親クラスのscrapeを呼び出す
+        return super().scrape(url)
 
     def _extract_price(self) -> Optional[float]:
         """
