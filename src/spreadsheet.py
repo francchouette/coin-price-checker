@@ -712,7 +712,9 @@ class SpreadsheetClient:
                         result["unchanged"] += 1
                 else:
                     # 新規商品：行を追加
-                    # A: 商品ID, B: 商品名, C-W: 空（手動入力待ち）
+                    # 行番号を計算（現在の最終行 + 追加済み行数 + 1）
+                    new_row_num = len(all_data) + len(new_rows) + 1
+
                     new_rows.append([
                         str(product_id),  # A: カラーミー商品ID
                         product_name,      # B: 商品名
@@ -731,10 +733,10 @@ class SpreadsheetClient:
                         "",                # O: 本体計算価格
                         "",                # P: 送料
                         "",                # Q: 諸経費
-                        "",                # R: 販売価格（数式で入力）
-                        "",                # S: 原価（諸経費込み）
-                        "",                # T: 販売粗利
-                        "",                # U: 販売粗利率（数式で入力）
+                        f"=IFERROR(ROUND(O{new_row_num}*E{new_row_num}+P{new_row_num}+Q{new_row_num},-2),\"\")",  # R: 販売価格
+                        f"=IFERROR(ROUND(O{new_row_num}+P{new_row_num}+Q{new_row_num},-2),\"\")",  # S: 原価（諸経費込み）
+                        f"=IFERROR(R{new_row_num}-S{new_row_num},\"\")",  # T: 販売粗利
+                        f"=IFERROR(T{new_row_num}/R{new_row_num},\"\")",  # U: 販売粗利率
                         "",                # V: 差額
                         ""                 # W: 最終更新
                     ])
@@ -745,9 +747,9 @@ class SpreadsheetClient:
             if updates:
                 sheet.batch_update(updates)
 
-            # 新規行の追加
+            # 新規行の追加（USER_ENTEREDで数式を評価）
             if new_rows:
-                sheet.append_rows(new_rows, value_input_option='RAW')
+                sheet.append_rows(new_rows, value_input_option='USER_ENTERED')
 
             logger.info(
                 f"カラーミー商品同期完了: "
