@@ -85,7 +85,7 @@ class BrightDataBrowserClient:
         if self._playwright:
             await self._playwright.stop()
 
-    async def fetch(self, url: str, wait_selector: str = None, timeout: int = 60000) -> str:
+    async def fetch(self, url: str, wait_selector: str = None, timeout: int = 60000, expected_page: int = None) -> str:
         """
         URLのHTMLを取得する（JavaScript実行後）
 
@@ -93,6 +93,7 @@ class BrightDataBrowserClient:
             url: 取得するURL
             wait_selector: 待機するセレクタ
             timeout: タイムアウト（ミリ秒）
+            expected_page: 期待するページ番号（ページネーション確認用）
 
         Returns:
             str: HTML文字列（失敗時は空文字列）
@@ -119,6 +120,41 @@ class BrightDataBrowserClient:
                         logger.info(f"リトライでセレクタを検出")
                     except Exception:
                         logger.warning(f"セレクタ検出失敗、続行します")
+
+            # ページネーションの状態を確認（2ページ目以降）
+            if expected_page and expected_page > 1:
+                # アクティブなページ番号が期待値と一致するまで待機
+                for attempt in range(5):
+                    try:
+                        # ページネーションのアクティブな要素を確認
+                        active_page = await page.evaluate('''() => {
+                            // 複数のセレクタを試す
+                            const selectors = [
+                                '.pagination .active',
+                                '[aria-current="page"]',
+                                '.page-item.active .page-link',
+                                'a.active[href*="page="]'
+                            ];
+                            for (const selector of selectors) {
+                                const el = document.querySelector(selector);
+                                if (el) {
+                                    const text = el.textContent.trim();
+                                    const num = parseInt(text);
+                                    if (!isNaN(num)) return num;
+                                }
+                            }
+                            // URLからページ番号を取得
+                            const url = window.location.href;
+                            const match = url.match(/page=(\\d+)/);
+                            if (match) return parseInt(match[1]);
+                            return 1;
+                        }''')
+                        logger.info(f"現在のページ番号: {active_page} (期待値: {expected_page})")
+                        if active_page == expected_page:
+                            break
+                    except Exception as e:
+                        logger.warning(f"ページ番号確認エラー: {e}")
+                    await page.wait_for_timeout(2000)
 
             # 追加の待機（動的コンテンツ用）
             await page.wait_for_timeout(5000)
@@ -548,7 +584,7 @@ async def run_incremental_async(category: str = None, reset: bool = False, max_p
                     logger.info(f"  ページ{page_num}を取得中: {url}")
 
                     # Browser APIでHTML取得（JSレンダリング後）
-                    html = await client.fetch(url, wait_selector=WAIT_SELECTOR)
+                    html = await client.fetch(url, wait_selector=WAIT_SELECTOR, expected_page=page_num)
 
                     if not html:
                         logger.error(f"  HTMLの取得に失敗しました")
