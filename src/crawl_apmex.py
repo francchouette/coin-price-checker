@@ -513,6 +513,28 @@ def run_incremental(category: str = None, reset: bool = False, max_pages: int = 
                     logger.error(f"  HTMLの取得に失敗しました")
                     break
 
+                # デバッグ: HTMLの長さと内容の一部を出力
+                logger.info(f"  HTML取得成功: {len(html)} bytes")
+                logger.debug(f"  HTML先頭500文字: {html[:500]}")
+
+                # 商品セレクタの存在確認
+                if "mod-product-card" in html:
+                    logger.info("  ✓ mod-product-card クラスを検出")
+                elif "product-card" in html:
+                    logger.info("  ✓ product-card クラスを検出")
+                else:
+                    logger.warning("  ✗ 商品カードクラスが見つかりません")
+                    # HTMLの構造を確認するためタイトルを出力
+                    from bs4 import BeautifulSoup as BS
+                    soup = BS(html, 'html.parser')
+                    title = soup.find('title')
+                    logger.info(f"  ページタイトル: {title.text if title else 'なし'}")
+                    # 主要なクラス名を出力
+                    classes = set()
+                    for elem in soup.find_all(class_=True)[:50]:
+                        classes.update(elem.get('class', []))
+                    logger.info(f"  検出されたクラス(最初の50要素): {sorted(classes)[:20]}")
+
                 # Cloudflareチャレンジページかどうか確認
                 if "Just a moment" in html or "challenge-platform" in html:
                     logger.error(f"  Cloudflareチャレンジが解決されませんでした")
