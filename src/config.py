@@ -121,3 +121,4 @@ class Config:
 
     # 商品マスタシート名（サイト別）
     SHEET_MASTER_BRITANNIA: str = "商品マスタ_Britannia"
+    SHEET_MASTER_APMEX: str = "商品マスタ_APMEX"
