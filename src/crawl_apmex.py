@@ -85,7 +85,9 @@ class BrightDataClient:
             payload = {
                 "zone": self.zone,
                 "url": url,
-                "format": "raw"
+                "format": "raw",
+                "render_js": True,  # JavaScriptを実行してレンダリング
+                "wait_for_selector": ".mod-product-card, [class*='product']",  # 商品カードを待機
             }
 
             response = self.session.post(
