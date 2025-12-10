@@ -63,6 +63,8 @@ class BrightDataBrowserClient:
         self.ws_endpoint = ws_endpoint
         self._playwright = None
         self._browser = None
+        self._context = None
+        self._page = None
 
     async def connect(self, timeout: int = 120000, max_retries: int = 3):
         """ブラウザに接続（リトライ機能付き）"""
@@ -77,6 +79,8 @@ class BrightDataBrowserClient:
                     timeout=timeout
                 )
                 logger.info("Bright Data Browser APIに接続しました")
+                self._context = await self._browser.new_context()
+                self._page = await self._context.new_page()
                 return
             except Exception as e:
                 last_error = e
@@ -94,95 +98,128 @@ class BrightDataBrowserClient:
 
     async def close(self):
         """ブラウザを閉じる"""
+        if self._page:
+            await self._page.close()
+        if self._context:
+            await self._context.close()
         if self._browser:
             await self._browser.close()
         if self._playwright:
             await self._playwright.stop()
 
-    async def fetch(self, url: str, wait_selector: str = None, timeout: int = 60000, expected_page: int = None) -> str:
+    async def navigate(self, url: str, wait_selector: str = None, timeout: int = 60000) -> str:
         """
-        URLのHTMLを取得する（JavaScript実行後）
+        URLに遷移してHTMLを取得する（初回アクセス用）
 
         Args:
             url: 取得するURL
             wait_selector: 待機するセレクタ
             timeout: タイムアウト（ミリ秒）
-            expected_page: 期待するページ番号（ページネーション確認用）
 
         Returns:
             str: HTML文字列（失敗時は空文字列）
         """
-        page = None
         try:
-            context = await self._browser.new_context()
-            page = await context.new_page()
-
             # ページ遷移
-            await page.goto(url, timeout=timeout, wait_until="domcontentloaded")
+            await self._page.goto(url, timeout=timeout, wait_until="domcontentloaded")
 
             # 商品カードが読み込まれるまで待機
             if wait_selector:
                 try:
-                    await page.wait_for_selector(wait_selector, timeout=45000)
+                    await self._page.wait_for_selector(wait_selector, timeout=45000)
                     logger.info(f"セレクタ '{wait_selector}' を検出")
                 except Exception:
-                    # セレクタが見つからない場合は追加待機してリトライ
                     logger.warning(f"セレクタ '{wait_selector}' が見つかりません、追加待機します")
-                    await page.wait_for_timeout(5000)
-                    try:
-                        await page.wait_for_selector(wait_selector, timeout=15000)
-                        logger.info(f"リトライでセレクタを検出")
-                    except Exception:
-                        logger.warning(f"セレクタ検出失敗、続行します")
-
-            # ページネーションの状態を確認（2ページ目以降）
-            if expected_page and expected_page > 1:
-                # アクティブなページ番号が期待値と一致するまで待機
-                for attempt in range(5):
-                    try:
-                        # ページネーションのアクティブな要素を確認
-                        active_page = await page.evaluate('''() => {
-                            // 複数のセレクタを試す
-                            const selectors = [
-                                '.pagination .active',
-                                '[aria-current="page"]',
-                                '.page-item.active .page-link',
-                                'a.active[href*="page="]'
-                            ];
-                            for (const selector of selectors) {
-                                const el = document.querySelector(selector);
-                                if (el) {
-                                    const text = el.textContent.trim();
-                                    const num = parseInt(text);
-                                    if (!isNaN(num)) return num;
-                                }
-                            }
-                            // URLからページ番号を取得
-                            const url = window.location.href;
-                            const match = url.match(/page=(\\d+)/);
-                            if (match) return parseInt(match[1]);
-                            return 1;
-                        }''')
-                        logger.info(f"現在のページ番号: {active_page} (期待値: {expected_page})")
-                        if active_page == expected_page:
-                            break
-                    except Exception as e:
-                        logger.warning(f"ページ番号確認エラー: {e}")
-                    await page.wait_for_timeout(2000)
+                    await self._page.wait_for_timeout(5000)
 
             # 追加の待機（動的コンテンツ用）
-            await page.wait_for_timeout(5000)
+            await self._page.wait_for_timeout(3000)
 
             # HTMLを取得
-            html = await page.content()
+            html = await self._page.content()
             return html
 
         except Exception as e:
             logger.error(f"Browser API エラー: {e}")
             return ""
-        finally:
-            if page:
-                await page.close()
+
+    async def click_next_page(self, wait_selector: str = None) -> tuple[bool, str]:
+        """
+        次ページボタンをクリックして遷移する
+
+        Args:
+            wait_selector: 待機するセレクタ
+
+        Returns:
+            tuple[bool, str]: (成功したか, HTML文字列)
+        """
+        try:
+            # 次ページボタンを探す（複数のセレクタを試す）
+            next_selectors = [
+                'a[aria-label="Next page"]',
+                'a[rel="next"]',
+                '.pagination a.next',
+                '.pagination li:last-child a',
+                'a[href*="page="]:has-text("Next")',
+                'a[href*="page="]:has-text(">")',
+                '.mod-pagination a:last-of-type',
+            ]
+
+            next_btn = None
+            for selector in next_selectors:
+                try:
+                    next_btn = await self._page.query_selector(selector)
+                    if next_btn:
+                        # ボタンが無効化されていないか確認
+                        is_disabled = await next_btn.get_attribute('disabled')
+                        classes = await next_btn.get_attribute('class') or ''
+                        if is_disabled or 'disabled' in classes:
+                            next_btn = None
+                            continue
+                        logger.info(f"次ページボタンを検出: {selector}")
+                        break
+                except Exception:
+                    continue
+
+            if not next_btn:
+                logger.info("次ページボタンが見つかりません（最終ページ）")
+                return False, ""
+
+            # クリック前のURL
+            old_url = self._page.url
+
+            # クリックして遷移を待つ
+            await next_btn.click()
+            await self._page.wait_for_timeout(2000)
+
+            # URLが変わったか、商品が再読み込みされるまで待機
+            if wait_selector:
+                try:
+                    await self._page.wait_for_selector(wait_selector, timeout=30000)
+                except Exception:
+                    pass
+
+            # 追加の待機
+            await self._page.wait_for_timeout(3000)
+
+            new_url = self._page.url
+            logger.info(f"ページ遷移: {old_url} → {new_url}")
+
+            # HTMLを取得
+            html = await self._page.content()
+            return True, html
+
+        except Exception as e:
+            logger.error(f"次ページ遷移エラー: {e}")
+            return False, ""
+
+    async def get_current_html(self) -> str:
+        """現在のページのHTMLを取得"""
+        try:
+            return await self._page.content()
+        except Exception as e:
+            logger.error(f"HTML取得エラー: {e}")
+            return ""
 
 
 class ProgressTracker:
@@ -574,17 +611,17 @@ async def run_incremental_async(category: str = None, reset: bool = False, max_p
             cat_name = cat_info["name"]
             logger.info(f"\n=== カテゴリ: {cat_name} ===")
 
-            if reset:
-                start_page = 1
-                logger.info("  進捗リセット: ページ1から開始")
-            else:
-                start_page = saver.get_start_page(cat_name)
-                if start_page > 1:
-                    logger.info(f"  前回の続きから再開: ページ{start_page}から")
-                else:
-                    logger.info("  新規開始: ページ1から")
+            # 初回アクセス
+            url = f"{BASE_URL}/category/{cat_slug}"
+            logger.info(f"  初回アクセス: {url}")
 
-            page_num = start_page
+            html = await client.navigate(url, wait_selector=WAIT_SELECTOR)
+
+            if not html:
+                logger.error(f"  HTMLの取得に失敗しました")
+                continue
+
+            page_num = 1
             last_page = page_num
 
             while True:
@@ -592,20 +629,9 @@ async def run_incremental_async(category: str = None, reset: bool = False, max_p
                     logger.info(f"  最大ページ数({max_pages})に達しました")
                     break
 
-                url = f"{BASE_URL}/category/{cat_slug}" if page_num == 1 else f"{BASE_URL}/category/{cat_slug}?page={page_num}"
-
                 try:
-                    logger.info(f"  ページ{page_num}を取得中: {url}")
-
-                    # Browser APIでHTML取得（JSレンダリング後）
-                    html = await client.fetch(url, wait_selector=WAIT_SELECTOR, expected_page=page_num)
-
-                    if not html:
-                        logger.error(f"  HTMLの取得に失敗しました")
-                        break
-
                     # デバッグ: HTMLの長さを出力
-                    logger.info(f"  HTML取得成功: {len(html)} bytes")
+                    logger.info(f"  ページ{page_num}: HTML取得成功: {len(html)} bytes")
 
                     # 商品セレクタの存在確認
                     if "mod-product-card" in html:
@@ -647,19 +673,22 @@ async def run_incremental_async(category: str = None, reset: bool = False, max_p
                     saver.update_progress(cat_name, page_num)
                     last_page = page_num
 
-                    # 次ページがあるかチェック
-                    if not has_next_page(html, page_num):
+                    # 次ページへクリックで遷移
+                    has_next, next_html = await client.click_next_page(wait_selector=WAIT_SELECTOR)
+
+                    if not has_next:
                         logger.info(f"  最終ページ: {page_num}")
                         saver.mark_category_complete(cat_name, page_num)
                         break
 
+                    html = next_html
                     page_num += 1
 
                     # レート制限対策
                     await asyncio.sleep(random.uniform(2.0, 4.0))
 
                 except Exception as e:
-                    logger.error(f"ページ取得エラー: {url} - {e}")
+                    logger.error(f"ページ取得エラー: ページ{page_num} - {e}")
                     import traceback
                     traceback.print_exc()
                     saver.update_progress(cat_name, last_page)
