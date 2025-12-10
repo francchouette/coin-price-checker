@@ -58,10 +58,11 @@ class TestBullionstarScraper:
         assert BullionstarScraper.SHOP_NAME == "Bullionstar"
 
     def test_currency(self):
-        assert BullionstarScraper.CURRENCY == "JPY"
+        # デフォルト通貨はUSD（実際はページの表示通貨を検出）
+        assert BullionstarScraper.CURRENCY == "USD"
 
     def test_wait_time(self):
-        assert BullionstarScraper.WAIT_TIME_MS == 3000
+        assert BullionstarScraper.WAIT_TIME_MS == 5000
 
 
 class TestApmexScraper:

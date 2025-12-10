@@ -17,12 +17,15 @@ class BullionstarScraper(BaseScraper):
     SHOP_NAME = "Bullionstar"
     CURRENCY = "USD"  # デフォルト（実際はサイト表示に依存）
     WAIT_TIME_MS = 5000  # Bot検出対策のため長めに設定
-    _detected_currency = None  # 検出された通貨
 
     # セレクタ
     NAME_SELECTOR = "h1"
     PRICE_TABLE_SELECTOR = ".info tr"
     STOCK_SELECTOR = ".product-default-wrap.product-price-update"
+
+    def __init__(self, page):
+        super().__init__(page)
+        self._detected_currency = None  # 検出された通貨（インスタンス変数）
 
     def _extract_price(self) -> Optional[float]:
         """
@@ -65,6 +68,7 @@ class BullionstarScraper(BaseScraper):
                         price_str = match.group(1).replace(',', '')
                         price = float(price_str)
                         if price > 0:
+                            self._detected_currency = currency
                             logger.info(f"価格検出: {currency} {price} ({text[:50]}...)")
                             return price
 
@@ -94,3 +98,12 @@ class BullionstarScraper(BaseScraper):
         except Exception as e:
             logger.error(f"在庫状態確認エラー: {e}")
             return True
+
+    def _get_currency(self) -> str:
+        """
+        検出された通貨を返す
+
+        価格抽出時に検出された通貨があればそれを返す
+        なければデフォルト（USD）を返す
+        """
+        return self._detected_currency or self.CURRENCY

@@ -79,6 +79,10 @@ class BaseScraper(ABC):
 
             # 価格を取得
             price = self._extract_price()
+
+            # 通貨を取得（価格抽出後に呼び出す - 価格抽出時に検出された通貨を取得するため）
+            currency = self._get_currency()
+
             if price is None:
                 # 在庫切れの場合は価格0で在庫なしとして記録（エラーではない）
                 if not in_stock:
@@ -86,7 +90,7 @@ class BaseScraper(ABC):
                     return ScrapedData(
                         product_name=product_name,
                         price=0.0,
-                        currency=self.CURRENCY,
+                        currency=currency,
                         url=url,
                         in_stock=False,
                         error=None  # 在庫切れはエラーではない
@@ -100,18 +104,18 @@ class BaseScraper(ABC):
                 return ScrapedData(
                     product_name=product_name,
                     price=0.0,
-                    currency=self.CURRENCY,
+                    currency=currency,
                     url=url,
                     in_stock=in_stock,
                     error="価格を取得できませんでした"
                 )
 
-            logger.info(f"スクレイピング成功: {product_name} - {self.CURRENCY} {price}")
+            logger.info(f"スクレイピング成功: {product_name} - {currency} {price}")
 
             return ScrapedData(
                 product_name=product_name,
                 price=price,
-                currency=self.CURRENCY,
+                currency=currency,
                 url=url,
                 in_stock=in_stock
             )
@@ -146,6 +150,10 @@ class BaseScraper(ABC):
     def _check_stock(self) -> bool:
         """在庫状態を確認する（デフォルトはTrue）"""
         return True
+
+    def _get_currency(self) -> str:
+        """通貨を取得する（デフォルトはCURRENCY定数）"""
+        return self.CURRENCY
 
     @staticmethod
     def parse_price(text: str, currency_symbol: str = "") -> Optional[float]:
