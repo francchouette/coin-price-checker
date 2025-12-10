@@ -82,12 +82,13 @@ class BrightDataClient:
             str: HTML文字列（失敗時は空文字列）
         """
         try:
+            # Web Unlocker APIはデフォルトでJSレンダリングを行う
+            # countryパラメータでUSからのアクセスを指定
             payload = {
                 "zone": self.zone,
                 "url": url,
                 "format": "raw",
-                "render_js": True,  # JavaScriptを実行してレンダリング
-                "wait_for_selector": ".mod-product-card, [class*='product']",  # 商品カードを待機
+                "country": "us",  # USからのアクセスとして処理
             }
 
             response = self.session.post(
