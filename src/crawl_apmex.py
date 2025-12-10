@@ -342,6 +342,7 @@ class SpreadsheetSaver:
         self._sheet = None
         self._existing_urls = set()
         self._url_to_row = {}
+        self._urls_need_detail = set()  # 説明・仕様が空のURL
         self._progress_tracker = None
 
     def connect(self) -> bool:
@@ -389,12 +390,22 @@ class SpreadsheetSaver:
                 logger.info("ヘッダー行を確認")
 
             if len(existing_data) > 1:
+                # ヘッダーのインデックスを確認（説明=7, 仕様=8）
+                desc_idx = 7  # 説明列
+                spec_idx = 8  # 仕様列
                 for i, row in enumerate(existing_data[1:], start=2):
                     if row and row[0]:
-                        self._existing_urls.add(row[0])
-                        self._url_to_row[row[0]] = i
+                        url = row[0]
+                        self._existing_urls.add(url)
+                        self._url_to_row[url] = i
+                        # 説明・仕様が空の場合は詳細取得対象
+                        desc = row[desc_idx] if len(row) > desc_idx else ""
+                        spec = row[spec_idx] if len(row) > spec_idx else ""
+                        if not desc.strip() and not spec.strip():
+                            self._urls_need_detail.add(url)
 
             logger.info(f"既存商品数: {len(self._existing_urls)}件")
+            logger.info(f"詳細未取得: {len(self._urls_need_detail)}件")
 
             self._progress_tracker = ProgressTracker(self._spreadsheet)
             if not self._progress_tracker.connect():
@@ -418,6 +429,14 @@ class SpreadsheetSaver:
     def mark_category_complete(self, category: str, total_pages: int):
         if self._progress_tracker:
             self._progress_tracker.mark_complete(category, total_pages)
+
+    def needs_detail_update(self, url: str) -> bool:
+        """指定URLの商品が詳細取得を必要とするかチェック"""
+        return url in self._urls_need_detail
+
+    def mark_detail_updated(self, url: str):
+        """詳細取得完了をマーク"""
+        self._urls_need_detail.discard(url)
 
     def save_products(self, products: list[ApmexProduct]) -> tuple[int, int]:
         """商品をスプレッドシートに保存"""
@@ -769,11 +788,14 @@ async def run_incremental_async(category: str = None, reset: bool = False, max_p
                     for i, p in enumerate(products[:3]):
                         logger.info(f"    [{i+1}] {p.url}")
 
-                    # 新規商品の詳細ページを取得
-                    new_products = [p for p in products if p.url not in saver._existing_urls]
-                    if new_products:
-                        logger.info(f"    新規商品 {len(new_products)}件の詳細を取得中...")
-                        for i, product in enumerate(new_products):
+                    # 詳細が未取得の商品を抽出（新規 or 説明・仕様が空）
+                    products_need_detail = [
+                        p for p in products
+                        if p.url not in saver._existing_urls or saver.needs_detail_update(p.url)
+                    ]
+                    if products_need_detail:
+                        logger.info(f"    詳細取得対象: {len(products_need_detail)}件")
+                        for i, product in enumerate(products_need_detail):
                             try:
                                 detail_html = await client.fetch_product_detail(product.url)
                                 if detail_html:
@@ -787,7 +809,9 @@ async def run_incremental_async(category: str = None, reset: bool = False, max_p
                                         for img in detail["images"]:
                                             if img not in product.images and len(product.images) < 5:
                                                 product.images.append(img)
-                                    logger.info(f"      [{i+1}/{len(new_products)}] 詳細取得完了: {product.name[:30]}...")
+                                    # 詳細取得完了をマーク
+                                    saver.mark_detail_updated(product.url)
+                                    logger.info(f"      [{i+1}/{len(products_need_detail)}] 詳細取得完了: {product.name[:30]}...")
                                 # レート制限対策
                                 await asyncio.sleep(random.uniform(1.0, 2.0))
                             except Exception as e:
