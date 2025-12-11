@@ -79,8 +79,19 @@ class BrightDataBrowserClient:
                     timeout=timeout
                 )
                 logger.info("Bright Data Browser APIに接続しました")
-                self._context = await self._browser.new_context()
-                self._page = await self._context.new_page()
+                # デフォルトコンテキストを使用（新規作成しない）
+                contexts = self._browser.contexts
+                if contexts:
+                    self._context = contexts[0]
+                    pages = self._context.pages
+                    if pages:
+                        self._page = pages[0]
+                    else:
+                        self._page = await self._context.new_page()
+                else:
+                    self._context = await self._browser.new_context()
+                    self._page = await self._context.new_page()
+                logger.info(f"ページ準備完了")
                 return
             except Exception as e:
                 last_error = e
