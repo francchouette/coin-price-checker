@@ -655,7 +655,7 @@ class SpreadsheetClient:
                     })
 
             if updates:
-                sheet.batch_update(updates)
+                sheet.batch_update(updates, value_input_option='USER_ENTERED')
                 logger.info(f"カラーミー商品管理シートを更新しました: {len(results)}件")
 
             return True
