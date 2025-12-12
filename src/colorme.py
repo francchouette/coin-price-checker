@@ -86,12 +86,6 @@ class ColorMeClient:
         """
         複数商品の現在価格を取得する
 
-        カラーミーAPIでは:
-        - price: 定価（販売価格ではない場合がある）
-        - sales_price: セール価格（設定されている場合）
-
-        販売価格は sales_price > 0 ならsales_price、そうでなければ price
-
         Args:
             product_ids: 商品IDのリスト
 
@@ -101,18 +95,11 @@ class ColorMeClient:
         prices = {}
         for product_id in product_ids:
             product = self.get_product(product_id)
-            if product:
+            if product and "price" in product and product["price"] is not None:
                 try:
-                    # sales_priceが設定されていればそれを使用、なければpriceを使用
-                    sales_price = product.get("sales_price")
-                    regular_price = product.get("price")
-
-                    if sales_price and int(sales_price) > 0:
-                        prices[product_id] = int(sales_price)
-                    elif regular_price is not None:
-                        prices[product_id] = int(regular_price)
+                    prices[product_id] = int(product["price"])
                 except (ValueError, TypeError) as e:
-                    logger.warning(f"価格変換エラー (ID: {product_id}): price={product.get('price')}, sales_price={product.get('sales_price')} - {e}")
+                    logger.warning(f"価格変換エラー (ID: {product_id}): {product['price']} - {e}")
         return prices
 
     def get_all_products(self, limit: int = 100) -> list[dict]:
