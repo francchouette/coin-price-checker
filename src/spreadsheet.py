@@ -621,15 +621,8 @@ class SpreadsheetClient:
                             r["calculated_price"],
                         ]]
                     })
-                    # S-T列: 原価（諸経費込み）, 販売粗利
-                    # （P列「送料」, Q列「諸経費」, R列「販売価格（数式）」はスキップ）
-                    updates.append({
-                        'range': f'S{row_num}:T{row_num}',
-                        'values': [[
-                            r.get("cost_with_expenses", ""),
-                            r.get("gross_profit", ""),
-                        ]]
-                    })
+                    # S-T列: 原価（諸経費込み）, 販売粗利 → ユーザーが手動で計算式を入れるためスキップ
+                    # （P列「送料」, Q列「諸経費」, R列「販売価格（数式）」もスキップ）
                     # V-W列: 差額, 最終更新
                     # （U列「販売粗利率（数式）」はスキップ）
                     updates.append({
