@@ -322,17 +322,19 @@ class ColorMeClient:
                     updates["display_state"] = "hidden"
                     log_parts.append("表示: 非表示")
 
-            # 計算結果を記録（JPYの場合は為替レートを空白に）
+            # O列用: 取得価格 × 為替レート（JPYの場合は為替レート=1）
+            base_price = source_price * exchange_rate
+
+            # 計算結果を記録（JPYの場合は為替レートを1に）
             calc_result = {
                 "product_id": product.product_id,
                 "product_name": product.name,
                 "colorme_price": colorme_current_price,
                 "exchange_type": product.exchange_type,
-                "exchange_rate": exchange_rate_display,  # JPYの場合は空白
+                "exchange_rate": 1 if product.source_currency == "JPY" else exchange_rate,
                 "source_price": source_price,
                 "source_currency": product.source_currency,
-                "calculated_price": new_price,
-                "price_diff": price_diff,
+                "calculated_price": base_price,  # O列: 取得価格×為替
                 "update_enabled": product.update_enabled,
                 "updated": False
             }
