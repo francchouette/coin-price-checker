@@ -197,13 +197,33 @@ class ScraperManager:
             if Config.is_brightdata_browser_enabled():
                 logger.info(f"APMEX ({len(apmex_targets)}件) をBright Data Browser APIでスクレイピング")
                 apmex_urls = [t.url for t in apmex_targets]
-                apmex_results = asyncio.run(
-                    scrape_apmex_urls(
-                        apmex_urls,
-                        Config.BRIGHTDATA_BROWSER_WS,
-                        wait_between=random.uniform(Config.SCRAPE_MIN_WAIT, Config.SCRAPE_MAX_WAIT)
+                # 既存のイベントループがある場合に対応
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+
+                if loop and loop.is_running():
+                    # 既にイベントループが実行中の場合は新しいループで実行
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(
+                            asyncio.run,
+                            scrape_apmex_urls(
+                                apmex_urls,
+                                Config.BRIGHTDATA_BROWSER_WS,
+                                wait_between=random.uniform(Config.SCRAPE_MIN_WAIT, Config.SCRAPE_MAX_WAIT)
+                            )
+                        )
+                        apmex_results = future.result()
+                else:
+                    apmex_results = asyncio.run(
+                        scrape_apmex_urls(
+                            apmex_urls,
+                            Config.BRIGHTDATA_BROWSER_WS,
+                            wait_between=random.uniform(Config.SCRAPE_MIN_WAIT, Config.SCRAPE_MAX_WAIT)
+                        )
                     )
-                )
                 for url, result in zip(apmex_urls, apmex_results):
                     url_to_result[url] = result
             else:
