@@ -347,6 +347,9 @@ async def scrape_apmex_urls(
     """
     複数のAPMEX URLをスクレイピングする
 
+    Bright Data Browser APIのページナビゲーション制限を回避するため、
+    各URLごとに新しいブラウザ接続を作成する。
+
     Args:
         urls: スクレイピング対象のURLリスト
         ws_endpoint: Bright Data Browser APIのWebSocketエンドポイント
@@ -356,22 +359,32 @@ async def scrape_apmex_urls(
         list[ScrapedData]: スクレイピング結果のリスト
     """
     config = BrightDataConfig(ws_endpoint=ws_endpoint)
-    scraper = ApmexBrightDataScraper(config)
     results = []
 
-    try:
-        await scraper.connect()
+    for i, url in enumerate(urls):
+        logger.info(f"APMEX スクレイピング ({i+1}/{len(urls)}): {url}")
 
-        for i, url in enumerate(urls):
-            logger.info(f"APMEX スクレイピング ({i+1}/{len(urls)}): {url}")
+        # 各URLごとに新しいスクレイパーインスタンスを作成
+        scraper = ApmexBrightDataScraper(config)
+        try:
+            await scraper.connect()
             result = await scraper.scrape(url)
             results.append(result)
+        except Exception as e:
+            logger.error(f"スクレイピングエラー: {url} - {e}")
+            results.append(ScrapedData(
+                product_name="",
+                price=0.0,
+                currency="USD",
+                url=url,
+                in_stock=False,
+                error=str(e)
+            ))
+        finally:
+            await scraper.close()
 
-            # リクエスト間の待機
-            if i < len(urls) - 1:
-                await asyncio.sleep(wait_between)
-
-    finally:
-        await scraper.close()
+        # リクエスト間の待機
+        if i < len(urls) - 1:
+            await asyncio.sleep(wait_between)
 
     return results
