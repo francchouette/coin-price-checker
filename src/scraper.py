@@ -2,10 +2,12 @@
 スクレイピング管理モジュール
 
 Playwrightを使用してショップ別のスクレイピングを実行する。
+APMEXの場合はBright Data Browser APIを使用してボット対策を回避する。
 """
 
 import random
 import time
+import asyncio
 import logging
 from typing import Optional
 from dataclasses import dataclass
@@ -14,6 +16,7 @@ from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page
 
 from .config import Config
 from .shops import BaseScraper, ScrapedData, BullionstarScraper, ApmexScraper
+from .shops import scrape_apmex_urls
 
 logger = logging.getLogger(__name__)
 
@@ -167,29 +170,80 @@ class ScraperManager:
         """
         複数のターゲットをスクレイピングする
 
+        APMEXの場合はBright Data Browser APIを使用（有効な場合）、
+        その他のショップは従来のPlaywrightを使用する。
+
         Args:
             targets: スクレイピング対象のリスト
 
         Returns:
             list[ScrapedData]: スクレイピング結果のリスト
         """
+        # APMEXとそれ以外に分離
+        apmex_targets = []
+        other_targets = []
+
+        for target in targets:
+            if target.shop_name.lower() == "apmex":
+                apmex_targets.append(target)
+            else:
+                other_targets.append(target)
+
         results = []
-        total = len(targets)
+        url_to_result = {}
 
-        for i, target in enumerate(targets, 1):
-            logger.info(f"スクレイピング中 ({i}/{total}): {target.url}")
-
-            result = self.scrape(target)
-            results.append(result)
-
-            # 次のリクエストまでランダムに待機（最後のリクエスト以外）
-            if i < total:
-                wait_time = random.uniform(
-                    Config.SCRAPE_MIN_WAIT,
-                    Config.SCRAPE_MAX_WAIT
+        # APMEXをBright Data Browser APIでスクレイピング（有効な場合）
+        if apmex_targets:
+            if Config.is_brightdata_browser_enabled():
+                logger.info(f"APMEX ({len(apmex_targets)}件) をBright Data Browser APIでスクレイピング")
+                apmex_urls = [t.url for t in apmex_targets]
+                apmex_results = asyncio.run(
+                    scrape_apmex_urls(
+                        apmex_urls,
+                        Config.BRIGHTDATA_BROWSER_WS,
+                        wait_between=random.uniform(Config.SCRAPE_MIN_WAIT, Config.SCRAPE_MAX_WAIT)
+                    )
                 )
-                logger.debug(f"待機中: {wait_time:.1f}秒")
-                time.sleep(wait_time)
+                for url, result in zip(apmex_urls, apmex_results):
+                    url_to_result[url] = result
+            else:
+                logger.warning("Bright Data Browser APIが無効のため、APMEXは従来方式でスクレイピング")
+                other_targets.extend(apmex_targets)
+
+        # その他のショップを従来のPlaywrightでスクレイピング
+        if other_targets:
+            logger.info(f"その他のショップ ({len(other_targets)}件) を従来方式でスクレイピング")
+            total = len(other_targets)
+
+            for i, target in enumerate(other_targets, 1):
+                logger.info(f"スクレイピング中 ({i}/{total}): {target.url}")
+
+                result = self.scrape(target)
+                url_to_result[target.url] = result
+
+                # 次のリクエストまでランダムに待機（最後のリクエスト以外）
+                if i < total:
+                    wait_time = random.uniform(
+                        Config.SCRAPE_MIN_WAIT,
+                        Config.SCRAPE_MAX_WAIT
+                    )
+                    logger.debug(f"待機中: {wait_time:.1f}秒")
+                    time.sleep(wait_time)
+
+        # 元の順序で結果を返す
+        for target in targets:
+            if target.url in url_to_result:
+                results.append(url_to_result[target.url])
+            else:
+                # 結果がない場合はエラーとして追加
+                results.append(ScrapedData(
+                    product_name=target.product_name_hint,
+                    price=0.0,
+                    currency="",
+                    url=target.url,
+                    in_stock=False,
+                    error="スクレイピング結果が見つかりません"
+                ))
 
         return results
 
