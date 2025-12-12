@@ -30,6 +30,8 @@ class ColorMeProduct:
     display_control: str = ""  # 表示連動: "連動" = 在庫に連動, "表示" = 常に表示, "非表示" = 常に非表示, "変更しない" or 空 = 変更しない
     source_currency: str = "USD"  # 取得元の通貨
     exchange_type: str = "クレカ"  # 為替種類: "クレカ" or "Wise"
+    shipping_cost: int = 0  # 送料（P列）
+    misc_cost: int = 0  # 諸経費（Q列）
 
 
 class ColorMeClient:
@@ -264,10 +266,16 @@ class ColorMeClient:
                     result["skipped"] += 1
                     continue
 
-            # 新価格を計算: 取得価格 × 為替レート × 枚数 × マージン率
-            new_price = int(
-                source_price * exchange_rate * product.quantity * product.margin_rate
+            # O列相当: 取得価格 × 為替レート × 枚数
+            base_price = source_price * exchange_rate * product.quantity
+
+            # R列の計算式: round(O × E + P + Q, -2)
+            # 販売価格 = round(本体価格 × マージン率 + 送料 + 諸経費, -2)
+            new_price = round(
+                base_price * product.margin_rate + product.shipping_cost + product.misc_cost,
+                -2  # 100円単位で丸め
             )
+            new_price = int(new_price)
 
             # 価格差額
             price_diff = new_price - colorme_current_price
@@ -278,7 +286,9 @@ class ColorMeClient:
                     f"[価格計算] {product.name}\n"
                     f"    カラーミー現在価格: {colorme_current_price:,}円\n"
                     f"    取得元価格: {source_price:,.0f}円\n"
-                    f"    計算価格（反映候補）: {new_price:,}円\n"
+                    f"    本体価格(O列相当): {base_price:,.0f}円\n"
+                    f"    マージン率: {product.margin_rate}, 送料: {product.shipping_cost:,}円, 諸経費: {product.misc_cost:,}円\n"
+                    f"    販売価格(R列相当): {new_price:,}円\n"
                     f"    差額: {price_diff:+,}円"
                 )
             else:
@@ -287,7 +297,9 @@ class ColorMeClient:
                     f"    カラーミー現在価格: {colorme_current_price:,}円\n"
                     f"    取得元価格: {product.source_currency} {source_price:,.2f}\n"
                     f"    為替レート: {exchange_rate:.2f} ({product.exchange_type})\n"
-                    f"    計算価格（反映候補）: {new_price:,}円\n"
+                    f"    本体価格(O列相当): {base_price:,.0f}円\n"
+                    f"    マージン率: {product.margin_rate}, 送料: {product.shipping_cost:,}円, 諸経費: {product.misc_cost:,}円\n"
+                    f"    販売価格(R列相当): {new_price:,}円\n"
                     f"    差額: {price_diff:+,}円"
                 )
 
@@ -322,9 +334,6 @@ class ColorMeClient:
                     updates["display_state"] = "hidden"
                     log_parts.append("表示: 非表示")
 
-            # O列用: 取得価格 × 為替レート（JPYの場合は為替レート=1）
-            base_price = source_price * exchange_rate
-
             # 計算結果を記録（JPYの場合は為替レートを1に）
             calc_result = {
                 "product_id": product.product_id,
@@ -334,7 +343,8 @@ class ColorMeClient:
                 "exchange_rate": 1 if product.source_currency == "JPY" else exchange_rate,
                 "source_price": source_price,
                 "source_currency": product.source_currency,
-                "calculated_price": base_price,  # O列: 取得価格×為替
+                "base_price": base_price,  # O列: 取得価格×為替×枚数
+                "selling_price": new_price,  # R列: round(O×E+P+Q, -2)
                 "update_enabled": product.update_enabled,
                 "updated": False
             }

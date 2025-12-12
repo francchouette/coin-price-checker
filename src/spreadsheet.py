@@ -436,10 +436,10 @@ class SpreadsheetClient:
         L: 取得通貨 (11) - 入力 USD, SGD, EUR等
         M: 為替種類 (12) - 入力 クレカ, Wise
         N: 為替レート (13) - 自動（JPYの場合は1）
-        O: 本体計算価格 (14) - ユーザー入力/数式（更新しない）
+        O: 本体計算価格 (14) - 自動（取得価格×為替×枚数）
         P: 送料 (15) - 入力
         Q: 諸経費 (16) - 入力
-        R: 販売価格 (17) - 数式（更新しない）
+        R: 販売価格 (17) - 自動 = round(O×E+P+Q, -2)
         S: 原価（諸経費込み） (18) - ユーザー入力/数式（更新しない）
         T: 販売粗利 (19) - ユーザー入力/数式（更新しない）
         U: 販売粗利率 (20) - 数式（更新しない）
@@ -525,6 +525,22 @@ class SpreadsheetClient:
                             if len(row) >= 13 and row[12].strip():
                                 exchange_type = row[12].strip()
 
+                            # 送料（P列、index 15）
+                            shipping_cost = 0
+                            if len(row) >= 16 and row[15].strip():
+                                try:
+                                    shipping_cost = int(float(row[15].strip()))
+                                except ValueError:
+                                    pass
+
+                            # 諸経費（Q列、index 16）
+                            misc_cost = 0
+                            if len(row) >= 17 and row[16].strip():
+                                try:
+                                    misc_cost = int(float(row[16].strip()))
+                                except ValueError:
+                                    pass
+
                             products.append(ColorMeProduct(
                                 product_id=int(product_id),
                                 name=row[1].strip(),
@@ -537,7 +553,9 @@ class SpreadsheetClient:
                                 stock_quantity=stock_quantity,
                                 display_control=display_control,
                                 source_currency=source_currency,
-                                exchange_type=exchange_type
+                                exchange_type=exchange_type,
+                                shipping_cost=shipping_cost,
+                                misc_cost=misc_cost
                             ))
                         except ValueError as e:
                             logger.warning(f"行のパースエラー: {row} - {e}")
@@ -558,15 +576,15 @@ class SpreadsheetClient:
         J: 現在価格（カラーミーAPIから取得）
         K: 取得元価格
         N: 為替レート（JPYの場合は1）
+        O: 本体計算価格（取得価格×為替×枚数）
+        R: 販売価格 = round(O×E+P+Q, -2)
         W: 最終更新
 
         更新しない列（入力項目・数式）:
         L: 取得通貨（入力）
         M: 為替種類（入力）
-        O: 本体計算価格（ユーザー入力/数式）
         P: 送料（入力）
         Q: 諸経費（入力）
-        R: 販売価格（数式）
         S: 原価（諸経費込み）（ユーザー入力/数式）
         T: 販売粗利（ユーザー入力/数式）
         U: 販売粗利率（数式）
@@ -612,15 +630,22 @@ class SpreadsheetClient:
                             r["source_price"],
                         ]]
                     })
-                    # N列: 為替レート
+                    # N-O列: 為替レート, 本体計算価格
                     # （L列「取得通貨」とM列「為替種類」はスキップ）
-                    # O列: 本体計算価格 → ユーザー入力/数式のためスキップ
                     updates.append({
-                        'range': f'N{row_num}',
-                        'values': [[r["exchange_rate"]]]
+                        'range': f'N{row_num}:O{row_num}',
+                        'values': [[
+                            r["exchange_rate"],
+                            r["base_price"],  # O列: 取得価格×為替×枚数
+                        ]]
+                    })
+                    # R列: 販売価格 = round(O×E+P+Q, -2)
+                    # （P列「送料」, Q列「諸経費」はユーザー入力）
+                    updates.append({
+                        'range': f'R{row_num}',
+                        'values': [[r["selling_price"]]]
                     })
                     # S-T列: 原価（諸経費込み）, 販売粗利 → ユーザーが手動で計算式を入れるためスキップ
-                    # （P列「送料」, Q列「諸経費」, R列「販売価格（数式）」もスキップ）
                     # V列: 差額 → ユーザー入力のためスキップ
                     # （U列「販売粗利率（数式）」もスキップ）
                     # W列: 最終更新
