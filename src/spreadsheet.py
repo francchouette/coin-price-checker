@@ -424,27 +424,28 @@ class SpreadsheetClient:
         シート列:
         A: カラーミー商品ID (0) - 入力
         B: 商品名 (1) - 入力
-        C: 取得元URL (2) - 入力
-        D: 枚数 (3) - 入力
-        E: マージン率 (4) - 入力
-        F: 価格更新 (5) - 入力 ON/OFF
-        G: 在庫連動 (6) - 入力 ON/OFF
-        H: 在庫数量 (7) - 入力
-        I: 表示連動 (8) - 入力 連動/表示/非表示/変更しない
-        J: 現在価格 (9) - 自動（カラーミーAPIから取得）
-        K: 取得元価格 (10) - 自動
-        L: 取得通貨 (11) - 入力 USD, SGD, EUR等
-        M: 為替種類 (12) - 入力 クレカ, Wise
-        N: 為替レート (13) - 自動（JPYの場合は1）
-        O: 本体計算価格 (14) - 自動（取得価格×為替×枚数）
-        P: 送料 (15) - 入力
-        Q: 諸経費 (16) - 入力
-        R: 販売価格 (17) - 自動 = round(O×E+P+Q, -2)
-        S: 原価（諸経費込み） (18) - ユーザー入力/数式（更新しない）
-        T: 販売粗利 (19) - ユーザー入力/数式（更新しない）
-        U: 販売粗利率 (20) - 数式（更新しない）
-        V: 差額 (21) - ユーザー入力/数式（更新しない）
-        W: 最終更新 (22) - 自動
+        C: カラーミー商品URL (2) - 自動生成
+        D: 取得元URL (3) - 入力
+        E: 枚数 (4) - 入力
+        F: マージン率 (5) - 入力
+        G: 価格更新 (6) - 入力 ON/OFF
+        H: 在庫連動 (7) - 入力 ON/OFF
+        I: 在庫数量 (8) - 入力
+        J: 表示連動 (9) - 入力 連動/表示/非表示/変更しない
+        K: 現在価格 (10) - 自動（カラーミーAPIから取得）
+        L: 取得元価格 (11) - 自動
+        M: 取得通貨 (12) - 入力 USD, SGD, EUR等
+        N: 為替種類 (13) - 入力 クレカ, Wise
+        O: 為替レート (14) - 自動（JPYの場合は1）
+        P: 本体計算価格 (15) - 自動（取得価格×為替×枚数）
+        Q: 送料 (16) - 入力
+        R: 諸経費 (17) - 入力
+        S: 販売価格 (18) - 自動 = round(P×F+Q+R, -2)
+        T: 原価（諸経費込み） (19) - ユーザー入力/数式（更新しない）
+        U: 販売粗利 (20) - ユーザー入力/数式（更新しない）
+        V: 販売粗利率 (21) - 数式（更新しない）
+        W: 差額 (22) - ユーザー入力/数式（更新しない）
+        X: 最終更新 (23) - 自動
 
         Returns:
             list: ColorMeProduct のリスト
@@ -461,83 +462,86 @@ class SpreadsheetClient:
 
             products = []
             for row in records[1:]:  # ヘッダーをスキップ
-                if len(row) >= 3:
+                if len(row) >= 4:
                     product_id = row[0].strip()
-                    source_url = row[2].strip()  # C列: 取得元URL
+                    source_url = row[3].strip()  # D列: 取得元URL
 
                     # 商品IDとURLが両方ある場合のみ追加
                     if product_id and source_url:
                         try:
-                            # 枚数（D列、index 3）
-                            quantity = 1
-                            if len(row) >= 4 and row[3].strip():
-                                try:
-                                    quantity = int(row[3].strip())
-                                except ValueError:
-                                    pass
+                            # カラーミー商品URL（C列、index 2）- 自動生成
+                            colorme_url = f"https://ybx.jp/?pid={product_id}"
 
-                            # マージン率（E列、index 4）
-                            margin_rate = 1.1
+                            # 枚数（E列、index 4）
+                            quantity = 1
                             if len(row) >= 5 and row[4].strip():
                                 try:
-                                    margin_rate = float(row[4].strip())
+                                    quantity = int(row[4].strip())
                                 except ValueError:
                                     pass
 
-                            # 価格更新（F列、index 5）
+                            # マージン率（F列、index 5）
+                            margin_rate = 1.1
+                            if len(row) >= 6 and row[5].strip():
+                                try:
+                                    margin_rate = float(row[5].strip())
+                                except ValueError:
+                                    pass
+
+                            # 価格更新（G列、index 6）
                             update_enabled = False
-                            if len(row) >= 6 and row[5].strip().upper() == "ON":
+                            if len(row) >= 7 and row[6].strip().upper() == "ON":
                                 update_enabled = True
 
-                            # 在庫連動（G列、index 6）
+                            # 在庫連動（H列、index 7）
                             stock_sync = False
-                            if len(row) >= 7 and row[6].strip().upper() == "ON":
+                            if len(row) >= 8 and row[7].strip().upper() == "ON":
                                 stock_sync = True
 
-                            # 在庫数量（H列、index 7）
+                            # 在庫数量（I列、index 8）
                             stock_quantity = 10
-                            if len(row) >= 8 and row[7].strip():
+                            if len(row) >= 9 and row[8].strip():
                                 try:
-                                    stock_quantity = int(row[7].strip())
+                                    stock_quantity = int(row[8].strip())
                                 except ValueError:
                                     pass
 
-                            # 表示連動（I列、index 8）
+                            # 表示連動（J列、index 9）
                             display_control = ""
-                            if len(row) >= 9:
-                                display_control = row[8].strip()
+                            if len(row) >= 10:
+                                display_control = row[9].strip()
 
-                            # 現在価格（J列、index 9）- 計算結果から読み取り
+                            # 現在価格（K列、index 10）- 計算結果から読み取り
                             current_price = 0
-                            if len(row) >= 10 and row[9].strip():
+                            if len(row) >= 11 and row[10].strip():
                                 try:
-                                    current_price = int(row[9].strip())
+                                    current_price = int(row[10].strip())
                                 except ValueError:
                                     pass
 
-                            # 取得通貨（L列、index 11）
+                            # 取得通貨（M列、index 12）
                             source_currency = "USD"
-                            if len(row) >= 12 and row[11].strip():
-                                source_currency = row[11].strip().upper()
-
-                            # 為替種類（M列、index 12）
-                            exchange_type = "クレカ"
                             if len(row) >= 13 and row[12].strip():
-                                exchange_type = row[12].strip()
+                                source_currency = row[12].strip().upper()
 
-                            # 送料（P列、index 15）
+                            # 為替種類（N列、index 13）
+                            exchange_type = "クレカ"
+                            if len(row) >= 14 and row[13].strip():
+                                exchange_type = row[13].strip()
+
+                            # 送料（Q列、index 16）
                             shipping_cost = 0
-                            if len(row) >= 16 and row[15].strip():
-                                try:
-                                    shipping_cost = int(float(row[15].strip()))
-                                except ValueError:
-                                    pass
-
-                            # 諸経費（Q列、index 16）
-                            misc_cost = 0
                             if len(row) >= 17 and row[16].strip():
                                 try:
-                                    misc_cost = int(float(row[16].strip()))
+                                    shipping_cost = int(float(row[16].strip()))
+                                except ValueError:
+                                    pass
+
+                            # 諸経費（R列、index 17）
+                            misc_cost = 0
+                            if len(row) >= 18 and row[17].strip():
+                                try:
+                                    misc_cost = int(float(row[17].strip()))
                                 except ValueError:
                                     pass
 
@@ -545,6 +549,7 @@ class SpreadsheetClient:
                                 product_id=int(product_id),
                                 name=row[1].strip(),
                                 current_price=current_price,
+                                colorme_url=colorme_url,
                                 source_url=source_url,
                                 quantity=quantity,
                                 margin_rate=margin_rate,
@@ -573,22 +578,23 @@ class SpreadsheetClient:
         カラーミー商品管理シートに計算結果を更新する
 
         更新する列:
-        J: 現在価格（カラーミーAPIから取得）
-        K: 取得元価格
-        N: 為替レート（JPYの場合は1）
-        O: 本体計算価格（取得価格×為替×枚数）
-        R: 販売価格 = round(O×E+P+Q, -2)
-        W: 最終更新
+        C: カラーミー商品URL（自動生成）
+        K: 現在価格（カラーミーAPIから取得）
+        L: 取得元価格
+        O: 為替レート（JPYの場合は1）
+        P: 本体計算価格（取得価格×為替×枚数）
+        S: 販売価格 = round(P×F+Q+R, -2)
+        X: 最終更新
 
         更新しない列（入力項目・数式）:
-        L: 取得通貨（入力）
-        M: 為替種類（入力）
-        P: 送料（入力）
-        Q: 諸経費（入力）
-        S: 原価（諸経費込み）（ユーザー入力/数式）
-        T: 販売粗利（ユーザー入力/数式）
-        U: 販売粗利率（数式）
-        V: 差額（ユーザー入力/数式）
+        M: 取得通貨（入力）
+        N: 為替種類（入力）
+        Q: 送料（入力）
+        R: 諸経費（入力）
+        T: 原価（諸経費込み）（ユーザー入力/数式）
+        U: 販売粗利（ユーザー入力/数式）
+        V: 販売粗利率（数式）
+        W: 差額（ユーザー入力/数式）
 
         Args:
             results: 計算結果のリスト
@@ -622,35 +628,41 @@ class SpreadsheetClient:
             for r in results:
                 row_num = id_to_row.get(r["product_id"])
                 if row_num:
-                    # J-K列: 現在価格, 取得元価格
+                    # C列: カラーミー商品URL（自動生成）
+                    colorme_url = f"https://ybx.jp/?pid={r['product_id']}"
                     updates.append({
-                        'range': f'J{row_num}:K{row_num}',
+                        'range': f'C{row_num}',
+                        'values': [[colorme_url]]
+                    })
+                    # K-L列: 現在価格, 取得元価格
+                    updates.append({
+                        'range': f'K{row_num}:L{row_num}',
                         'values': [[
                             r["colorme_price"],
                             r["source_price"],
                         ]]
                     })
-                    # N-O列: 為替レート, 本体計算価格
-                    # （L列「取得通貨」とM列「為替種類」はスキップ）
+                    # O-P列: 為替レート, 本体計算価格
+                    # （M列「取得通貨」とN列「為替種類」はスキップ）
                     updates.append({
-                        'range': f'N{row_num}:O{row_num}',
+                        'range': f'O{row_num}:P{row_num}',
                         'values': [[
                             r["exchange_rate"],
-                            r["base_price"],  # O列: 取得価格×為替×枚数
+                            r["base_price"],  # P列: 取得価格×為替×枚数
                         ]]
                     })
-                    # R列: 販売価格 = round(O×E+P+Q, -2)
-                    # （P列「送料」, Q列「諸経費」はユーザー入力）
+                    # S列: 販売価格 = round(P×F+Q+R, -2)
+                    # （Q列「送料」, R列「諸経費」はユーザー入力）
                     updates.append({
-                        'range': f'R{row_num}',
+                        'range': f'S{row_num}',
                         'values': [[r["selling_price"]]]
                     })
-                    # S-T列: 原価（諸経費込み）, 販売粗利 → ユーザーが手動で計算式を入れるためスキップ
-                    # V列: 差額 → ユーザー入力のためスキップ
-                    # （U列「販売粗利率（数式）」もスキップ）
-                    # W列: 最終更新
+                    # T-U列: 原価（諸経費込み）, 販売粗利 → ユーザーが手動で計算式を入れるためスキップ
+                    # W列: 差額 → ユーザー入力のためスキップ
+                    # （V列「販売粗利率（数式）」もスキップ）
+                    # X列: 最終更新
                     updates.append({
-                        'range': f'W{row_num}',
+                        'range': f'X{row_num}',
                         'values': [[timestamp]]
                     })
 

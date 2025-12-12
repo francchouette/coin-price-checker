@@ -21,7 +21,8 @@ class ColorMeProduct:
     product_id: int
     name: str
     current_price: int
-    source_url: str  # 価格取得元URL（Bullionstar, APMEXなど）
+    colorme_url: str  # カラーミー商品ページURL（C列）
+    source_url: str  # 価格取得元URL（Bullionstar, APMEXなど）（D列）
     quantity: int  # セット枚数
     margin_rate: float  # マージン率（1.1 = 10%）
     update_enabled: bool = False  # 価格更新ON/OFF
@@ -30,8 +31,8 @@ class ColorMeProduct:
     display_control: str = ""  # 表示連動: "連動" = 在庫に連動, "表示" = 常に表示, "非表示" = 常に非表示, "変更しない" or 空 = 変更しない
     source_currency: str = "USD"  # 取得元の通貨
     exchange_type: str = "クレカ"  # 為替種類: "クレカ" or "Wise"
-    shipping_cost: int = 0  # 送料（P列）
-    misc_cost: int = 0  # 諸経費（Q列）
+    shipping_cost: int = 0  # 送料（Q列）
+    misc_cost: int = 0  # 諸経費（R列）
 
 
 class ColorMeClient:
