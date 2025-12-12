@@ -95,11 +95,19 @@ class ColorMeClient:
         prices = {}
         for product_id in product_ids:
             product = self.get_product(product_id)
-            if product and "price" in product and product["price"] is not None:
-                try:
-                    prices[product_id] = int(product["price"])
-                except (ValueError, TypeError) as e:
-                    logger.warning(f"価格変換エラー (ID: {product_id}): {product['price']} - {e}")
+            if product:
+                # デバッグ: 価格関連フィールドをログ出力（最初の3件のみ）
+                if len(prices) < 3:
+                    logger.info(
+                        f"[API応答] 商品ID {product_id}: price={product.get('price')}, "
+                        f"sales_price={product.get('sales_price')}, "
+                        f"members_price={product.get('members_price')}"
+                    )
+                if "price" in product and product["price"] is not None:
+                    try:
+                        prices[product_id] = int(product["price"])
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"価格変換エラー (ID: {product_id}): {product['price']} - {e}")
         return prices
 
     def get_all_products(self, limit: int = 100) -> list[dict]:
