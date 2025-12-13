@@ -108,22 +108,18 @@ class ColorMeClient:
                         f"sales_price={product.get('sales_price')}, "
                         f"members_price={product.get('members_price')}"
                     )
-                # 価格を取得
+                # 価格を取得（sales_priceを優先。これが消費者に表示される価格）
                 price = product.get("price")
                 sales_price = product.get("sales_price")
 
-                # 99999999円は「販売停止」の意味なので、そのまま維持
-                # sales_priceが有効（0より大きく99999999未満）ならsales_priceを使用
-                # それ以外はpriceを使用（99999999円も含む）
-                if sales_price and 0 < sales_price < 99999999:
+                # sales_priceを優先（これが消費者に表示される）
+                # sales_priceが設定されていればそれを使用、なければpriceを使用
+                if sales_price is not None and sales_price > 0:
                     actual_price = sales_price
                     logger.info(f"[価格選択] 商品ID {product_id}: sales_price {sales_price} を使用")
                 else:
                     actual_price = price
-                    if price == 99999999:
-                        logger.info(f"[価格選択] 商品ID {product_id}: 販売停止価格 {price} を維持")
-                    else:
-                        logger.info(f"[価格選択] 商品ID {product_id}: price {price} を使用")
+                    logger.info(f"[価格選択] 商品ID {product_id}: price {price} を使用")
                 if actual_price is not None:
                     try:
                         prices[product_id] = int(actual_price)
@@ -341,9 +337,10 @@ class ColorMeClient:
             updates = {}
             log_parts = []
 
-            # 価格更新
+            # 価格更新（priceとsales_priceの両方を更新）
             if product.update_enabled and new_price != colorme_current_price:
                 updates["price"] = new_price
+                updates["sales_price"] = new_price  # 特価も同じ値に更新
                 log_parts.append(f"価格: {colorme_current_price:,}円 → {new_price:,}円")
 
             # 在庫更新
