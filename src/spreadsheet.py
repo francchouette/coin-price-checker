@@ -557,6 +557,14 @@ class SpreadsheetClient:
                                 except ValueError:
                                     pass
 
+                            # T列: 原価（index 19）
+                            cost = 0
+                            if len(row) >= 20 and row[19].strip():
+                                try:
+                                    cost = int(float(row[19].strip().replace(',', '')))
+                                except ValueError:
+                                    pass
+
                             # Y列: 前回価格（index 24）
                             previous_source_price = 0.0
                             if len(row) >= 25 and row[24].strip():
@@ -595,6 +603,7 @@ class SpreadsheetClient:
                                 exchange_type=exchange_type,
                                 shipping_cost=shipping_cost,
                                 misc_cost=misc_cost,
+                                cost=cost,
                                 previous_source_price=previous_source_price,
                                 source_change_rate=source_change_rate,
                                 source_stock_status=source_stock_status

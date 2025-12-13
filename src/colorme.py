@@ -33,6 +33,7 @@ class ColorMeProduct:
     exchange_type: str = "クレカ"  # 為替種類: "クレカ" or "Wise"
     shipping_cost: int = 0  # 送料（Q列）
     misc_cost: int = 0  # 諸経費（R列）
+    cost: int = 0  # 原価（T列）- カラーミーのcostフィールドに反映
     # 外部価格履歴用フィールド（Y-AA列）
     previous_source_price: float = 0.0  # Y列: 前回の取得元価格
     source_change_rate: float = 0.0  # Z列: 変動率
@@ -337,10 +338,13 @@ class ColorMeClient:
             updates = {}
             log_parts = []
 
-            # 価格更新（priceとsales_priceの両方を更新）
+            # 価格更新（price, sales_price, costを更新）
             if product.update_enabled and new_price != colorme_current_price:
                 updates["price"] = new_price
                 updates["sales_price"] = new_price  # 特価も同じ値に更新
+                # 原価をT列の値で更新（設定されている場合）
+                if product.cost > 0:
+                    updates["cost"] = product.cost
                 log_parts.append(f"価格: {colorme_current_price:,}円 → {new_price:,}円")
 
             # 在庫更新
