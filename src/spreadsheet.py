@@ -684,11 +684,14 @@ class SpreadsheetClient:
                         'values': [[colorme_url]]
                     })
                     # K-L列: 現在価格, 取得元価格
+                    # L列は小数点以下2桁を保持するため文字列でフォーマット
+                    source_price = r["source_price"]
+                    source_price_formatted = f"{source_price:.2f}" if isinstance(source_price, float) else source_price
                     updates.append({
                         'range': f'K{row_num}:L{row_num}',
                         'values': [[
                             r["colorme_price"],
-                            r["source_price"],
+                            source_price_formatted,
                         ]]
                     })
                     # O-P列: 為替レート, 本体計算価格
@@ -720,7 +723,7 @@ class SpreadsheetClient:
                     updates.append({
                         'range': f'Y{row_num}:AA{row_num}',
                         'values': [[
-                            r["source_price"],  # Y列: 今回の価格を次回の前回価格として保存
+                            source_price_formatted,  # Y列: 今回の価格を次回の前回価格として保存
                             f"{change_rate:+.2f}%" if change_rate else "",  # Z列: 変動率
                             "In Stock" if in_stock else "Out of Stock"  # AA列: 在庫状況
                         ]]
