@@ -117,6 +117,7 @@ class BullionstarScraper(BaseScraper):
 
         status属性で判定:
         - IN_STOCK: 在庫あり
+        - IN_TRANSIT: 入荷予定（PRE-SALE）- 購入可能なので在庫ありとして扱う
         - UNAVAILABLE: 在庫なし
         """
         try:
@@ -124,7 +125,8 @@ class BullionstarScraper(BaseScraper):
             if element:
                 status = element.get_attribute("status")
                 if status:
-                    return status.upper() == "IN_STOCK"
+                    # IN_STOCK と IN_TRANSIT は在庫あり（購入可能）として扱う
+                    return status.upper() in ("IN_STOCK", "IN_TRANSIT")
             return True  # 判定できない場合は在庫ありとみなす
         except Exception as e:
             logger.error(f"在庫状態確認エラー: {e}")
