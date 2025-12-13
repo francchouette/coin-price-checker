@@ -171,7 +171,9 @@ class SpreadsheetClient:
         """
         settings = self.get_settings()
         try:
-            return float(settings.get("ALERT_THRESHOLD", Config.DEFAULT_ALERT_THRESHOLD))
+            # 新旧両方の設定名に対応
+            threshold = settings.get("ALERT_THRESHOLD（%）") or settings.get("ALERT_THRESHOLD")
+            return float(threshold) if threshold else Config.DEFAULT_ALERT_THRESHOLD
         except ValueError:
             return Config.DEFAULT_ALERT_THRESHOLD
 
