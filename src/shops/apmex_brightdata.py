@@ -289,7 +289,8 @@ class ApmexBrightDataScraper:
                 text = elem.get_text(strip=True)
                 price = self._parse_usd_price(text)
                 logger.info(f"[DEBUG] .price.discounted: {text} -> {price}")
-                if price and price > 100:
+                # 銀貨は$20-100程度、金貨は$1000以上なので、$20以上を有効とする
+                if price and price > 20:
                     return price
 
             # 2. 数量別価格テーブルを探す

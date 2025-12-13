@@ -108,15 +108,20 @@ class ColorMeClient:
                         f"sales_price={product.get('sales_price')}, "
                         f"members_price={product.get('members_price')}"
                     )
-                # priceを使用（sales_priceはダミー値99999999が設定されていることがあるため）
+                # sales_priceを使用（priceにダミー値99999999が設定されていることがあるため）
                 price = product.get("price")
                 sales_price = product.get("sales_price")
 
-                # sales_priceがpriceより小さい場合のみsales_priceを使用（特価の場合）
-                if sales_price and price and sales_price < price:
+                # sales_priceが有効な値（0より大きく、99999999未満）ならsales_priceを使用
+                if sales_price and 0 < sales_price < 99999999:
                     actual_price = sales_price
-                else:
+                    logger.info(f"[価格選択] 商品ID {product_id}: sales_price {sales_price} を使用")
+                elif price and 0 < price < 99999999:
                     actual_price = price
+                    logger.info(f"[価格選択] 商品ID {product_id}: price {price} を使用")
+                else:
+                    actual_price = None
+                    logger.warning(f"[価格選択] 商品ID {product_id}: 有効な価格なし (price={price}, sales_price={sales_price})")
                 if actual_price is not None:
                     try:
                         prices[product_id] = int(actual_price)
