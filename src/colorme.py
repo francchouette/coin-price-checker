@@ -104,11 +104,13 @@ class ColorMeClient:
                         f"sales_price={product.get('sales_price')}, "
                         f"members_price={product.get('members_price')}"
                     )
-                if "price" in product and product["price"] is not None:
+                # sales_priceを優先（実際の販売価格）、なければpriceを使用
+                actual_price = product.get("sales_price") or product.get("price")
+                if actual_price is not None:
                     try:
-                        prices[product_id] = int(product["price"])
+                        prices[product_id] = int(actual_price)
                     except (ValueError, TypeError) as e:
-                        logger.warning(f"価格変換エラー (ID: {product_id}): {product['price']} - {e}")
+                        logger.warning(f"価格変換エラー (ID: {product_id}): {actual_price} - {e}")
         return prices
 
     def get_all_products(self, limit: int = 100) -> list[dict]:
