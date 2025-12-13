@@ -526,7 +526,8 @@ class SpreadsheetClient:
                             current_price = 0
                             if len(row) >= 11 and row[10].strip():
                                 try:
-                                    current_price = int(row[10].strip())
+                                    # カンマ区切りの数値に対応
+                                    current_price = int(row[10].strip().replace(',', ''))
                                 except ValueError:
                                     pass
 
@@ -544,7 +545,7 @@ class SpreadsheetClient:
                             shipping_cost = 0
                             if len(row) >= 17 and row[16].strip():
                                 try:
-                                    shipping_cost = int(float(row[16].strip()))
+                                    shipping_cost = int(float(row[16].strip().replace(',', '')))
                                 except ValueError:
                                     pass
 
@@ -552,7 +553,7 @@ class SpreadsheetClient:
                             misc_cost = 0
                             if len(row) >= 18 and row[17].strip():
                                 try:
-                                    misc_cost = int(float(row[17].strip()))
+                                    misc_cost = int(float(row[17].strip().replace(',', '')))
                                 except ValueError:
                                     pass
 
