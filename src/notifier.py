@@ -310,6 +310,15 @@ class GoogleChatNotifier(BaseNotifier):
                 f"*日時:* {alert.timestamp}\n\n"
                 f"<{alert.url}|商品ページを開く>"
             )
+        elif alert.alert_type == "stock_restored":
+            text = (
+                f"*【✅ 在庫復活アラート】*\n\n"
+                f"*商品:* {alert.product_name}\n"
+                f"*ショップ:* {alert.shop_name}\n"
+                f"*現在価格:* {alert.currency} {alert.current_price:,.2f}\n"
+                f"*日時:* {alert.timestamp}\n\n"
+                f"<{alert.url}|商品ページを開く>"
+            )
         else:
             direction = "上昇 📈" if alert.change_rate > 0 else "下落 📉"
             symbol = "+" if alert.change_rate > 0 else ""
@@ -337,6 +346,13 @@ class GoogleChatNotifier(BaseNotifier):
                     f"⚠️ *{alert.product_name}* - 在庫切れ\n"
                     f"   _{alert.shop_name}_ | "
                     f"最終価格: {alert.currency} {alert.current_price:,.2f}\n"
+                    f"   <{alert.url}|詳細>\n"
+                )
+            elif alert.alert_type == "stock_restored":
+                lines.append(
+                    f"✅ *{alert.product_name}* - 在庫復活\n"
+                    f"   _{alert.shop_name}_ | "
+                    f"現在価格: {alert.currency} {alert.current_price:,.2f}\n"
                     f"   <{alert.url}|詳細>\n"
                 )
             else:

@@ -203,6 +203,23 @@ def run():
             alerts.append(alert)
             logger.info(f"在庫切れアラート検出: {result.product_name}")
 
+        # 在庫復活アラートをチェック（前回Out of Stock → 今回In Stock）
+        if not was_in_stock and result.in_stock:
+            alert = PriceAlert(
+                product_name=result.product_name,
+                shop_name=shop_name,
+                current_price=result.price,
+                previous_price=previous_price if previous_price else result.price,
+                change_rate=0.0,
+                currency=result.currency,
+                url=url,
+                timestamp=timestamp,
+                alert_type="stock_restored",
+                in_stock=True
+            )
+            alerts.append(alert)
+            logger.info(f"在庫復活アラート検出: {result.product_name}")
+
     # 価格履歴を保存
     if price_records:
         logger.info(f"価格履歴を保存中... ({len(price_records)}件)")
@@ -221,13 +238,9 @@ def run():
     # カラーミー価格更新
     if Config.is_colorme_enabled():
         logger.info("=" * 60)
-        colorme_update_enabled = sheet_client.get_colorme_update_enabled()
-        if colorme_update_enabled:
-            logger.info("カラーミー価格更新を開始します（実際に更新します）")
-        else:
-            logger.info("カラーミー価格更新を開始します（ドライランモード - 実際の更新なし）")
-            logger.info("  → 実際に更新するには設定シートで COLORME_UPDATE_ENABLED を ON にしてください")
-        update_colorme_prices(sheet_client, colorme_products, price_records, dry_run=not colorme_update_enabled)
+        logger.info("カラーミー価格更新を開始します")
+        logger.info("  → G列「CM-価格更新」がONの商品のみ更新されます")
+        update_colorme_prices(sheet_client, colorme_products, price_records, dry_run=False)
     else:
         logger.info("カラーミー連携は無効です（COLORME_ACCESS_TOKEN未設定）")
 
