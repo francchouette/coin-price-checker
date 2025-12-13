@@ -388,6 +388,9 @@ class ColorMeClient:
             if self.update_product(product.product_id, updates):
                 result["success"] += 1
                 calc_result["updated"] = True
+                # 価格更新成功時はK列に新価格を反映
+                if "price" in updates:
+                    calc_result["colorme_price"] = new_price
             else:
                 result["failed"] += 1
 
