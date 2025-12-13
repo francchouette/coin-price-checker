@@ -279,6 +279,40 @@ class ApmexBrightDataScraper:
     def _extract_price(self, soup: BeautifulSoup) -> Optional[float]:
         """価格を抽出"""
         try:
+            # デバッグ: 価格関連要素をログ出力
+            pricing_container = soup.select_one('.mod-product-pricing')
+            if pricing_container:
+                logger.info(f"[DEBUG] .mod-product-pricing HTML: {pricing_container.prettify()[:1000]}")
+
+            # 数量別価格テーブルから最初の価格（1個購入時の価格）を取得
+            # APMEXでは数量別価格が表示される
+            price_table = soup.select('.mod-product-pricing table tr')
+            if price_table:
+                for row in price_table:
+                    cells = row.select('td')
+                    if len(cells) >= 2:
+                        # 最初の行の価格を取得（1個購入時）
+                        price_text = cells[-1].get_text(strip=True)
+                        logger.info(f"[DEBUG] 価格テーブル行: {price_text}")
+                        price = self._parse_usd_price(price_text)
+                        if price and price > 100:  # 合理的な価格のみ
+                            return price
+
+            # Buy Boxの価格を探す（メイン価格）
+            buy_box_selectors = [
+                '.buy-box .price',
+                '.buy-box-price',
+                '.product-buy-box .price',
+            ]
+            for selector in buy_box_selectors:
+                elem = soup.select_one(selector)
+                if elem:
+                    text = elem.get_text(strip=True)
+                    logger.info(f"[DEBUG] Buy Box価格: {text}")
+                    price = self._parse_usd_price(text)
+                    if price and price > 100:
+                        return price
+
             # 価格コンテナを探す
             pricing_selectors = [
                 '.mod-product-pricing .price.discounted',  # 割引価格を優先
@@ -291,18 +325,28 @@ class ApmexBrightDataScraper:
                 elem = soup.select_one(selector)
                 if elem:
                     text = elem.get_text(strip=True)
+                    logger.info(f"[DEBUG] セレクタ {selector}: {text}")
                     price = self._parse_usd_price(text)
-                    if price:
+                    if price and price > 100:  # プレミアム価格（$71など）を除外
                         return price
 
-            # フォールバック: .mod-product-pricing全体から探す
-            pricing_container = soup.select_one('.mod-product-pricing')
-            if pricing_container:
-                text = pricing_container.get_text()
-                match = re.search(r'\$([\d,]+\.?\d*)', text)
-                if match:
-                    price_str = match.group(1).replace(',', '')
-                    return float(price_str)
+            # フォールバック: ページ全体から大きな価格を探す
+            all_prices = re.findall(r'\$([\d,]+\.?\d*)', soup.get_text())
+            logger.info(f"[DEBUG] ページ内の全価格: {all_prices[:10]}")
+
+            # 最も大きな価格を返す（商品の実際の価格の可能性が高い）
+            valid_prices = []
+            for price_str in all_prices:
+                try:
+                    price = float(price_str.replace(',', ''))
+                    if price > 100:  # $100以上の価格のみ
+                        valid_prices.append(price)
+                except ValueError:
+                    continue
+
+            if valid_prices:
+                # 金貨・銀貨の場合、最大価格が正しい可能性が高い
+                return max(valid_prices)
 
             return None
 
