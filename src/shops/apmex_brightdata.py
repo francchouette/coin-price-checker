@@ -289,8 +289,7 @@ class ApmexBrightDataScraper:
                 text = elem.get_text(strip=True)
                 price = self._parse_usd_price(text)
                 logger.info(f"[DEBUG] .price.discounted: {text} -> {price}")
-                # 銀貨は$20-100程度、金貨は$1000以上なので、$20以上を有効とする
-                if price and price > 20:
+                if price and price > 0:
                     return price
 
             # 2. 数量別価格テーブルを探す
@@ -306,7 +305,7 @@ class ApmexBrightDataScraper:
                             if '$' in text:
                                 price = self._parse_usd_price(text)
                                 logger.info(f"[DEBUG] テーブルセル: {text} -> {price}")
-                                if price and price > 100:
+                                if price and price > 0:
                                     return price
 
             # 3. 商品価格の一般的なセレクタを試す
@@ -324,14 +323,14 @@ class ApmexBrightDataScraper:
                     if data_price:
                         try:
                             price = float(data_price)
-                            if price > 100:
+                            if price > 0:
                                 logger.info(f"[DEBUG] data-price: {price}")
                                 return price
                         except ValueError:
                             pass
                     text = elem.get_text(strip=True)
                     price = self._parse_usd_price(text)
-                    if price and price > 100:
+                    if price and price > 0:
                         logger.info(f"[DEBUG] {selector}: {text} -> {price}")
                         return price
 
@@ -340,22 +339,21 @@ class ApmexBrightDataScraper:
             all_prices = re.findall(r'\$([\d,]+\.?\d*)', page_text)
             logger.info(f"[DEBUG] ページ内の全価格（先頭10件）: {all_prices[:10]}")
 
-            # 妥当な価格帯の価格を探す（$100〜$100,000）
+            # 有効な価格を探す（$1以上）
             valid_prices = []
             for price_str in all_prices:
                 try:
                     price = float(price_str.replace(',', ''))
-                    if 100 < price < 100000:  # $100〜$100,000の範囲
+                    if price > 0:
                         valid_prices.append(price)
                 except ValueError:
                     continue
 
             if valid_prices:
-                # 中央値に近い価格を選ぶ（異常値を避ける）
-                valid_prices.sort()
-                median_price = valid_prices[len(valid_prices) // 2]
-                logger.info(f"[DEBUG] 有効な価格: {valid_prices}, 選択: {median_price}")
-                return median_price
+                # 最初に見つかった価格を返す（ページ上部の価格が正しいことが多い）
+                first_price = valid_prices[0]
+                logger.info(f"[DEBUG] ページ内の価格: {valid_prices[:5]}, 選択: {first_price}")
+                return first_price
 
             return None
 
