@@ -33,6 +33,10 @@ class ColorMeProduct:
     exchange_type: str = "クレカ"  # 為替種類: "クレカ" or "Wise"
     shipping_cost: int = 0  # 送料（Q列）
     misc_cost: int = 0  # 諸経費（R列）
+    # 外部価格履歴用フィールド（Y-AA列）
+    previous_source_price: float = 0.0  # Y列: 前回の取得元価格
+    source_change_rate: float = 0.0  # Z列: 変動率
+    source_stock_status: str = ""  # AA列: 在庫状況 "In Stock" / "Out of Stock"
 
 
 class ColorMeClient:
@@ -218,7 +222,8 @@ class ColorMeClient:
         products: list[ColorMeProduct],
         source_prices: dict[str, float],
         source_stock: dict[str, bool],
-        exchange_rates: dict[str, float]
+        exchange_rates: dict[str, float],
+        source_change_rates: dict[str, float] = None
     ) -> dict:
         """
         複数商品の価格・在庫・表示状態を一括更新する
@@ -228,6 +233,7 @@ class ColorMeClient:
             source_prices: 取得元URL -> 価格 の辞書
             source_stock: 取得元URL -> 在庫状況(True=在庫あり) の辞書
             exchange_rates: "通貨_種類" -> 為替レート の辞書（例: "USD_クレカ": 155.0）
+            source_change_rates: 取得元URL -> 変動率(%) の辞書（オプション）
 
         Returns:
             dict: {
@@ -237,6 +243,8 @@ class ColorMeClient:
                 "calc_results": list  # 計算結果のリスト
             }
         """
+        if source_change_rates is None:
+            source_change_rates = {}
         result = {"success": 0, "failed": 0, "skipped": 0, "calc_results": []}
 
         # カラーミーから現在価格を取得
@@ -246,9 +254,10 @@ class ColorMeClient:
         logger.info(f"カラーミー価格取得完了: {len(current_prices)}件")
 
         for product in products:
-            # 取得元サイトの価格と在庫を取得
+            # 取得元サイトの価格と在庫と変動率を取得
             source_price = source_prices.get(product.source_url)
             is_in_stock = source_stock.get(product.source_url, True)
+            change_rate = source_change_rates.get(product.source_url, 0.0)
 
             if source_price is None:
                 logger.warning(
@@ -357,7 +366,9 @@ class ColorMeClient:
                 "base_price": base_price,  # O列: 取得価格×為替×枚数
                 "selling_price": new_price,  # R列: round(O×E+P+Q, -2)
                 "update_enabled": product.update_enabled,
-                "updated": False
+                "updated": False,
+                "in_stock": is_in_stock,  # AA列: 在庫状況
+                "change_rate": change_rate,  # Z列: 変動率
             }
 
             # 更新がない場合

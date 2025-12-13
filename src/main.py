@@ -211,13 +211,6 @@ def run():
         else:
             logger.error("価格履歴の保存に失敗しました")
 
-        # ダッシュボードを更新（最新価格のみ）
-        logger.info("ダッシュボードを更新中...")
-        if sheet_client.update_dashboard(price_records):
-            logger.info("ダッシュボードを更新しました")
-        else:
-            logger.warning("ダッシュボードの更新に失敗しました")
-
     # アラートを送信
     if alerts:
         logger.info(f"アラートを送信中... ({len(alerts)}件)")
@@ -324,12 +317,14 @@ def update_colorme_prices(
 
     logger.info(f"カラーミー更新対象: {len(colorme_products)}件")
 
-    # 今回取得した価格データをURL -> 価格/在庫の辞書に変換
+    # 今回取得した価格データをURL -> 価格/在庫/変動率の辞書に変換
     source_prices = {}
     source_stock = {}
+    source_change_rates = {}
     for record in price_records:
         source_prices[record.url] = record.price
         source_stock[record.url] = record.in_stock
+        source_change_rates[record.url] = record.change_rate
 
     if not source_prices:
         logger.warning("価格データがありません")
@@ -380,7 +375,8 @@ def update_colorme_prices(
         colorme_products,
         source_prices,
         source_stock,
-        exchange_rates
+        exchange_rates,
+        source_change_rates
     )
 
     logger.info(

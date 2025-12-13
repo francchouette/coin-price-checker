@@ -1,10 +1,10 @@
 name: Price Check
 
 on:
-  # 1日2回実行（JST 9:00 / 21:00 = UTC 0:00 / 12:00）
+  # 1日6回実行（4時間ごと）
+  # JST: 1:00, 5:00, 9:00, 13:00, 17:00, 21:00
   schedule:
-    - cron: '0 0 * * *'   # JST 9:00 AM
-    - cron: '0 12 * * *'  # JST 9:00 PM
+    - cron: '0 */4 * * *'
 
   # 手動実行を許可
   workflow_dispatch:

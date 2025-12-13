@@ -323,7 +323,7 @@ class SpreadsheetClient:
 
     def get_latest_stock_status(self, urls: list[str]) -> dict[str, bool]:
         """
-        複数URLの直近の在庫状況を一括取得する（ダッシュボードから取得）
+        複数URLの直近の在庫状況を一括取得する（カラーミー商品管理シートから取得）
 
         Args:
             urls: 商品URLのリスト
@@ -335,18 +335,23 @@ class SpreadsheetClient:
             return {}
 
         try:
+            url_set = set(urls)
+            stock_status = {}
+
+            # カラーミー商品管理シートのAA列（在庫状況）から取得
             try:
-                sheet = self._spreadsheet.worksheet(Config.SHEET_DASHBOARD)
+                sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME)
                 records = sheet.get_all_values()
 
-                url_set = set(urls)
-                stock_status = {}
-
                 for row in records[1:]:  # ヘッダーをスキップ
-                    if len(row) >= 9:
-                        url = row[8]  # URL列
-                        if url in url_set and url not in stock_status:
-                            stock_status[url] = row[6] == "In Stock"  # 在庫状況列
+                    if len(row) >= 27:
+                        source_url = row[3].strip()  # D列: 取得元URL
+                        if source_url in url_set and source_url not in stock_status:
+                            # AA列: 在庫状況（index 26）
+                            stock_status[source_url] = row[26].strip() == "In Stock"
+
+                if stock_status:
+                    logger.info(f"カラーミー商品管理シートから在庫状況を{len(stock_status)}件取得")
 
                 return stock_status
             except Exception:
@@ -357,7 +362,7 @@ class SpreadsheetClient:
 
     def get_latest_prices(self, urls: list[str]) -> dict[str, float]:
         """
-        複数URLの直近価格を一括取得する（ダッシュボードから取得）
+        複数URLの直近価格を一括取得する（カラーミー商品管理シートから取得）
 
         Args:
             urls: 商品URLのリスト
@@ -369,34 +374,38 @@ class SpreadsheetClient:
             return {}
 
         try:
-            # まずダッシュボードから取得を試みる
+            url_set = set(urls)
+            latest_prices = {}
+
+            # カラーミー商品管理シートのL列（取得元価格）から取得
             try:
-                sheet = self._spreadsheet.worksheet(Config.SHEET_DASHBOARD)
+                sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME)
                 records = sheet.get_all_values()
 
-                url_set = set(urls)
-                latest_prices = {}
-
                 for row in records[1:]:  # ヘッダーをスキップ
-                    if len(row) >= 9:
-                        url = row[8]  # URL列
-                        if url in url_set and url not in latest_prices:
-                            try:
-                                latest_prices[url] = float(row[2])  # 現在価格列
-                            except ValueError:
-                                continue
+                    if len(row) >= 12:
+                        source_url = row[3].strip()  # D列: 取得元URL
+                        if source_url in url_set and source_url not in latest_prices:
+                            # L列: 取得元価格（index 11）
+                            if row[11].strip():
+                                try:
+                                    latest_prices[source_url] = float(row[11].strip())
+                                except ValueError:
+                                    continue
 
                 if latest_prices:
-                    return latest_prices
+                    logger.info(f"カラーミー商品管理シートから価格を{len(latest_prices)}件取得")
+                    # 見つからないURLがある場合はフォールバック
+                    if len(latest_prices) < len(url_set):
+                        pass  # 下のフォールバック処理へ
+                    else:
+                        return latest_prices
             except Exception:
-                pass  # ダッシュボードがない場合は価格履歴から取得
+                pass  # カラーミー商品管理シートがない場合は価格履歴から取得
 
             # フォールバック: 価格履歴から取得
             sheet = self._spreadsheet.worksheet(Config.SHEET_HISTORY)
             records = sheet.get_all_values()
-
-            url_set = set(urls)
-            latest_prices = {}
 
             # 最新のレコードから逆順に検索
             for row in reversed(records[1:]):
@@ -545,6 +554,28 @@ class SpreadsheetClient:
                                 except ValueError:
                                     pass
 
+                            # Y列: 前回価格（index 24）
+                            previous_source_price = 0.0
+                            if len(row) >= 25 and row[24].strip():
+                                try:
+                                    previous_source_price = float(row[24].strip())
+                                except ValueError:
+                                    pass
+
+                            # Z列: 変動率（index 25）
+                            source_change_rate = 0.0
+                            if len(row) >= 26 and row[25].strip():
+                                try:
+                                    rate_str = row[25].strip().replace('%', '').replace('+', '')
+                                    source_change_rate = float(rate_str)
+                                except ValueError:
+                                    pass
+
+                            # AA列: 在庫状況（index 26）
+                            source_stock_status = ""
+                            if len(row) >= 27:
+                                source_stock_status = row[26].strip()
+
                             products.append(ColorMeProduct(
                                 product_id=int(product_id),
                                 name=row[1].strip(),
@@ -560,7 +591,10 @@ class SpreadsheetClient:
                                 source_currency=source_currency,
                                 exchange_type=exchange_type,
                                 shipping_cost=shipping_cost,
-                                misc_cost=misc_cost
+                                misc_cost=misc_cost,
+                                previous_source_price=previous_source_price,
+                                source_change_rate=source_change_rate,
+                                source_stock_status=source_stock_status
                             ))
                         except ValueError as e:
                             logger.warning(f"行のパースエラー: {row} - {e}")
@@ -585,6 +619,9 @@ class SpreadsheetClient:
         P: 本体計算価格（取得価格×為替×枚数）
         S: 販売価格 = round(P×F+Q+R, -2)
         X: 最終更新
+        Y: 外部-前回価格（今回の取得元価格を次回の前回価格として保存）
+        Z: 外部-変動率
+        AA: 外部-在庫状況
 
         更新しない列（入力項目・数式）:
         M: 取得通貨（入力）
@@ -597,7 +634,7 @@ class SpreadsheetClient:
         W: 差額（ユーザー入力/数式）
 
         Args:
-            results: 計算結果のリスト
+            results: 計算結果のリスト（change_rate, in_stockを含む）
             timestamp: 更新日時
 
         Returns:
@@ -664,6 +701,17 @@ class SpreadsheetClient:
                     updates.append({
                         'range': f'X{row_num}',
                         'values': [[timestamp]]
+                    })
+                    # Y-AA列: 前回価格, 変動率, 在庫状況（ダッシュボード統合）
+                    change_rate = r.get("change_rate", 0)
+                    in_stock = r.get("in_stock", True)
+                    updates.append({
+                        'range': f'Y{row_num}:AA{row_num}',
+                        'values': [[
+                            r["source_price"],  # Y列: 今回の価格を次回の前回価格として保存
+                            f"{change_rate:+.2f}%" if change_rate else "",  # Z列: 変動率
+                            "In Stock" if in_stock else "Out of Stock"  # AA列: 在庫状況
+                        ]]
                     })
 
             if updates:
