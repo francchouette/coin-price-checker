@@ -108,8 +108,15 @@ class ColorMeClient:
                         f"sales_price={product.get('sales_price')}, "
                         f"members_price={product.get('members_price')}"
                     )
-                # sales_priceを優先（実際の販売価格）、なければpriceを使用
-                actual_price = product.get("sales_price") or product.get("price")
+                # priceを使用（sales_priceはダミー値99999999が設定されていることがあるため）
+                price = product.get("price")
+                sales_price = product.get("sales_price")
+
+                # sales_priceがpriceより小さい場合のみsales_priceを使用（特価の場合）
+                if sales_price and price and sales_price < price:
+                    actual_price = sales_price
+                else:
+                    actual_price = price
                 if actual_price is not None:
                     try:
                         prices[product_id] = int(actual_price)
