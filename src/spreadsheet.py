@@ -587,6 +587,129 @@ class SpreadsheetClient:
                             if len(row) >= 27:
                                 source_stock_status = row[26].strip()
 
+                            # === 拡張列（AB列以降）===
+                            # AB列: 同期モード（index 27）
+                            sync_mode = ""
+                            if len(row) >= 28:
+                                sync_mode = row[27].strip()
+
+                            # AC列: 型番（index 28）
+                            model_number = ""
+                            if len(row) >= 29:
+                                model_number = row[28].strip()
+
+                            # AD列: カテゴリーID（index 29）
+                            category_id_big = 0
+                            if len(row) >= 30 and row[29].strip():
+                                try:
+                                    category_id_big = int(row[29].strip())
+                                except ValueError:
+                                    pass
+
+                            # AE列: サブカテゴリーID（index 30）
+                            category_id_small = 0
+                            if len(row) >= 31 and row[30].strip():
+                                try:
+                                    category_id_small = int(row[30].strip())
+                                except ValueError:
+                                    pass
+
+                            # AF列: グループID（index 31）- カンマ区切り
+                            group_ids = []
+                            if len(row) >= 32 and row[31].strip():
+                                try:
+                                    group_ids = [int(g.strip()) for g in row[31].split(",") if g.strip().isdigit()]
+                                except ValueError:
+                                    pass
+
+                            # AG列: 定価（index 32）
+                            regular_price = 0
+                            if len(row) >= 33 and row[32].strip():
+                                try:
+                                    regular_price = int(float(row[32].strip().replace(',', '')))
+                                except ValueError:
+                                    pass
+
+                            # AH列: 会員価格（index 33）
+                            members_price = 0
+                            if len(row) >= 34 and row[33].strip():
+                                try:
+                                    members_price = int(float(row[33].strip().replace(',', '')))
+                                except ValueError:
+                                    pass
+
+                            # AI列: 個別送料（index 34）
+                            delivery_charge = 0
+                            if len(row) >= 35 and row[34].strip():
+                                try:
+                                    delivery_charge = int(float(row[34].strip().replace(',', '')))
+                                except ValueError:
+                                    pass
+
+                            # AJ列: 在庫管理（index 35）
+                            stock_managed = True
+                            if len(row) >= 36 and row[35].strip():
+                                stock_managed = row[35].strip() != "しない"
+
+                            # AK列: 売切れ表示（index 36）
+                            soldout_display = True
+                            if len(row) >= 37 and row[36].strip():
+                                soldout_display = row[36].strip() != "非表示"
+
+                            # AL列: 適正在庫数（index 37）
+                            few_num = 0
+                            if len(row) >= 38 and row[37].strip():
+                                try:
+                                    few_num = int(row[37].strip())
+                                except ValueError:
+                                    pass
+
+                            # AM列: 最小購入数（index 38）
+                            min_num = 1
+                            if len(row) >= 39 and row[38].strip():
+                                try:
+                                    min_num = int(row[38].strip())
+                                except ValueError:
+                                    pass
+
+                            # AN列: 最大購入数（index 39）
+                            max_num = 0
+                            if len(row) >= 40 and row[39].strip():
+                                try:
+                                    max_num = int(row[39].strip())
+                                except ValueError:
+                                    pass
+
+                            # AO列: 商品説明（index 40）
+                            expl = ""
+                            if len(row) >= 41:
+                                expl = row[40]
+
+                            # AP列: 簡易説明（index 41）
+                            simple_expl = ""
+                            if len(row) >= 42:
+                                simple_expl = row[41]
+
+                            # AQ列: 商品画像URL（index 42）
+                            image_url = ""
+                            if len(row) >= 43:
+                                image_url = row[42].strip()
+
+                            # AR列: 追加画像URL（index 43）- カンマ区切り
+                            other_image_urls = []
+                            if len(row) >= 44 and row[43].strip():
+                                other_image_urls = [u.strip() for u in row[43].split(",") if u.strip()]
+
+                            # AS列: 同期ステータス（index 44）
+                            sync_status = ""
+                            if len(row) >= 45:
+                                sync_status = row[44].strip()
+
+                            # AT列: 同期日時（index 45）
+                            sync_datetime = ""
+                            if len(row) >= 46:
+                                sync_datetime = row[45].strip()
+
                             products.append(ColorMeProduct(
                                 product_id=int(product_id),
                                 name=row[1].strip(),
@@ -606,7 +729,27 @@ class SpreadsheetClient:
                                 cost=cost,
                                 previous_source_price=previous_source_price,
                                 source_change_rate=source_change_rate,
-                                source_stock_status=source_stock_status
+                                source_stock_status=source_stock_status,
+                                # 拡張フィールド
+                                sync_mode=sync_mode,
+                                model_number=model_number,
+                                category_id_big=category_id_big,
+                                category_id_small=category_id_small,
+                                group_ids=group_ids,
+                                regular_price=regular_price,
+                                members_price=members_price,
+                                delivery_charge=delivery_charge,
+                                stock_managed=stock_managed,
+                                soldout_display=soldout_display,
+                                few_num=few_num,
+                                min_num=min_num,
+                                max_num=max_num,
+                                expl=expl,
+                                simple_expl=simple_expl,
+                                image_url=image_url,
+                                other_image_urls=other_image_urls,
+                                sync_status=sync_status,
+                                sync_datetime=sync_datetime,
                             ))
                         except ValueError as e:
                             logger.warning(f"行のパースエラー: {row} - {e}")
@@ -743,8 +886,8 @@ class SpreadsheetClient:
         """
         カラーミーAPIから取得した商品一覧をシートに同期する
 
-        - 新規商品は追加
-        - 既存商品は商品名を更新
+        - 新規商品は追加（AB列以降のカラーミー情報も含む）
+        - 既存商品は商品名とAB列以降のカラーミー情報を更新
         - シートにあってAPIにない商品はそのまま（削除しない）
 
         Args:
@@ -753,6 +896,8 @@ class SpreadsheetClient:
         Returns:
             dict: {"added": int, "updated": int, "unchanged": int}
         """
+        from .colorme import ColorMeClient
+
         if not self._spreadsheet:
             logger.error("スプレッドシートに接続されていません")
             return {"added": 0, "updated": 0, "unchanged": 0}
@@ -762,6 +907,9 @@ class SpreadsheetClient:
         try:
             sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME)
             all_data = sheet.get_all_values()
+
+            # ヘッダーを確認し、AB列以降がなければ追加
+            self.ensure_colorme_headers()
 
             # 既存の商品ID -> 行番号・商品名のマッピング
             existing_products = {}
@@ -776,67 +924,178 @@ class SpreadsheetClient:
                     except ValueError:
                         continue
 
+            # ColorMeClientのヘルパーメソッドを使用
+            colorme_client = ColorMeClient()
+
             # 更新・追加データを準備
             updates = []
             new_rows = []
 
-            for product in api_products:
-                product_id = product.get("id")
-                product_name = product.get("name", "")
+            for product_data in api_products:
+                product_id = product_data.get("id")
+                product_name = product_data.get("name", "")
 
                 if not product_id:
                     continue
 
+                # APIレスポンスをColorMeProductに変換してAB列以降の情報を取得
+                product = colorme_client._api_response_to_product(product_data)
+
                 if product_id in existing_products:
-                    # 既存商品：商品名が変わっていれば更新
+                    # 既存商品：商品名とAB列以降を更新
                     existing = existing_products[product_id]
+                    row_num = existing["row"]
+
+                    # B列: 商品名を更新
                     if existing["name"] != product_name:
                         updates.append({
-                            'range': f'B{existing["row"]}',
+                            'range': f'B{row_num}',
                             'values': [[product_name]]
                         })
-                        result["updated"] += 1
-                        logger.info(f"更新: {product_id} - {existing['name']} → {product_name}")
-                    else:
-                        result["unchanged"] += 1
+
+                    # AB列以降のカラーミー情報を更新（AC列から開始、AB列の同期モードは入力項目なのでスキップ）
+                    # AC列: 型番
+                    updates.append({
+                        'range': f'AC{row_num}',
+                        'values': [[product.model_number or ""]]
+                    })
+
+                    # AD-AE列: カテゴリーID, サブカテゴリーID
+                    updates.append({
+                        'range': f'AD{row_num}:AE{row_num}',
+                        'values': [[
+                            product.category_id_big if product.category_id_big > 0 else "",
+                            product.category_id_small if product.category_id_small > 0 else ""
+                        ]]
+                    })
+
+                    # AF列: グループID（カンマ区切り）
+                    group_ids_str = ",".join(str(g) for g in product.group_ids) if product.group_ids else ""
+                    updates.append({
+                        'range': f'AF{row_num}',
+                        'values': [[group_ids_str]]
+                    })
+
+                    # AG-AI列: 定価, 会員価格, 個別送料
+                    updates.append({
+                        'range': f'AG{row_num}:AI{row_num}',
+                        'values': [[
+                            product.regular_price if product.regular_price > 0 else "",
+                            product.members_price if product.members_price > 0 else "",
+                            product.delivery_charge if product.delivery_charge > 0 else ""
+                        ]]
+                    })
+
+                    # AJ-AK列: 在庫管理, 売切れ表示
+                    updates.append({
+                        'range': f'AJ{row_num}:AK{row_num}',
+                        'values': [[
+                            "する" if product.stock_managed else "しない",
+                            "表示" if product.soldout_display else "非表示"
+                        ]]
+                    })
+
+                    # AL-AN列: 適正在庫数, 最小購入数, 最大購入数
+                    updates.append({
+                        'range': f'AL{row_num}:AN{row_num}',
+                        'values': [[
+                            product.few_num if product.few_num > 0 else "",
+                            product.min_num if product.min_num > 0 else "",
+                            product.max_num if product.max_num > 0 else ""
+                        ]]
+                    })
+
+                    # AO-AP列: 商品説明, 簡易説明
+                    updates.append({
+                        'range': f'AO{row_num}:AP{row_num}',
+                        'values': [[
+                            product.expl or "",
+                            product.simple_expl or ""
+                        ]]
+                    })
+
+                    # AQ-AR列: 商品画像URL, 追加画像URL
+                    other_urls_str = ",".join(product.other_image_urls) if product.other_image_urls else ""
+                    updates.append({
+                        'range': f'AQ{row_num}:AR{row_num}',
+                        'values': [[
+                            product.image_url or "",
+                            other_urls_str
+                        ]]
+                    })
+
+                    result["updated"] += 1
+                    logger.info(f"更新: {product_id} - {product_name}")
                 else:
-                    # 新規商品：行を追加
+                    # 新規商品：行を追加（AB列以降のカラーミー情報も含む）
                     # 行番号を計算（現在の最終行 + 追加済み行数 + 1）
                     new_row_num = len(all_data) + len(new_rows) + 1
 
-                    new_rows.append([
-                        str(product_id),  # A: カラーミー商品ID
+                    # グループIDをカンマ区切り文字列に
+                    group_ids_str = ",".join(str(g) for g in product.group_ids) if product.group_ids else ""
+                    other_urls_str = ",".join(product.other_image_urls) if product.other_image_urls else ""
+
+                    new_row = [
+                        str(product_id),   # A: カラーミー商品ID
                         product_name,      # B: 商品名
-                        "",                # C: 取得元URL
-                        "1",               # D: 枚数
-                        "1.1",             # E: マージン率
-                        "OFF",             # F: 価格更新
-                        "OFF",             # G: 在庫連動
-                        "10",              # H: 在庫数量
-                        "",                # I: 表示連動
-                        "",                # J: 現在価格
-                        "",                # K: 取得元価格
-                        "USD",             # L: 取得通貨（デフォルト）
-                        "クレカ",           # M: 為替種類（デフォルト）
-                        "",                # N: 為替レート
-                        "",                # O: 本体計算価格
-                        "",                # P: 送料
-                        "",                # Q: 諸経費
-                        f"=IFERROR(ROUND(O{new_row_num}*E{new_row_num}+P{new_row_num}+Q{new_row_num},-2),\"\")",  # R: 販売価格
-                        f"=IFERROR(ROUND(O{new_row_num}+P{new_row_num}+Q{new_row_num},-2),\"\")",  # S: 原価（諸経費込み）
-                        f"=IFERROR(R{new_row_num}-S{new_row_num},\"\")",  # T: 販売粗利
-                        f"=IFERROR(T{new_row_num}/R{new_row_num},\"\")",  # U: 販売粗利率
-                        "",                # V: 差額
-                        ""                 # W: 最終更新
-                    ])
+                        "",                # C: カラーミーURL（自動生成）
+                        "",                # D: 取得元URL
+                        "1",               # E: 枚数
+                        "1.1",             # F: マージン率
+                        "OFF",             # G: 価格更新
+                        "OFF",             # H: 在庫連動
+                        "10",              # I: 在庫数量
+                        "",                # J: 表示連動
+                        "",                # K: 現在価格
+                        "",                # L: 取得元価格
+                        "USD",             # M: 取得通貨（デフォルト）
+                        "クレカ",          # N: 為替種類（デフォルト）
+                        "",                # O: 為替レート
+                        "",                # P: 本体計算価格
+                        "",                # Q: 送料
+                        "",                # R: 諸経費
+                        "",                # S: 販売価格
+                        "",                # T: 原価
+                        "",                # U: 販売粗利
+                        "",                # V: 販売粗利率
+                        "",                # W: 差額
+                        "",                # X: 最終更新
+                        "",                # Y: 前回価格
+                        "",                # Z: 変動率
+                        "",                # AA: 在庫状況
+                        "",                # AB: 同期モード（入力項目）
+                        product.model_number or "",  # AC: 型番
+                        product.category_id_big if product.category_id_big > 0 else "",  # AD: カテゴリーID
+                        product.category_id_small if product.category_id_small > 0 else "",  # AE: サブカテゴリーID
+                        group_ids_str,     # AF: グループID
+                        product.regular_price if product.regular_price > 0 else "",  # AG: 定価
+                        product.members_price if product.members_price > 0 else "",  # AH: 会員価格
+                        product.delivery_charge if product.delivery_charge > 0 else "",  # AI: 個別送料
+                        "する" if product.stock_managed else "しない",  # AJ: 在庫管理
+                        "表示" if product.soldout_display else "非表示",  # AK: 売切れ表示
+                        product.few_num if product.few_num > 0 else "",  # AL: 適正在庫数
+                        product.min_num if product.min_num > 0 else "",  # AM: 最小購入数
+                        product.max_num if product.max_num > 0 else "",  # AN: 最大購入数
+                        product.expl or "",  # AO: 商品説明
+                        product.simple_expl or "",  # AP: 簡易説明
+                        product.image_url or "",  # AQ: 商品画像URL
+                        other_urls_str,    # AR: 追加画像URL
+                        "",                # AS: 同期ステータス
+                        "",                # AT: 同期日時
+                    ]
+                    new_rows.append(new_row)
                     result["added"] += 1
                     logger.info(f"追加: {product_id} - {product_name}")
 
-            # 既存行の更新
+            # 既存行の更新（バッチで効率化）
             if updates:
-                sheet.batch_update(updates)
+                # 50件ずつバッチ更新
+                batch_size = 50
+                for i in range(0, len(updates), batch_size):
+                    batch = updates[i:i + batch_size]
+                    sheet.batch_update(batch, value_input_option='RAW')
 
-            # 新規行の追加（USER_ENTEREDで数式を評価）
+            # 新規行の追加
             if new_rows:
                 sheet.append_rows(new_rows, value_input_option='USER_ENTERED')
 
@@ -935,4 +1194,270 @@ class SpreadsheetClient:
 
         except Exception as e:
             logger.error(f"ダッシュボード更新エラー: {e}")
+            return False
+
+    # ========================================
+    # カラーミー商品管理シート拡張メソッド
+    # ========================================
+
+    def ensure_colorme_headers(self) -> bool:
+        """
+        カラーミー商品管理シートの拡張列ヘッダーを確認・追加する
+
+        Returns:
+            bool: 成功時True
+        """
+        if not self._spreadsheet:
+            logger.error("スプレッドシートに接続されていません")
+            return False
+
+        try:
+            sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME)
+            header_row = sheet.row_values(1)
+
+            # 既存のヘッダー数を確認
+            existing_count = len(header_row)
+
+            # AB列（index 27）から追加が必要か確認
+            if existing_count < 28:
+                # ヘッダーが足りない場合は追加
+                headers_to_add = Config.COLORME_EXTENDED_HEADERS
+                start_col = existing_count + 1
+
+                # 列番号をアルファベットに変換
+                def col_to_letter(col_num):
+                    result = ""
+                    while col_num > 0:
+                        col_num, remainder = divmod(col_num - 1, 26)
+                        result = chr(65 + remainder) + result
+                    return result
+
+                # ヘッダーを追加
+                start_letter = col_to_letter(start_col)
+                end_letter = col_to_letter(start_col + len(headers_to_add) - 1)
+
+                sheet.update(
+                    f'{start_letter}1:{end_letter}1',
+                    [headers_to_add],
+                    value_input_option='RAW'
+                )
+                logger.info(f"カラーミー商品管理シートにヘッダーを追加: {start_letter}1:{end_letter}1")
+            else:
+                logger.info("カラーミー商品管理シートのヘッダーは既に存在します")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"ヘッダー追加エラー: {e}")
+            return False
+
+    def update_colorme_full_data(
+        self,
+        products: list,
+        timestamp: str
+    ) -> bool:
+        """
+        カラーミー商品管理シートの拡張列を更新する
+
+        Args:
+            products: ColorMeProductのリスト（APIから取得したデータ）
+            timestamp: 更新日時
+
+        Returns:
+            bool: 成功時True
+        """
+        from .colorme import ColorMeProduct
+
+        if not self._spreadsheet:
+            logger.error("スプレッドシートに接続されていません")
+            return False
+
+        if not products:
+            return True
+
+        try:
+            sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME)
+            all_data = sheet.get_all_values()
+
+            # 商品ID -> 行番号のマッピング
+            id_to_row = {}
+            for i, row in enumerate(all_data[1:], start=2):
+                if len(row) >= 1 and row[0].strip():
+                    try:
+                        id_to_row[int(row[0].strip())] = i
+                    except ValueError:
+                        continue
+
+            updates = []
+
+            for product in products:
+                if not isinstance(product, ColorMeProduct):
+                    continue
+
+                row_num = id_to_row.get(product.product_id)
+                if not row_num:
+                    continue
+
+                # 拡張列の更新（AB〜AT列）
+                # AB列（同期モード）は入力なので更新しない
+                # AC〜AR列を更新
+
+                # AC列: 型番
+                updates.append({
+                    'range': f'AC{row_num}',
+                    'values': [[product.model_number or ""]]
+                })
+
+                # AD-AE列: カテゴリーID, サブカテゴリーID
+                updates.append({
+                    'range': f'AD{row_num}:AE{row_num}',
+                    'values': [[
+                        product.category_id_big if product.category_id_big > 0 else "",
+                        product.category_id_small if product.category_id_small > 0 else ""
+                    ]]
+                })
+
+                # AF列: グループID（カンマ区切り）
+                group_ids_str = ",".join(str(g) for g in product.group_ids) if product.group_ids else ""
+                updates.append({
+                    'range': f'AF{row_num}',
+                    'values': [[group_ids_str]]
+                })
+
+                # AG-AI列: 定価, 会員価格, 個別送料
+                updates.append({
+                    'range': f'AG{row_num}:AI{row_num}',
+                    'values': [[
+                        product.regular_price if product.regular_price > 0 else "",
+                        product.members_price if product.members_price > 0 else "",
+                        product.delivery_charge if product.delivery_charge > 0 else ""
+                    ]]
+                })
+
+                # AJ-AK列: 在庫管理, 売切れ表示
+                updates.append({
+                    'range': f'AJ{row_num}:AK{row_num}',
+                    'values': [[
+                        "する" if product.stock_managed else "しない",
+                        "表示" if product.soldout_display else "非表示"
+                    ]]
+                })
+
+                # AL-AN列: 適正在庫数, 最小購入数, 最大購入数
+                updates.append({
+                    'range': f'AL{row_num}:AN{row_num}',
+                    'values': [[
+                        product.few_num if product.few_num > 0 else "",
+                        product.min_num if product.min_num > 0 else "",
+                        product.max_num if product.max_num > 0 else ""
+                    ]]
+                })
+
+                # AO-AP列: 商品説明, 簡易説明
+                updates.append({
+                    'range': f'AO{row_num}:AP{row_num}',
+                    'values': [[
+                        product.expl or "",
+                        product.simple_expl or ""
+                    ]]
+                })
+
+                # AQ-AR列: 商品画像URL, 追加画像URL
+                other_urls_str = ",".join(product.other_image_urls) if product.other_image_urls else ""
+                updates.append({
+                    'range': f'AQ{row_num}:AR{row_num}',
+                    'values': [[
+                        product.image_url or "",
+                        other_urls_str
+                    ]]
+                })
+
+                # AS-AT列: 同期ステータス, 同期日時
+                updates.append({
+                    'range': f'AS{row_num}:AT{row_num}',
+                    'values': [[
+                        product.sync_status or "成功",
+                        timestamp
+                    ]]
+                })
+
+            if updates:
+                # バッチ更新（50件ずつ）
+                batch_size = 50
+                for i in range(0, len(updates), batch_size):
+                    batch = updates[i:i + batch_size]
+                    sheet.batch_update(batch, value_input_option='RAW')
+
+                logger.info(f"カラーミー商品管理シート（拡張列）を更新しました: {len(products)}件")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"カラーミー商品管理シート（拡張列）の更新エラー: {e}")
+            return False
+
+    def update_colorme_sync_status(
+        self,
+        product_id: int,
+        status: str,
+        timestamp: str,
+        new_product_id: int = None
+    ) -> bool:
+        """
+        カラーミー商品の同期ステータスを更新する
+
+        Args:
+            product_id: 商品ID（シート上のA列の値、新規登録前は0の場合あり）
+            status: ステータス（"成功", "エラー: xxx"）
+            timestamp: 更新日時
+            new_product_id: 新規登録時に取得した商品ID
+
+        Returns:
+            bool: 成功時True
+        """
+        if not self._spreadsheet:
+            return False
+
+        try:
+            sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME)
+            all_data = sheet.get_all_values()
+
+            # 商品IDで行を検索
+            row_num = None
+            for i, row in enumerate(all_data[1:], start=2):
+                if len(row) >= 1:
+                    cell_value = row[0].strip()
+                    if cell_value:
+                        try:
+                            if int(cell_value) == product_id:
+                                row_num = i
+                                break
+                        except ValueError:
+                            continue
+
+            if not row_num:
+                return False
+
+            updates = []
+
+            # 新規登録で商品IDが付与された場合、A列を更新
+            if new_product_id and new_product_id > 0:
+                updates.append({
+                    'range': f'A{row_num}',
+                    'values': [[str(new_product_id)]]
+                })
+
+            # AS-AT列: 同期ステータス, 同期日時
+            updates.append({
+                'range': f'AS{row_num}:AT{row_num}',
+                'values': [[status, timestamp]]
+            })
+
+            if updates:
+                sheet.batch_update(updates, value_input_option='RAW')
+
+            return True
+
+        except Exception as e:
+            logger.error(f"同期ステータス更新エラー: {e}")
             return False
