@@ -5,7 +5,7 @@
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 import requests
@@ -38,6 +38,27 @@ class ColorMeProduct:
     previous_source_price: float = 0.0  # Y列: 前回の取得元価格
     source_change_rate: float = 0.0  # Z列: 変動率
     source_stock_status: str = ""  # AA列: 在庫状況 "In Stock" / "Out of Stock"
+
+    # === 拡張フィールド（AB列以降） ===
+    sync_mode: str = ""  # AB列: 同期モード "取得のみ" / "更新" / "新規登録" / "なし"
+    model_number: str = ""  # AC列: 型番
+    category_id_big: int = 0  # AD列: カテゴリーID
+    category_id_small: int = 0  # AE列: サブカテゴリーID
+    group_ids: list[int] = field(default_factory=list)  # AF列: グループID（カンマ区切り）
+    regular_price: int = 0  # AG列: 定価（APIのprice）
+    members_price: int = 0  # AH列: 会員価格
+    delivery_charge: int = 0  # AI列: 個別送料
+    stock_managed: bool = True  # AJ列: 在庫管理 "する" / "しない"
+    soldout_display: bool = True  # AK列: 売切れ表示 "表示" / "非表示"
+    few_num: int = 0  # AL列: 適正在庫数
+    min_num: int = 1  # AM列: 最小購入数
+    max_num: int = 0  # AN列: 最大購入数（0=無制限）
+    expl: str = ""  # AO列: 商品説明
+    simple_expl: str = ""  # AP列: 簡易説明
+    image_url: str = ""  # AQ列: 商品画像URL（メイン）
+    other_image_urls: list[str] = field(default_factory=list)  # AR列: 追加画像URL
+    sync_status: str = ""  # AS列: 同期ステータス
+    sync_datetime: str = ""  # AT列: 同期日時
 
 
 class ColorMeClient:
@@ -426,3 +447,399 @@ class ColorMeClient:
         return self.update_products_batch(
             products, bullionstar_prices, {}, exchange_rate
         )
+
+    # ========================================
+    # 商品管理拡張メソッド（全フィールド対応）
+    # ========================================
+
+    def get_product_full(self, product_id: int) -> Optional[ColorMeProduct]:
+        """
+        商品の全情報を取得してColorMeProductに変換する
+
+        Args:
+            product_id: 商品ID
+
+        Returns:
+            ColorMeProduct: 商品情報（取得失敗時はNone）
+        """
+        product_data = self.get_product(product_id)
+        if not product_data:
+            return None
+
+        return self._api_response_to_product(product_data)
+
+    def _api_response_to_product(self, data: dict) -> ColorMeProduct:
+        """
+        APIレスポンスをColorMeProductに変換する
+
+        Args:
+            data: APIからの商品データ
+
+        Returns:
+            ColorMeProduct: 変換された商品オブジェクト
+        """
+        product_id = data.get("id", 0)
+
+        # カテゴリー情報
+        category = data.get("category") or {}
+        category_id_big = category.get("id_big", 0) if isinstance(category, dict) else 0
+        category_id_small = category.get("id_small", 0) if isinstance(category, dict) else 0
+
+        # グループID
+        group_ids = data.get("group_ids") or []
+        if isinstance(group_ids, str):
+            group_ids = [int(g) for g in group_ids.split(",") if g.strip().isdigit()]
+
+        # 画像URL
+        image_url = data.get("image_url") or ""
+        other_images = data.get("images") or []
+        other_image_urls = []
+        if isinstance(other_images, list):
+            for img in other_images:
+                if isinstance(img, dict):
+                    url = img.get("url") or img.get("image_url") or ""
+                    if url:
+                        other_image_urls.append(url)
+                elif isinstance(img, str) and img:
+                    other_image_urls.append(img)
+
+        # 在庫管理フラグ
+        stock_managed = data.get("stock_managed")
+        if stock_managed is None:
+            stock_managed = True
+        elif isinstance(stock_managed, str):
+            stock_managed = stock_managed.lower() in ("true", "1", "yes")
+
+        # 売切れ表示フラグ
+        soldout_display = data.get("soldout_display")
+        if soldout_display is None:
+            soldout_display = True
+        elif isinstance(soldout_display, str):
+            soldout_display = soldout_display.lower() in ("true", "1", "yes", "showing")
+
+        return ColorMeProduct(
+            product_id=product_id,
+            name=data.get("name", ""),
+            current_price=data.get("sales_price") or data.get("price") or 0,
+            colorme_url=f"https://ybx.jp/?pid={product_id}",
+            source_url="",  # シートから読み込む
+            quantity=1,  # シートから読み込む
+            margin_rate=1.1,  # シートから読み込む
+            model_number=data.get("model_number") or "",
+            category_id_big=category_id_big,
+            category_id_small=category_id_small,
+            group_ids=group_ids,
+            regular_price=data.get("price") or 0,
+            members_price=data.get("members_price") or 0,
+            cost=data.get("cost") or 0,
+            delivery_charge=data.get("delivery_charge") or 0,
+            stock_managed=stock_managed,
+            stock_quantity=data.get("stocks") or 0,
+            soldout_display=soldout_display,
+            few_num=data.get("few_num") or 0,
+            min_num=data.get("min_num") or 1,
+            max_num=data.get("max_num") or 0,
+            expl=data.get("expl") or "",
+            simple_expl=data.get("simple_expl") or "",
+            image_url=image_url,
+            other_image_urls=other_image_urls,
+            display_control="表示" if data.get("display_state") == "showing" else "非表示",
+        )
+
+    def get_all_products_full(self, limit: int = 1000) -> list[ColorMeProduct]:
+        """
+        全商品の完全情報を取得する
+
+        Args:
+            limit: 取得件数上限
+
+        Returns:
+            list[ColorMeProduct]: 商品リスト
+        """
+        products_data = self.get_all_products(limit)
+        return [self._api_response_to_product(p) for p in products_data]
+
+    def update_product_full(self, product: ColorMeProduct) -> tuple[bool, str]:
+        """
+        商品の全フィールドを更新する
+
+        Args:
+            product: 更新する商品情報
+
+        Returns:
+            tuple[bool, str]: (成功したか, エラーメッセージ)
+        """
+        if not self.access_token:
+            return False, "アクセストークンが設定されていません"
+
+        updates = {}
+
+        # 基本情報
+        if product.name:
+            updates["name"] = product.name
+        if product.model_number:
+            updates["model_number"] = product.model_number
+
+        # カテゴリー
+        if product.category_id_big > 0:
+            updates["category"] = {
+                "id_big": product.category_id_big,
+                "id_small": product.category_id_small or 0
+            }
+
+        # グループ
+        if product.group_ids:
+            updates["group_ids"] = product.group_ids
+
+        # 価格情報
+        if product.regular_price > 0:
+            updates["price"] = product.regular_price
+            updates["sales_price"] = product.regular_price
+        if product.members_price > 0:
+            updates["members_price"] = product.members_price
+        if product.cost > 0:
+            updates["cost"] = product.cost
+        if product.delivery_charge >= 0:
+            updates["delivery_charge"] = product.delivery_charge
+
+        # 在庫情報
+        updates["stock_managed"] = product.stock_managed
+        if product.stock_quantity >= 0:
+            updates["stocks"] = product.stock_quantity
+        updates["soldout_display"] = "showing" if product.soldout_display else "hidden"
+        if product.few_num >= 0:
+            updates["few_num"] = product.few_num
+
+        # 購入数量制限
+        if product.min_num >= 1:
+            updates["min_num"] = product.min_num
+        if product.max_num >= 0:
+            updates["max_num"] = product.max_num
+
+        # 説明文
+        if product.expl:
+            updates["expl"] = product.expl
+        if product.simple_expl:
+            updates["simple_expl"] = product.simple_expl
+
+        # 表示状態
+        if product.display_control in ("表示", "showing"):
+            updates["display_state"] = "showing"
+        elif product.display_control in ("非表示", "hidden"):
+            updates["display_state"] = "hidden"
+
+        if not updates:
+            return True, ""
+
+        # ドライランモード
+        if self.dry_run:
+            logger.info(f"[DRY RUN] 商品全項目更新: 商品ID {product.product_id} → {list(updates.keys())}")
+            return True, ""
+
+        try:
+            response = requests.put(
+                f"{self.API_BASE}/products/{product.product_id}.json",
+                headers=self._headers(),
+                json={"product": updates},
+                timeout=30
+            )
+            response.raise_for_status()
+            logger.info(f"商品全項目更新成功: 商品ID {product.product_id}")
+            return True, ""
+
+        except requests.RequestException as e:
+            error_msg = str(e)
+            logger.error(f"商品全項目更新エラー (ID: {product.product_id}): {error_msg}")
+            return False, error_msg
+
+    def create_product(self, product: ColorMeProduct) -> tuple[int, str]:
+        """
+        新規商品を登録する
+
+        Args:
+            product: 登録する商品情報
+
+        Returns:
+            tuple[int, str]: (作成された商品ID, エラーメッセージ)
+            商品ID=0の場合は失敗
+        """
+        if not self.access_token:
+            return 0, "アクセストークンが設定されていません"
+
+        # 必須項目チェック
+        errors = []
+        if not product.name:
+            errors.append("商品名が未入力です")
+        if product.regular_price <= 0:
+            errors.append("価格が未入力です")
+        if product.category_id_big <= 0:
+            errors.append("カテゴリーIDが未入力です")
+        if product.stock_quantity < 0:
+            errors.append("在庫数が不正です")
+
+        if errors:
+            return 0, "バリデーションエラー: " + ", ".join(errors)
+
+        # 登録データ作成
+        product_data = {
+            "name": product.name,
+            "price": product.regular_price,
+            "sales_price": product.regular_price,
+            "category": {
+                "id_big": product.category_id_big,
+                "id_small": product.category_id_small or 0
+            },
+            "stocks": product.stock_quantity,
+            "stock_managed": product.stock_managed,
+            "display_state": "showing" if product.display_control in ("表示", "showing", "") else "hidden",
+        }
+
+        # オプション項目
+        if product.model_number:
+            product_data["model_number"] = product.model_number
+        if product.group_ids:
+            product_data["group_ids"] = product.group_ids
+        if product.members_price > 0:
+            product_data["members_price"] = product.members_price
+        if product.cost > 0:
+            product_data["cost"] = product.cost
+        if product.delivery_charge > 0:
+            product_data["delivery_charge"] = product.delivery_charge
+        if product.few_num > 0:
+            product_data["few_num"] = product.few_num
+        if product.min_num > 1:
+            product_data["min_num"] = product.min_num
+        if product.max_num > 0:
+            product_data["max_num"] = product.max_num
+        if product.expl:
+            product_data["expl"] = product.expl
+        if product.simple_expl:
+            product_data["simple_expl"] = product.simple_expl
+
+        # ドライランモード
+        if self.dry_run:
+            logger.info(f"[DRY RUN] 商品新規登録: {product.name} → {list(product_data.keys())}")
+            return 999999, ""  # ダミーID
+
+        try:
+            response = requests.post(
+                f"{self.API_BASE}/products.json",
+                headers=self._headers(),
+                json={"product": product_data},
+                timeout=30
+            )
+            response.raise_for_status()
+            result = response.json()
+            new_id = result.get("product", {}).get("id", 0)
+            logger.info(f"商品新規登録成功: {product.name} → ID: {new_id}")
+            return new_id, ""
+
+        except requests.RequestException as e:
+            error_msg = str(e)
+            logger.error(f"商品新規登録エラー: {product.name} - {error_msg}")
+            return 0, error_msg
+
+    def upload_product_image(
+        self,
+        product_id: int,
+        image_url: str,
+        is_main: bool = True
+    ) -> tuple[bool, str]:
+        """
+        商品画像をアップロードする
+
+        Args:
+            product_id: 商品ID
+            image_url: 画像のURL
+            is_main: メイン画像かどうか
+
+        Returns:
+            tuple[bool, str]: (成功したか, エラーメッセージ)
+        """
+        if not self.access_token:
+            return False, "アクセストークンが設定されていません"
+
+        if not image_url:
+            return True, ""
+
+        # ドライランモード
+        if self.dry_run:
+            logger.info(f"[DRY RUN] 画像アップロード: 商品ID {product_id}, URL: {image_url[:50]}...")
+            return True, ""
+
+        try:
+            # 画像をダウンロード
+            img_response = requests.get(image_url, timeout=30)
+            img_response.raise_for_status()
+            image_data = img_response.content
+
+            # Content-Typeから拡張子を推測
+            content_type = img_response.headers.get("Content-Type", "image/jpeg")
+            if "png" in content_type:
+                ext = "png"
+            elif "gif" in content_type:
+                ext = "gif"
+            else:
+                ext = "jpg"
+
+            # マルチパート形式でアップロード
+            files = {
+                "product_image[image]": (f"image.{ext}", image_data, content_type)
+            }
+
+            if is_main:
+                endpoint = f"{self.API_BASE}/products/{product_id}/images.json"
+            else:
+                endpoint = f"{self.API_BASE}/products/{product_id}/images.json"
+
+            response = requests.post(
+                endpoint,
+                headers={"Authorization": f"Bearer {self.access_token}"},
+                files=files,
+                timeout=60
+            )
+            response.raise_for_status()
+            logger.info(f"画像アップロード成功: 商品ID {product_id}")
+            return True, ""
+
+        except requests.RequestException as e:
+            error_msg = str(e)
+            logger.error(f"画像アップロードエラー (ID: {product_id}): {error_msg}")
+            return False, error_msg
+
+    def upload_product_images(
+        self,
+        product_id: int,
+        main_image_url: str,
+        other_image_urls: list[str]
+    ) -> tuple[bool, str]:
+        """
+        商品の全画像をアップロードする
+
+        Args:
+            product_id: 商品ID
+            main_image_url: メイン画像URL
+            other_image_urls: 追加画像URLリスト
+
+        Returns:
+            tuple[bool, str]: (成功したか, エラーメッセージ)
+        """
+        errors = []
+
+        # メイン画像
+        if main_image_url:
+            success, error = self.upload_product_image(product_id, main_image_url, is_main=True)
+            if not success:
+                errors.append(f"メイン画像: {error}")
+
+        # 追加画像（最大49枚）
+        for i, url in enumerate(other_image_urls[:49]):
+            if url:
+                success, error = self.upload_product_image(product_id, url, is_main=False)
+                if not success:
+                    errors.append(f"追加画像{i+1}: {error}")
+
+        if errors:
+            return False, "; ".join(errors)
+
+        return True, ""

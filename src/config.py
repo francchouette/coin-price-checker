@@ -119,6 +119,29 @@ class Config:
     # シート名
     SHEET_COLORME: str = "カラーミー商品管理"
 
+    # カラーミー商品管理シートの拡張列ヘッダー（AB列以降）
+    COLORME_EXTENDED_HEADERS: list[str] = [
+        "同期モード",      # AB列 (index 27)
+        "型番",           # AC列 (index 28)
+        "カテゴリーID",    # AD列 (index 29)
+        "サブカテゴリーID", # AE列 (index 30)
+        "グループID",      # AF列 (index 31)
+        "定価",           # AG列 (index 32)
+        "会員価格",        # AH列 (index 33)
+        "個別送料",        # AI列 (index 34)
+        "在庫管理",        # AJ列 (index 35)
+        "売切れ表示",      # AK列 (index 36)
+        "適正在庫数",      # AL列 (index 37)
+        "最小購入数",      # AM列 (index 38)
+        "最大購入数",      # AN列 (index 39)
+        "商品説明",        # AO列 (index 40)
+        "簡易説明",        # AP列 (index 41)
+        "商品画像URL",     # AQ列 (index 42)
+        "追加画像URL",     # AR列 (index 43)
+        "同期ステータス",   # AS列 (index 44)
+        "同期日時",        # AT列 (index 45)
+    ]
+
     # 商品マスタシート名（サイト別）
     SHEET_MASTER_BRITANNIA: str = "商品マスタ_Britannia"
     SHEET_MASTER_APMEX: str = "商品マスタ_APMEX"

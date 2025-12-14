@@ -439,5 +439,261 @@ def send_alerts(alerts: list[PriceAlert]):
         notifier.send_batch(alerts)
 
 
+# ========================================
+# カラーミー商品管理同期機能
+# ========================================
+
+def sync_colorme_products_full():
+    """
+    カラーミー商品管理の完全同期を実行する
+
+    同期モード（AB列）に応じて以下の処理を行う:
+    - 取得のみ: カラーミーAPIから情報を取得してシートに反映
+    - 更新: シートの内容でカラーミーAPIを更新
+    - 新規登録: 新商品をカラーミーAPIに登録
+    """
+    logger.info("=" * 60)
+    logger.info("カラーミー商品管理同期を開始します")
+    logger.info("=" * 60)
+
+    # 設定の検証
+    errors = Config.validate()
+    if errors:
+        for error in errors:
+            logger.error(error)
+        logger.error("設定エラーのため終了します")
+        sys.exit(1)
+
+    if not Config.is_colorme_enabled():
+        logger.error("カラーミーAPIトークンが設定されていません")
+        sys.exit(1)
+
+    # スプレッドシートに接続
+    logger.info("スプレッドシートに接続中...")
+    sheet_client = SpreadsheetClient()
+    if not sheet_client.connect():
+        logger.error("スプレッドシートへの接続に失敗しました")
+        sys.exit(1)
+
+    # 拡張列のヘッダーを確認・追加
+    sheet_client.ensure_colorme_headers()
+
+    # カラーミー商品管理シートから対象を取得
+    products = sheet_client.get_colorme_products()
+    if not products:
+        logger.warning("カラーミー商品管理シートに対象商品がありません")
+        sys.exit(0)
+
+    logger.info(f"対象商品: {len(products)}件")
+
+    # カラーミークライアント
+    colorme_client = ColorMeClient()
+
+    # 現在時刻
+    timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+
+    # 同期モード別に処理
+    fetch_products = [p for p in products if p.sync_mode == "取得のみ"]
+    update_products = [p for p in products if p.sync_mode == "更新"]
+    create_products = [p for p in products if p.sync_mode == "新規登録"]
+
+    logger.info(f"取得のみ: {len(fetch_products)}件")
+    logger.info(f"更新: {len(update_products)}件")
+    logger.info(f"新規登録: {len(create_products)}件")
+
+    # 1. 取得のみ: カラーミーAPIから情報を取得してシートに反映
+    if fetch_products:
+        logger.info("-" * 40)
+        logger.info("【取得のみ】処理開始")
+        fetch_from_colorme(sheet_client, colorme_client, fetch_products, timestamp)
+
+    # 2. 更新: シートの内容でカラーミーAPIを更新
+    if update_products:
+        logger.info("-" * 40)
+        logger.info("【更新】処理開始")
+        update_to_colorme(sheet_client, colorme_client, update_products, timestamp)
+
+    # 3. 新規登録: 新商品をカラーミーAPIに登録
+    if create_products:
+        logger.info("-" * 40)
+        logger.info("【新規登録】処理開始")
+        create_in_colorme(sheet_client, colorme_client, create_products, timestamp)
+
+    logger.info("=" * 60)
+    logger.info("カラーミー商品管理同期が完了しました")
+    logger.info("=" * 60)
+
+
+def fetch_from_colorme(
+    sheet_client: SpreadsheetClient,
+    colorme_client: ColorMeClient,
+    products: list[ColorMeProduct],
+    timestamp: str
+):
+    """
+    カラーミーAPIから商品情報を取得してシートに反映する
+
+    Args:
+        sheet_client: スプレッドシートクライアント
+        colorme_client: カラーミーAPIクライアント
+        products: 取得対象の商品リスト
+        timestamp: 更新日時
+    """
+    fetched_products = []
+
+    for product in products:
+        logger.info(f"取得中: {product.name} (ID: {product.product_id})")
+
+        api_product = colorme_client.get_product_full(product.product_id)
+        if api_product:
+            api_product.sync_status = "成功"
+            api_product.sync_datetime = timestamp
+            fetched_products.append(api_product)
+            logger.info(f"  → 成功")
+        else:
+            product.sync_status = "エラー: 取得失敗"
+            product.sync_datetime = timestamp
+            fetched_products.append(product)
+            logger.warning(f"  → 失敗")
+
+    # シートに反映
+    if fetched_products:
+        sheet_client.update_colorme_full_data(fetched_products, timestamp)
+
+    logger.info(f"取得完了: {len([p for p in fetched_products if p.sync_status == '成功'])}件成功")
+
+
+def update_to_colorme(
+    sheet_client: SpreadsheetClient,
+    colorme_client: ColorMeClient,
+    products: list[ColorMeProduct],
+    timestamp: str
+):
+    """
+    シートの内容でカラーミーAPIを更新する
+
+    Args:
+        sheet_client: スプレッドシートクライアント
+        colorme_client: カラーミーAPIクライアント
+        products: 更新対象の商品リスト
+        timestamp: 更新日時
+    """
+    success_count = 0
+    failed_count = 0
+
+    for product in products:
+        logger.info(f"更新中: {product.name} (ID: {product.product_id})")
+
+        success, error = colorme_client.update_product_full(product)
+
+        if success:
+            status = "成功"
+            success_count += 1
+            logger.info(f"  → 成功")
+
+            # 画像アップロード（URLが指定されている場合）
+            if product.image_url or product.other_image_urls:
+                img_success, img_error = colorme_client.upload_product_images(
+                    product.product_id,
+                    product.image_url,
+                    product.other_image_urls
+                )
+                if not img_success:
+                    status = f"成功（画像エラー: {img_error}）"
+                    logger.warning(f"  → 画像アップロードエラー: {img_error}")
+        else:
+            status = f"エラー: {error}"
+            failed_count += 1
+            logger.warning(f"  → 失敗: {error}")
+
+        # ステータス更新
+        sheet_client.update_colorme_sync_status(product.product_id, status, timestamp)
+
+    logger.info(f"更新完了: 成功 {success_count}件, 失敗 {failed_count}件")
+
+
+def create_in_colorme(
+    sheet_client: SpreadsheetClient,
+    colorme_client: ColorMeClient,
+    products: list[ColorMeProduct],
+    timestamp: str
+):
+    """
+    新商品をカラーミーAPIに登録する
+
+    Args:
+        sheet_client: スプレッドシートクライアント
+        colorme_client: カラーミーAPIクライアント
+        products: 新規登録対象の商品リスト
+        timestamp: 更新日時
+    """
+    success_count = 0
+    failed_count = 0
+
+    for product in products:
+        # 既に商品IDがある場合はスキップ
+        if product.product_id > 0:
+            logger.warning(f"スキップ: {product.name} - 既に商品IDがあります (ID: {product.product_id})")
+            sheet_client.update_colorme_sync_status(
+                product.product_id,
+                "スキップ: 既に登録済み",
+                timestamp
+            )
+            continue
+
+        logger.info(f"新規登録中: {product.name}")
+
+        new_id, error = colorme_client.create_product(product)
+
+        if new_id > 0:
+            status = "成功"
+            success_count += 1
+            logger.info(f"  → 成功 (新ID: {new_id})")
+
+            # 画像アップロード（URLが指定されている場合）
+            if product.image_url or product.other_image_urls:
+                img_success, img_error = colorme_client.upload_product_images(
+                    new_id,
+                    product.image_url,
+                    product.other_image_urls
+                )
+                if not img_success:
+                    status = f"成功（画像エラー: {img_error}）"
+                    logger.warning(f"  → 画像アップロードエラー: {img_error}")
+
+            # シートに商品IDとステータスを反映
+            sheet_client.update_colorme_sync_status(
+                product.product_id,  # 元の行（商品ID=0または空）
+                status,
+                timestamp,
+                new_product_id=new_id
+            )
+        else:
+            status = f"エラー: {error}"
+            failed_count += 1
+            logger.warning(f"  → 失敗: {error}")
+            sheet_client.update_colorme_sync_status(
+                product.product_id,
+                status,
+                timestamp
+            )
+
+    logger.info(f"新規登録完了: 成功 {success_count}件, 失敗 {failed_count}件")
+
+
 if __name__ == "__main__":
-    run()
+    # コマンドライン引数で処理を分岐
+    import argparse
+
+    parser = argparse.ArgumentParser(description="価格追跡・カラーミー商品管理ツール")
+    parser.add_argument(
+        "--sync-colorme",
+        action="store_true",
+        help="カラーミー商品管理の同期を実行（AB列の同期モードに従う）"
+    )
+    args = parser.parse_args()
+
+    if args.sync_colorme:
+        sync_colorme_products_full()
+    else:
+        run()
