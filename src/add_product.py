@@ -418,77 +418,84 @@ class ProductScraper:
             except Exception:
                 pass
 
-            # 画像URL
+            # 画像URL（Schema.org構造化データを優先的に使用）
             try:
-                # 関連商品セクションを除外して商品画像を取得
-                # 除外するセクションのセレクタ
-                exclude_selectors = [
-                    "[class*='customer']",      # customers-who-viewed等
-                    "[class*='related']",       # related products
-                    "[class*='recommend']",     # recommended
-                    "[class*='blog']",          # blog posts
-                    "[class*='search-result']", # search results
-                    "[class*='footer']",        # footer
-                    "[class*='header']",        # header
-                    "[class*='nav']",           # navigation
-                ]
+                image_urls_found = []
 
-                # 除外セクション内の画像URLを収集
-                excluded_urls = set()
-                for selector in exclude_selectors:
-                    try:
-                        sections = page.query_selector_all(selector)
-                        for section in sections:
-                            imgs = section.query_selector_all("img[src*='/files/']")
-                            for img in imgs:
-                                src = img.get_attribute("src")
-                                if src:
-                                    excluded_urls.add(src)
-                    except Exception:
-                        pass
+                # 方法1: Schema.org JSON-LDから画像を取得（最も信頼性が高い）
+                try:
+                    json_ld_scripts = page.query_selector_all('script[type="application/ld+json"]')
+                    for script in json_ld_scripts:
+                        try:
+                            json_text = script.inner_text()
+                            data = json.loads(json_text)
+                            # Product型のデータを探す
+                            if isinstance(data, dict):
+                                if data.get("@type") == "Product" and "image" in data:
+                                    images = data["image"]
+                                    if isinstance(images, list):
+                                        image_urls_found.extend(images)
+                                    elif isinstance(images, str):
+                                        image_urls_found.append(images)
+                                    logger.info(f"  Schema.orgから画像取得: {len(image_urls_found)}枚")
+                        except json.JSONDecodeError:
+                            pass
+                except Exception:
+                    pass
 
-                # 全ての/files/画像を取得（除外セクション外のもの）
-                all_imgs = page.query_selector_all("img[src*='/files/']")
-                candidate_urls = []
-                first_image_pattern = None
+                # 方法2: URLから商品識別子を抽出してパターンマッチ
+                if not image_urls_found:
+                    # URLから商品識別子を抽出
+                    # 例: silver-round-bstar-lunar-series-dragon-1oz-2024 → "dragon", "lunar", "bstar"
+                    url_path = url.split("/")[-1] if "/" in url else ""
+                    product_keywords = []
+                    for part in url_path.split("-"):
+                        if len(part) > 2 and part not in ["buy", "product", "silver", "gold", "1oz", "2oz", "round", "coin"]:
+                            product_keywords.append(part.lower())
 
-                for img in all_imgs:
-                    src = img.get_attribute("src")
-                    if not src or src in excluded_urls:
-                        continue
+                    # /files/内の画像を取得
+                    all_imgs = page.query_selector_all("img[src*='/files/']")
+                    for img in all_imgs:
+                        src = img.get_attribute("src")
+                        if not src:
+                            continue
 
-                    # 最初の商品画像からパターンを学習
-                    if first_image_pattern is None and "/files/" in src:
-                        # ファイル名から商品識別パターンを抽出
-                        # 例: coin-silver-bstar-dragonround2024 から "dragonround2024" や "bstar" を取得
-                        filename = src.split("/")[-1]
-                        # 数字プレフィックス（サイズ）を除去
-                        filename_clean = re.sub(r'^\d+_\d+_', '', filename)
-                        # ファイル名のパターンを保存
-                        first_image_pattern = filename_clean.split("-")[0:4]  # 最初の4セグメント
-                        logger.info(f"  画像パターン: {first_image_pattern}")
+                        # ファイル名を抽出
+                        filename = src.split("/")[-1].lower()
 
-                    # サムネイルサイズを高解像度に変換
-                    high_res_url = re.sub(r'/(\d+)_(\d+)_', '/1200_1200_', src)
-                    if high_res_url not in candidate_urls:
-                        candidate_urls.append(high_res_url)
+                        # 商品キーワードが含まれているかチェック
+                        matches = sum(1 for kw in product_keywords if kw in filename)
+                        if matches >= 2:  # 2つ以上のキーワードが一致
+                            # 高解像度に変換
+                            high_res_url = re.sub(r'/(\d+)_(\d+)_', '/1200_1200_', src)
+                            if high_res_url not in image_urls_found:
+                                image_urls_found.append(high_res_url)
 
-                # 同じパターンの画像のみをフィルタリング
-                if first_image_pattern and len(candidate_urls) > 2:
-                    filtered_urls = []
-                    pattern_str = "-".join(first_image_pattern[:3])  # 最初の3セグメントでマッチ
-                    for url in candidate_urls:
-                        if pattern_str in url.lower():
-                            filtered_urls.append(url)
-                    if filtered_urls:
-                        candidate_urls = filtered_urls
+                    if image_urls_found:
+                        logger.info(f"  パターンマッチで画像取得: {len(image_urls_found)}枚")
 
-                # 重複を除去して追加
-                for url in candidate_urls[:10]:
-                    if url not in result["image_urls"]:
-                        result["image_urls"].append(url)
+                # 方法3: フォールバック - 商品画像セクションから取得
+                if not image_urls_found:
+                    # 商品画像コンテナを探す
+                    product_img_selectors = [
+                        ".product-image img",
+                        ".product-gallery img",
+                        "[class*='product-main'] img",
+                        ".main-image img"
+                    ]
+                    for selector in product_img_selectors:
+                        imgs = page.query_selector_all(selector)
+                        for img in imgs:
+                            src = img.get_attribute("src")
+                            if src and "/files/" in src:
+                                high_res_url = re.sub(r'/(\d+)_(\d+)_', '/1200_1200_', src)
+                                if high_res_url not in image_urls_found:
+                                    image_urls_found.append(high_res_url)
 
+                # 結果を設定
+                result["image_urls"] = image_urls_found[:10]
                 logger.info(f"  取得画像: {len(result['image_urls'])}枚")
+
             except Exception as e:
                 logger.warning(f"画像取得エラー: {e}")
 
