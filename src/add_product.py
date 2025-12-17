@@ -850,6 +850,7 @@ class CategoryDetector:
     }
 
     # シリーズキーワードマッピング（キー: シリーズ内部名, 値: {keywords, display_name}）
+    # 命名規則: 「シリーズ名 国名」形式（既存グループと一貫性を保つ）
     SERIES_MASTER = {
         "maple": {"keywords": ["maple", "メイプル"], "display_name": "メイプルリーフ カナダ"},
         "vienna": {"keywords": ["vienna", "philharmonic", "ウィーン", "フィルハーモニー"], "display_name": "ウィーン オーストリア"},
@@ -858,12 +859,18 @@ class CategoryDetector:
         "kangaroo": {"keywords": ["kangaroo", "カンガルー"], "display_name": "カンガルー オーストラリア"},
         "kookaburra": {"keywords": ["kookaburra", "カワセミ"], "display_name": "カワセミ オーストラリア"},
         "koala": {"keywords": ["koala", "コアラ"], "display_name": "コアラ オーストラリア"},
-        "queens_beast": {"keywords": ["queen's beast", "queens beast", "クイーンズビースト"], "display_name": "クイーンズビースト"},
+        "queens_beast": {"keywords": ["queen's beast", "queens beast", "クイーンズビースト"], "display_name": "クイーンズビースト イギリス"},
         "panda": {"keywords": ["panda", "パンダ"], "display_name": "パンダ 中国"},
-        "dragon": {"keywords": ["dragon", "ドラゴン", "龍"], "display_name": "ドラゴン 干支"},
-        "lunar": {"keywords": ["lunar", "干支"], "display_name": "干支シリーズ"},
+        # 干支シリーズは国別ではなく干支別にグループ化
+        "dragon": {"keywords": ["dragon", "ドラゴン", "龍", "year of the dragon"], "display_name": "干支シリーズ"},
+        "lunar": {"keywords": ["lunar", "干支", "year of"], "display_name": "干支シリーズ"},
+        "tiger": {"keywords": ["tiger", "タイガー", "虎", "year of the tiger"], "display_name": "干支シリーズ"},
+        "rabbit": {"keywords": ["rabbit", "ラビット", "兎", "year of the rabbit"], "display_name": "干支シリーズ"},
+        "snake": {"keywords": ["snake", "スネーク", "蛇", "year of the snake"], "display_name": "干支シリーズ"},
+        "horse": {"keywords": ["horse", "ホース", "馬", "year of the horse"], "display_name": "干支シリーズ"},
         "krugerrand": {"keywords": ["krugerrand", "クルーガーランド"], "display_name": "クルーガーランド 南アフリカ"},
         "buffalo": {"keywords": ["buffalo", "バッファロー"], "display_name": "バッファロー アメリカ"},
+        "libertad": {"keywords": ["libertad", "リベルタード"], "display_name": "リベルタード メキシコ"},
     }
 
     # 商品タイプキーワード
