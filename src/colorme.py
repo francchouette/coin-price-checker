@@ -926,7 +926,9 @@ class ColorMeClient:
     def upload_product_images(
         self,
         product_id: int,
-        image_urls: list[str]
+        image_urls: list[str],
+        initial_delay: float = 3.0,
+        max_retries: int = 3
     ) -> tuple[bool, str]:
         """
         商品の全画像をアップロードする
@@ -934,16 +936,41 @@ class ColorMeClient:
         Args:
             product_id: 商品ID
             image_urls: 画像URLリスト（最大10枚、1枚目がメイン画像）
+            initial_delay: 最初の画像アップロード前の待機時間（秒）
+            max_retries: 404エラー時のリトライ回数
 
         Returns:
             tuple[bool, str]: (成功したか, エラーメッセージ)
         """
+        import time
+
+        # 商品登録直後はAPIが認識するまで待機
+        if initial_delay > 0:
+            logger.info(f"画像アップロード前に{initial_delay}秒待機...")
+            time.sleep(initial_delay)
+
         errors = []
 
         for i, url in enumerate(image_urls[:10]):
             if url:
                 is_main = (i == 0)  # 1枚目がメイン画像
-                success, error = self.upload_product_image(product_id, url, is_main=is_main)
+
+                # リトライ処理（404エラー対策）
+                success = False
+                error = ""
+                for retry in range(max_retries):
+                    success, error = self.upload_product_image(product_id, url, is_main=is_main)
+                    if success:
+                        break
+                    if "404" in error:
+                        # 404の場合はリトライ（APIが商品を認識するまで待機）
+                        wait_time = (retry + 1) * 2  # 2秒, 4秒, 6秒
+                        logger.info(f"  404エラー、{wait_time}秒後にリトライ ({retry + 1}/{max_retries})")
+                        time.sleep(wait_time)
+                    else:
+                        # 404以外のエラーはリトライしない
+                        break
+
                 if not success:
                     errors.append(f"画像{i+1}: {error}")
 
