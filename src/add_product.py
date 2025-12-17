@@ -24,7 +24,7 @@ from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
 
-from .colorme import ColorMeClient
+from .colorme import ColorMeClient, ColorMeProduct
 from .config import Config
 from .exchange_rate import ExchangeRateClient
 from .spreadsheet import SpreadsheetClient
@@ -780,9 +780,9 @@ def get_incomplete_rows(sheet_client: SpreadsheetClient) -> list[dict]:
                 sync_mode = row[28].strip() if len(row) > 28 else ""  # AC列（index 28）
 
                 # D列にURLがあり、B列が空の行を検出
-                # AC列が「ドラフト作成」「取得のみ」「更新」の場合のみ処理
+                # AC列が「ドラフト作成」「取得のみ」「更新」「新規登録」の場合のみ処理
                 if source_url and not product_name:
-                    if sync_mode not in ["ドラフト作成", "取得のみ", "更新"]:
+                    if sync_mode not in ["ドラフト作成", "取得のみ", "更新", "新規登録"]:
                         continue  # 空や他の値はスキップ
 
                     # 枚数（E列）
@@ -838,6 +838,7 @@ def update_row_with_product_info(
     exchange_rate: float = None,
     calculated_price: float = None,
     japanese_name: str = None,
+    product_id: int = None,
     sync_mode: str = "ドラフト作成"
 ) -> bool:
     """
@@ -863,6 +864,13 @@ def update_row_with_product_info(
         cat_big, cat_small, grp_ids = category_info
 
         updates = []
+
+        # A列: 商品ID（カラーミーに登録済みの場合）
+        if product_id:
+            updates.append({
+                'range': f'A{row_num}',
+                'values': [[str(product_id)]]
+            })
 
         # B列: 商品名（日本語商品名があればそちらを使用）
         product_name = japanese_name if japanese_name else product_info.get("name", "")
@@ -1093,23 +1101,67 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
 
             if dry_run:
                 logger.info("  === ドライラン ===")
-                logger.info(f"  更新予定: B列={product_info['name'][:30]}...")
+                logger.info(f"  更新予定: B列={japanese_name[:50] if japanese_name else product_info['name'][:30]}...")
                 logger.info(f"  更新予定: M列={product_info['price']}, N列={product_info['currency']}")
                 logger.info(f"  更新予定: 画像={len(product_info['image_urls'])}枚")
-                if sync_mode == "更新":
-                    logger.info("  → カラーミーへの登録が実行されます")
+                if sync_mode == "新規登録":
+                    logger.info("  → カラーミーへ新規登録＋画像アップロードが実行されます")
+                elif sync_mode == "更新":
+                    logger.info("  → カラーミーへの更新が実行されます")
                 elif sync_mode == "ドラフト作成":
                     logger.info("  → スプレッドシートのみ更新（ドラフト作成）")
                 else:
                     logger.info("  → スプレッドシートのみ更新（取得のみ）")
             else:
-                # sync_mode が「更新」の場合のみカラーミーへ登録
-                if sync_mode == "更新" and colorme_client:
-                    logger.info("  カラーミーへ商品登録中...")
-                    # TODO: カラーミーへの商品登録・画像アップロード処理
-                    # colorme_image_urls = colorme_client.upload_images(product_info["image_urls"])
-                    # colorme_client.register_product(...)
-                    logger.info("  → カラーミー登録機能は今後実装予定")
+                # カラーミー登録用の商品ID
+                registered_product_id = None
+
+                # sync_mode が「新規登録」の場合、カラーミーへ新規登録
+                if sync_mode == "新規登録" and colorme_client:
+                    logger.info("  カラーミーへ新規商品登録中...")
+
+                    # ColorMeProductを作成
+                    colorme_product = ColorMeProduct(
+                        product_id=0,  # 新規登録なのでID未定
+                        name=japanese_name or product_info.get("name", ""),
+                        current_price=int(calculated_price) if calculated_price else 0,
+                        colorme_url="",
+                        source_url=source_url,
+                        quantity=quantity,
+                        margin_rate=row_info.get("margin_rate", 1.1),
+                        model_number=product_info.get("sku", ""),
+                        category_id_big=cat_big,
+                        category_id_small=cat_small,
+                        group_ids=grp_ids,
+                        regular_price=int(calculated_price) if calculated_price else 0,
+                        stock_quantity=10 if product_info.get("in_stock") else 0,
+                        stock_managed=True,
+                        expl=description,
+                        simple_expl=simple_description,
+                        image_urls=product_info.get("image_urls", [])[:10],
+                        display_control="表示"
+                    )
+
+                    # 商品を新規登録
+                    new_product_id, error = colorme_client.create_product(colorme_product)
+                    if new_product_id > 0:
+                        registered_product_id = new_product_id
+                        logger.info(f"  → 商品登録成功: ID={new_product_id}")
+
+                        # 画像をアップロード
+                        image_urls = product_info.get("image_urls", [])[:10]
+                        if image_urls:
+                            logger.info(f"  画像アップロード中... ({len(image_urls)}枚)")
+                            success, img_error = colorme_client.upload_product_images(new_product_id, image_urls)
+                            if success:
+                                logger.info("  → 画像アップロード成功")
+                            else:
+                                logger.warning(f"  → 画像アップロード一部失敗: {img_error}")
+                    else:
+                        logger.error(f"  → 商品登録失敗: {error}")
+
+                elif sync_mode == "更新" and colorme_client:
+                    logger.info("  更新モード: カラーミー既存商品の更新（未実装）")
                 elif sync_mode == "ドラフト作成":
                     logger.info("  ドラフト作成モード: スプレッドシートのみ更新（カラーミー登録なし）")
                 elif sync_mode == "取得のみ":
@@ -1128,6 +1180,7 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
                     exchange_rate,
                     calculated_price,
                     japanese_name,
+                    registered_product_id,
                     sync_mode
                 ):
                     logger.info(f"  → 更新完了")
