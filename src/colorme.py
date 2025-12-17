@@ -182,6 +182,13 @@ class ColorMeClient:
                 if not batch:
                     break
 
+                # 最初の商品の画像関連フィールドをログ出力（デバッグ用）
+                if not products and batch:
+                    first = batch[0]
+                    img_fields = {k: v for k, v in first.items() if 'image' in k.lower() or 'img' in k.lower()}
+                    logger.info(f"[APIデバッグ] 最初の商品の画像フィールド: {img_fields}")
+                    logger.info(f"[APIデバッグ] 最初の商品の全フィールドキー: {list(first.keys())}")
+
                 products.extend(batch)
                 logger.info(f"商品取得: {len(products)}件")
 
@@ -497,6 +504,10 @@ class ColorMeClient:
         main_image = data.get("image_url") or ""
         if main_image:
             image_urls.append(main_image)
+        # デバッグ: 画像関連フィールドを確認
+        image_fields = {k: v for k, v in data.items() if 'image' in k.lower() or 'img' in k.lower()}
+        if image_fields:
+            logger.debug(f"[画像フィールド] 商品ID {product_id}: {image_fields}")
         # 追加画像
         other_images = data.get("images") or []
         if isinstance(other_images, list):
