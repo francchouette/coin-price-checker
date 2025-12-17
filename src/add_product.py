@@ -88,10 +88,11 @@ JSON形式で出力してください:
 class ProductScraper:
     """仕入れサイトから商品情報をスクレイピングするクラス"""
 
-    def __init__(self):
+    def __init__(self, image_analyzer: 'ImageAnalyzer' = None):
         self.browser = None
         self.context = None
         self.playwright = None
+        self.image_analyzer = image_analyzer
 
     def __enter__(self):
         self.playwright = sync_playwright().start()
@@ -492,9 +493,28 @@ class ProductScraper:
                                 if high_res_url not in image_urls_found:
                                     image_urls_found.append(high_res_url)
 
+                # 方法4: AIによるスクリーンショット解析（最終フォールバック）
+                if not image_urls_found and self.image_analyzer:
+                    logger.info("  方法4: AIスクリーンショット解析を試行...")
+                    image_urls_found = self.image_analyzer.select_best_images_from_screenshot(
+                        page, result["name"]
+                    )
+                    if image_urls_found:
+                        logger.info(f"  スクリーンショット解析で画像取得: {len(image_urls_found)}枚")
+
+                # AIによる画像検証（画像が取得できた場合）
+                if image_urls_found and self.image_analyzer and result["name"]:
+                    logger.info("  AIによる画像検証中...")
+                    verified_urls = self.image_analyzer.filter_product_images(
+                        image_urls_found, result["name"]
+                    )
+                    if verified_urls:
+                        image_urls_found = verified_urls
+                        logger.info(f"  AI検証後の画像: {len(image_urls_found)}枚")
+
                 # 結果を設定
                 result["image_urls"] = image_urls_found[:10]
-                logger.info(f"  取得画像: {len(result['image_urls'])}枚")
+                logger.info(f"  最終取得画像: {len(result['image_urls'])}枚")
 
             except Exception as e:
                 logger.warning(f"画像取得エラー: {e}")
@@ -588,6 +608,202 @@ class DescriptionGenerator:
             logger.error(traceback.format_exc())
 
         return "", ""
+
+
+class ImageAnalyzer:
+    """AIを使って商品画像を解析・検証するクラス"""
+
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
+        self.client = None
+        if self.api_key:
+            try:
+                import anthropic
+                self.client = anthropic.Anthropic(api_key=self.api_key)
+            except ImportError:
+                logger.warning("anthropicライブラリがインストールされていません")
+
+    def filter_product_images(self, image_urls: list[str], product_name: str) -> list[str]:
+        """
+        画像URLリストから正しい商品画像のみをフィルタリングする
+
+        Args:
+            image_urls: 候補となる画像URLのリスト
+            product_name: 商品名
+
+        Returns:
+            list[str]: 正しい商品画像のURLリスト
+        """
+        if not self.client or not image_urls:
+            return image_urls
+
+        try:
+            # 最大5枚の画像をAIで検証（コスト削減）
+            urls_to_check = image_urls[:5]
+
+            # 画像コンテンツを構築
+            content = []
+            for i, url in enumerate(urls_to_check):
+                content.append({
+                    "type": "image",
+                    "source": {"type": "url", "url": url}
+                })
+                content.append({
+                    "type": "text",
+                    "text": f"画像{i+1}: {url.split('/')[-1]}"
+                })
+
+            content.append({
+                "type": "text",
+                "text": f"""上記の画像を確認してください。
+
+商品名: {product_name}
+
+以下の基準で、この商品の正しい商品画像かどうかを判定してください：
+1. コイン/地金の実物画像である（イラストやロゴではない）
+2. 商品名に含まれる特徴（年号、デザイン、素材）と一致している
+3. 明らかに別の商品ではない
+
+JSON形式で回答してください:
+{{
+    "valid_images": [1, 2, 3],  // 正しい商品画像の番号リスト
+    "reason": "判定理由"
+}}
+"""
+            })
+
+            logger.info(f"  AI画像検証中... ({len(urls_to_check)}枚)")
+            response = self.client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=300,
+                messages=[{"role": "user", "content": content}]
+            )
+
+            response_text = response.content[0].text
+            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            if json_match:
+                data = json.loads(json_match.group())
+                valid_indices = data.get("valid_images", [])
+                reason = data.get("reason", "")
+                logger.info(f"  AI判定: {len(valid_indices)}枚が正しい商品画像 - {reason}")
+
+                # 有効な画像のみを返す
+                filtered_urls = [urls_to_check[i-1] for i in valid_indices if 1 <= i <= len(urls_to_check)]
+
+                # 未検証の画像（6枚目以降）は追加しない（正確性重視）
+                return filtered_urls if filtered_urls else image_urls[:3]
+
+        except Exception as e:
+            logger.warning(f"  AI画像検証エラー: {e}")
+
+        return image_urls
+
+    def select_best_images_from_screenshot(self, page, product_name: str) -> list[str]:
+        """
+        ページスクリーンショットからAIで商品画像を特定する
+
+        Args:
+            page: Playwrightのページオブジェクト
+            product_name: 商品名
+
+        Returns:
+            list[str]: 商品画像のURLリスト
+        """
+        if not self.client:
+            return []
+
+        try:
+            # スクリーンショットを取得
+            screenshot_bytes = page.screenshot(full_page=False)
+            import base64
+            screenshot_b64 = base64.b64encode(screenshot_bytes).decode('utf-8')
+
+            # ページ内のすべての画像URLを取得
+            all_imgs = page.query_selector_all("img[src*='/files/']")
+            img_info = []
+            for i, img in enumerate(all_imgs[:20]):
+                src = img.get_attribute("src")
+                if src:
+                    # 画像の位置情報を取得
+                    box = img.bounding_box()
+                    if box:
+                        img_info.append({
+                            "index": i,
+                            "url": src,
+                            "x": box["x"],
+                            "y": box["y"],
+                            "width": box["width"],
+                            "height": box["height"]
+                        })
+
+            if not img_info:
+                return []
+
+            # AIに画像の位置と内容を分析させる
+            img_list_text = "\n".join([
+                f"{info['index']+1}. 位置({info['x']:.0f},{info['y']:.0f}) サイズ{info['width']:.0f}x{info['height']:.0f}: {info['url'].split('/')[-1]}"
+                for info in img_info
+            ])
+
+            content = [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": screenshot_b64
+                    }
+                },
+                {
+                    "type": "text",
+                    "text": f"""このスクリーンショットは貴金属商品のページです。
+
+商品名: {product_name}
+
+ページ内の画像一覧:
+{img_list_text}
+
+メインの商品画像（コインや地金の実物写真）の番号を特定してください。
+関連商品、ブログ記事、ロゴなどは除外してください。
+
+JSON形式で回答:
+{{
+    "product_image_indices": [1, 2],
+    "reason": "判定理由"
+}}
+"""
+                }
+            ]
+
+            logger.info("  スクリーンショットからAI画像特定中...")
+            response = self.client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=300,
+                messages=[{"role": "user", "content": content}]
+            )
+
+            response_text = response.content[0].text
+            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            if json_match:
+                data = json.loads(json_match.group())
+                indices = data.get("product_image_indices", [])
+                reason = data.get("reason", "")
+                logger.info(f"  AI特定: {len(indices)}枚 - {reason}")
+
+                # 特定された画像URLを返す
+                result_urls = []
+                for idx in indices:
+                    if 1 <= idx <= len(img_info):
+                        src = img_info[idx-1]["url"]
+                        # 高解像度に変換
+                        high_res_url = re.sub(r'/(\d+)_(\d+)_', '/1200_1200_', src)
+                        result_urls.append(high_res_url)
+                return result_urls
+
+        except Exception as e:
+            logger.warning(f"  スクリーンショット解析エラー: {e}")
+
+        return []
 
 
 class CategoryDetector:
@@ -1657,11 +1873,18 @@ def fill_incomplete_rows() -> bool:
     # 8. 型番ジェネレーターを初期化
     model_number_generator = ModelNumberGenerator()
 
-    # 9. スクレイパーを初期化して各行を処理
+    # 9. 画像解析器を初期化（AI検証用）
+    image_analyzer = ImageAnalyzer()
+    if image_analyzer.client:
+        logger.info("AI画像解析器: 初期化完了")
+    else:
+        logger.warning("AI画像解析器: APIキーが設定されていないため無効")
+
+    # 10. スクレイパーを初期化して各行を処理
     success_count = 0
     error_count = 0
 
-    with ProductScraper() as scraper:
+    with ProductScraper(image_analyzer=image_analyzer) as scraper:
         for row_info in incomplete_rows:
             row_num = row_info["row_num"]
             source_url = row_info["source_url"]
