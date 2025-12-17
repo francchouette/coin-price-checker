@@ -811,13 +811,19 @@ def get_incomplete_rows(sheet_client: SpreadsheetClient) -> list[dict]:
                         except ValueError:
                             pass
 
+                    # 既存の通貨（N列、index 13）
+                    existing_currency = ""
+                    if len(row) > 13 and row[13].strip():
+                        existing_currency = row[13].strip()
+
                     incomplete_rows.append({
                         "row_num": i,
                         "source_url": source_url,
                         "quantity": quantity,
                         "margin_rate": margin_rate,
                         "shipping": shipping,
-                        "sync_mode": sync_mode
+                        "sync_mode": sync_mode,
+                        "existing_currency": existing_currency
                     })
 
         logger.info(f"未処理行を検出: {len(incomplete_rows)}件")
@@ -841,7 +847,8 @@ def update_row_with_product_info(
     calculated_price: float = None,
     japanese_name: str = None,
     product_id: int = None,
-    sync_mode: str = "ドラフト作成"
+    sync_mode: str = "ドラフト作成",
+    existing_currency: str = None
 ) -> bool:
     """
     指定行に商品情報を更新する
@@ -856,6 +863,7 @@ def update_row_with_product_info(
         colorme_image_urls: カラーミー画像URLリスト
         timestamp: 更新日時
         sync_mode: 同期モード（ドラフト作成/新規登録）
+        existing_currency: 既存の通貨（設定済みの場合は上書きしない）
     """
     if not sheet_client._spreadsheet:
         return False
@@ -887,11 +895,12 @@ def update_row_with_product_info(
             'values': [[str(product_info.get("price", ""))]]
         })
 
-        # N列: 取得通貨
-        updates.append({
-            'range': f'N{row_num}',
-            'values': [[product_info.get("currency", "USD")]]
-        })
+        # N列: 取得通貨（既存の値がある場合は上書きしない）
+        if not existing_currency:
+            updates.append({
+                'range': f'N{row_num}',
+                'values': [[product_info.get("currency", "USD")]]
+            })
 
         # P列: 外部-為替レート
         if exchange_rate is not None:
@@ -1079,9 +1088,11 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
             logger.info(f"  カテゴリー: 大={cat_big}, 小={cat_small}")
 
             # 為替レートと計算価格を取得
+            # 既存の通貨設定がある場合はそちらを優先
             exchange_rate = None
             calculated_price = None
-            currency = product_info.get("currency", "USD")
+            existing_currency = row_info.get("existing_currency", "")
+            currency = existing_currency if existing_currency else product_info.get("currency", "USD")
             price = product_info.get("price", 0)
             if price > 0:
                 exchange_rate = exchange_client.get_rate(currency, "JPY")
@@ -1089,6 +1100,8 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
                     calculated_price = price * exchange_rate
                     logger.info(f"  為替レート: 1 {currency} = {exchange_rate:.4f} JPY")
                     logger.info(f"  計算価格: {int(calculated_price)} 円")
+                else:
+                    logger.warning(f"  為替レート取得失敗: {currency}")
 
             # 商品説明を生成
             description, simple_description = "", ""
@@ -1183,7 +1196,8 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
                     calculated_price,
                     japanese_name,
                     registered_product_id,
-                    sync_mode
+                    sync_mode,
+                    existing_currency
                 ):
                     logger.info(f"  → 更新完了")
                     success_count += 1
