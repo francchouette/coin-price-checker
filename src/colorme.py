@@ -839,8 +839,13 @@ class ColorMeClient:
             product_data["max_num"] = product.max_num
         if product.expl:
             product_data["expl"] = product.expl
+            logger.info(f"  商品説明を設定: {len(product.expl)}文字")
         if product.simple_expl:
             product_data["simple_expl"] = product.simple_expl
+            logger.info(f"  簡易説明を設定: {len(product.simple_expl)}文字")
+
+        # デバッグ: 送信データの確認
+        logger.debug(f"API送信データ: {list(product_data.keys())}")
 
         try:
             response = requests.post(

@@ -1420,6 +1420,9 @@ def update_row_with_product_info(
                 'range': f'AP{row_num}',
                 'values': [[description]]
             })
+            logger.info(f"  AP列（商品説明）を設定: {len(description)}文字")
+        else:
+            logger.warning(f"  AP列（商品説明）: 空のためスキップ")
 
         # AQ列: 簡易説明
         if simple_description:
@@ -1427,9 +1430,13 @@ def update_row_with_product_info(
                 'range': f'AQ{row_num}',
                 'values': [[simple_description]]
             })
+            logger.info(f"  AQ列（簡易説明）を設定: {len(simple_description)}文字")
+        else:
+            logger.warning(f"  AQ列（簡易説明）: 空のためスキップ")
 
         # AR〜BA列: 画像URL1〜10
         image_urls = colorme_image_urls[:10] if colorme_image_urls else product_info.get("image_urls", [])[:10]
+        logger.info(f"  画像URL: {len(image_urls)}件")
         if image_urls:
             # 画像URLを1列ずつ更新
             for i, img_url in enumerate(image_urls):
