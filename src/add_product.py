@@ -1370,8 +1370,8 @@ def update_row_with_product_info(
             'values': [[timestamp]]
         })
 
-        # AB列: 在庫状況
-        in_stock = "○" if product_info.get("in_stock") else "×"
+        # AB列: 在庫状況（プライスチェックと同じ形式）
+        in_stock = "In Stock" if product_info.get("in_stock") else "Out of Stock"
         updates.append({
             'range': f'AB{row_num}',
             'values': [[in_stock]]
