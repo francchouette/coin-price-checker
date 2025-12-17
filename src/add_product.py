@@ -129,6 +129,8 @@ class ProductScraper:
             return self._scrape_apmex(url)
         elif "britanniacoincompany.com" in domain:
             return self._scrape_britannia(url)
+        elif "bullionstar.com" in domain:
+            return self._scrape_bullionstar(url)
         else:
             logger.warning(f"未対応のサイト: {domain}")
             return None
@@ -294,6 +296,110 @@ class ProductScraper:
 
         except Exception as e:
             logger.error(f"Britanniaスクレイピングエラー: {e}")
+            return None
+
+    def _scrape_bullionstar(self, url: str) -> Optional[dict]:
+        """BullionStarから商品情報を取得"""
+        try:
+            page = self.context.new_page()
+            page.goto(url, wait_until="networkidle", timeout=60000)
+            page.wait_for_timeout(3000)
+
+            result = {
+                "name": "",
+                "price": 0.0,
+                "currency": "SGD",  # シンガポールドル
+                "in_stock": False,
+                "description": "",
+                "specs": "",
+                "image_urls": [],
+                "sku": ""
+            }
+
+            # 商品名
+            try:
+                name_elem = page.query_selector("h1.product-name, h1[itemprop='name'], h1")
+                if name_elem:
+                    result["name"] = name_elem.inner_text().strip()
+            except Exception:
+                pass
+
+            # 価格（SGD）
+            try:
+                price_elem = page.query_selector(".product-price, .price, [itemprop='price'], .current-price")
+                if price_elem:
+                    price_text = price_elem.inner_text()
+                    # SGD/USD/EURなどの通貨記号を除去
+                    price_match = re.search(r'[\d,]+\.?\d*', price_text.replace(',', ''))
+                    if price_match:
+                        result["price"] = float(price_match.group().replace(',', ''))
+                    # 通貨判定
+                    if 'USD' in price_text or '$' in price_text:
+                        result["currency"] = "USD"
+                    elif 'EUR' in price_text or '€' in price_text:
+                        result["currency"] = "EUR"
+                    elif 'SGD' in price_text or 'S$' in price_text:
+                        result["currency"] = "SGD"
+            except Exception:
+                pass
+
+            # 在庫状況
+            try:
+                # 「Add to Cart」ボタンがあれば在庫あり
+                add_to_cart = page.query_selector("button.add-to-cart, .btn-add-to-cart, button[type='submit']:has-text('Add'), .add-to-cart-button")
+                if add_to_cart:
+                    result["in_stock"] = True
+                else:
+                    # 在庫状況テキストを確認
+                    stock_elem = page.query_selector(".stock-status, .availability, [itemprop='availability']")
+                    if stock_elem:
+                        stock_text = stock_elem.inner_text().lower()
+                        result["in_stock"] = "in stock" in stock_text or "available" in stock_text
+            except Exception:
+                pass
+
+            # 説明
+            try:
+                desc_elem = page.query_selector(".product-description, #product-description, [itemprop='description'], .description")
+                if desc_elem:
+                    result["description"] = desc_elem.inner_text().strip()
+            except Exception:
+                pass
+
+            # 仕様
+            try:
+                specs_elem = page.query_selector(".product-specs, .specifications, .product-details, .specs")
+                if specs_elem:
+                    result["specs"] = specs_elem.inner_text().strip()
+            except Exception:
+                pass
+
+            # 画像URL
+            try:
+                img_elems = page.query_selector_all(".product-image img, .gallery img, [itemprop='image'], .product-gallery img, .main-image img")
+                for img in img_elems[:10]:
+                    src = img.get_attribute("src") or img.get_attribute("data-src") or img.get_attribute("data-zoom-image")
+                    if src:
+                        if not src.startswith("http"):
+                            src = f"https://www.bullionstar.com{src}"
+                        if src not in result["image_urls"]:
+                            result["image_urls"].append(src)
+            except Exception:
+                pass
+
+            # SKU
+            try:
+                sku_elem = page.query_selector("[itemprop='sku'], .sku, .product-sku, .product-code")
+                if sku_elem:
+                    result["sku"] = sku_elem.inner_text().strip()
+            except Exception:
+                pass
+
+            page.close()
+            return result
+
+        except Exception as e:
+            logger.error(f"BullionStarスクレイピングエラー: {e}")
             return None
 
 
