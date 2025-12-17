@@ -1616,6 +1616,14 @@ def get_incomplete_rows(sheet_client: SpreadsheetClient) -> list[dict]:
                         except ValueError:
                             pass
 
+                    # 販売価格（T列、index 19）
+                    selling_price = 0
+                    if len(row) > 19 and row[19].strip():
+                        try:
+                            selling_price = int(float(row[19].strip().replace(',', '')))
+                        except ValueError:
+                            pass
+
                     incomplete_rows.append({
                         "row_num": i,
                         "source_url": source_url,
@@ -1626,7 +1634,8 @@ def get_incomplete_rows(sheet_client: SpreadsheetClient) -> list[dict]:
                         "existing_currency": existing_currency,
                         "exchange_type": exchange_type,
                         "existing_category_id": existing_category_id,
-                        "existing_subcategory_id": existing_subcategory_id
+                        "existing_subcategory_id": existing_subcategory_id,
+                        "selling_price": selling_price
                     })
 
         logger.info(f"未処理行を検出: {len(incomplete_rows)}件")
@@ -1993,11 +2002,23 @@ def fill_incomplete_rows() -> bool:
             if sync_mode == "新規登録" and colorme_client:
                 logger.info("  カラーミーへ新規商品登録中...")
 
+                # T列の販売価格を使用（設定されていない場合はcalculated_priceをフォールバック）
+                selling_price = row_info.get("selling_price", 0)
+                if selling_price > 0:
+                    registration_price = selling_price
+                    logger.info(f"  登録価格: {registration_price}円（T列から取得）")
+                elif calculated_price:
+                    registration_price = int(calculated_price)
+                    logger.info(f"  登録価格: {registration_price}円（Q列から計算）")
+                else:
+                    registration_price = 0
+                    logger.warning("  登録価格: 0円（価格情報なし）")
+
                 # ColorMeProductを作成
                 colorme_product = ColorMeProduct(
                     product_id=0,  # 新規登録なのでID未定
                     name=japanese_name or product_info.get("name", ""),
-                    current_price=int(calculated_price) if calculated_price else 0,
+                    current_price=registration_price,
                     colorme_url="",
                     source_url=source_url,
                     quantity=quantity,
@@ -2006,7 +2027,7 @@ def fill_incomplete_rows() -> bool:
                     category_id_big=cat_big,
                     category_id_small=cat_small,
                     group_ids=grp_ids,
-                    regular_price=int(calculated_price) if calculated_price else 0,
+                    regular_price=registration_price,
                     stock_quantity=10 if product_info.get("in_stock") else 0,
                     stock_managed=True,
                     expl=description,
