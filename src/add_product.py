@@ -584,7 +584,7 @@ class DescriptionGenerator:
 
 
 class CategoryDetector:
-    """商品名からカテゴリーを自動判定するクラス"""
+    """商品名からカテゴリーを自動判定するクラス（AIサポート）"""
 
     # カテゴリーID（固定値）
     CATEGORY_IDS = {
@@ -653,61 +653,119 @@ class CategoryDetector:
         self.categories = categories
         self.groups = groups
         self.colorme_client = colorme_client
-        # APIから取得したグループ名→IDのマッピングを作成
-        self.existing_groups = {g["name"]: g["id"] for g in groups}
 
-    def _get_or_create_group(self, group_key: str) -> int:
-        """グループIDを取得、存在しない場合は作成"""
+        # Claude APIクライアントを初期化
+        self.client = None
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if api_key:
+            try:
+                import anthropic
+                self.client = anthropic.Anthropic(api_key=api_key)
+            except Exception as e:
+                logger.warning(f"Anthropic APIクライアント初期化エラー: {e}")
+
+        # APIから取得したグループ名→{id, parent_id}のマッピングを作成
+        self.existing_groups = {}
+        for g in groups:
+            parent_id = g.get("parent_id", 0) or 0
+            self.existing_groups[g["name"]] = {"id": g["id"], "parent_id": parent_id}
+
+    def _get_or_create_group(self, group_key: str, required_parent_id: int = None) -> int:
+        """グループIDを取得、存在しない場合は作成
+
+        Args:
+            group_key: GROUP_MASTERのキー
+            required_parent_id: 必須の親グループID（指定時は親が一致するものを探す）
+        """
         if group_key not in self.GROUP_MASTER:
             return 0
 
         master = self.GROUP_MASTER[group_key]
         group_id = master["id"]
         group_name = master["name"]
+        expected_parent_key = master.get("parent_key")
 
-        # 既存グループに存在するか確認
+        # 期待される親グループIDを取得
+        if required_parent_id is not None:
+            expected_parent_id = required_parent_id
+        elif expected_parent_key and expected_parent_key in self.GROUP_MASTER:
+            expected_parent_id = self.GROUP_MASTER[expected_parent_key]["id"]
+        else:
+            expected_parent_id = 0
+
+        # 既存グループに存在するか確認（親も一致するかチェック）
         if group_name in self.existing_groups:
-            return self.existing_groups[group_name]
+            existing = self.existing_groups[group_name]
+            existing_id = existing["id"]
+            existing_parent = existing["parent_id"]
+
+            # 親グループが一致する場合はそのまま返す
+            if expected_parent_id == 0 or existing_parent == expected_parent_id:
+                return existing_id
+
+            # 親が一致しない場合は新しいグループを作成
+            logger.info(f"  既存グループ '{group_name}' は親が不一致 (期待: {expected_parent_id}, 実際: {existing_parent})")
 
         # マスターのIDが存在するか確認（API取得グループと照合）
         for g in self.groups:
             if g["id"] == group_id:
-                return group_id
+                parent_id = g.get("parent_id", 0) or 0
+                if expected_parent_id == 0 or parent_id == expected_parent_id:
+                    return group_id
 
         # 存在しない場合は作成
         if self.colorme_client:
-            parent_id = 0
-            if master["parent_key"] and master["parent_key"] in self.GROUP_MASTER:
-                parent_id = self.GROUP_MASTER[master["parent_key"]]["id"]
-
-            logger.info(f"  グループ作成中: {group_name} (親ID: {parent_id})")
-            new_id, error = self.colorme_client.create_group(group_name, parent_id)
+            logger.info(f"  グループ作成中: {group_name} (親ID: {expected_parent_id})")
+            new_id, error = self.colorme_client.create_group(group_name, expected_parent_id)
             if new_id > 0:
                 # マスターとキャッシュを更新
                 self.GROUP_MASTER[group_key]["id"] = new_id
-                self.existing_groups[group_name] = new_id
+                self.existing_groups[group_name] = {"id": new_id, "parent_id": expected_parent_id}
                 return new_id
             else:
                 logger.warning(f"  グループ作成失敗: {error}")
 
         return group_id  # フォールバック: マスターのID
 
-    def detect(self, product_name: str) -> tuple[int, int, list[int]]:
+    def detect(self, product_name: str, url: str = "") -> tuple[int, int, list[int]]:
         """
-        商品名からカテゴリーIDとグループIDを判定
+        商品名からカテゴリーIDとグループIDを判定（AI判定対応）
+
+        Args:
+            product_name: 商品名
+            url: 商品URL（AI判定の参考情報）
 
         Returns:
             tuple[int, int, list[int]]: (大カテゴリーID, 小カテゴリーID, グループIDリスト)
         """
         name_lower = product_name.lower()
+        url_lower = url.lower() if url else ""
         group_ids = []
 
         # 1. 素材タイプを判定 → カテゴリーID決定
+        # まずURLから判定（最も確実）
         detected_metal = None
-        for metal, keywords in self.METAL_KEYWORDS.items():
-            if any(kw in name_lower for kw in keywords):
-                detected_metal = metal
-                break
+        if "silver" in url_lower:
+            detected_metal = "silver"
+        elif "gold" in url_lower:
+            detected_metal = "gold"
+        elif "platinum" in url_lower:
+            detected_metal = "platinum"
+
+        # URLで判定できない場合はキーワードから判定
+        if not detected_metal:
+            for metal, keywords in self.METAL_KEYWORDS.items():
+                if any(kw in name_lower for kw in keywords):
+                    detected_metal = metal
+                    break
+
+        # それでも判定できない場合はAIで判定
+        ai_result = {}
+        if not detected_metal and self.client:
+            logger.info("  素材をAIで判定中...")
+            ai_result = self._detect_with_ai(product_name, url)
+            if ai_result.get("metal"):
+                detected_metal = ai_result["metal"]
 
         # カテゴリーID決定（金/銀のみ）
         if detected_metal == "gold":
@@ -731,13 +789,18 @@ class CategoryDetector:
                 detected_series = series
                 break
 
+        # キーワードで判定できない場合はAI結果を使用
+        if not detected_series and ai_result.get("series"):
+            detected_series = ai_result["series"]
+            logger.info(f"  シリーズをAI判定で使用: {detected_series}")
+
         if detected_series:
             # 素材に応じたシリーズグループを取得/作成
             series_key = f"{detected_series}_{detected_metal}"
             if series_key in self.GROUP_MASTER:
                 series_group_id = self._get_or_create_group(series_key)
             else:
-                # 素材別グループがない場合は汎用グループを作成
+                # 素材別グループがない場合は正しい親の下にグループを作成
                 series_group_id = self._get_or_create_series_group(detected_series, detected_metal)
 
             if series_group_id:
@@ -750,6 +813,10 @@ class CategoryDetector:
                 detected_type = ptype
                 break
 
+        # AI結果からタイプを取得
+        if not detected_type and ai_result.get("type"):
+            detected_type = ai_result["type"]
+
         if detected_type:
             type_group_id = self._get_or_create_group(detected_type)
             if type_group_id:
@@ -761,32 +828,92 @@ class CategoryDetector:
         return category_id_big, 0, group_ids
 
     def _get_or_create_series_group(self, series: str, metal: str) -> int:
-        """シリーズグループを取得、存在しない場合は作成"""
+        """シリーズグループを取得、存在しない場合は正しい親の下に作成"""
         if series not in self.SERIES_MASTER:
             return 0
 
         series_info = self.SERIES_MASTER[series]
         group_name = series_info["display_name"]
 
-        # 既存グループに存在するか確認
-        if group_name in self.existing_groups:
-            return self.existing_groups[group_name]
+        # 期待される親グループID（metalに対応するグループ）
+        expected_parent_id = self.GROUP_MASTER.get(metal, {}).get("id", 0)
 
-        # 存在しない場合は作成
+        # 既存グループに存在するか確認（親も一致するかチェック）
+        if group_name in self.existing_groups:
+            existing = self.existing_groups[group_name]
+            existing_id = existing["id"]
+            existing_parent = existing["parent_id"]
+
+            # 親グループが一致する場合はそのまま返す
+            if existing_parent == expected_parent_id:
+                return existing_id
+
+            # 親が一致しない場合は正しい親の下に新規作成
+            logger.info(f"  既存グループ '{group_name}' は親が不一致 (期待: {expected_parent_id}/{metal}, 実際: {existing_parent})")
+            logger.info(f"  → 正しい親の下に新規作成します")
+
+        # 存在しない、または親が不一致の場合は作成
         if self.colorme_client:
-            parent_id = self.GROUP_MASTER.get(metal, {}).get("id", 0)
-            logger.info(f"  新シリーズグループ作成中: {group_name} (親: {metal})")
-            new_id, error = self.colorme_client.create_group(group_name, parent_id)
+            logger.info(f"  新シリーズグループ作成中: {group_name} (親: {metal}, ID: {expected_parent_id})")
+            new_id, error = self.colorme_client.create_group(group_name, expected_parent_id)
             if new_id > 0:
                 # マスターを更新
                 new_key = f"{series}_{metal}"
                 self.GROUP_MASTER[new_key] = {"id": new_id, "name": group_name, "parent_key": metal}
-                self.existing_groups[group_name] = new_id
+                self.existing_groups[group_name] = {"id": new_id, "parent_id": expected_parent_id}
                 return new_id
             else:
                 logger.warning(f"  グループ作成失敗: {error}")
 
         return 0
+
+    def _detect_with_ai(self, product_name: str, url: str = "") -> dict:
+        """
+        AIを使って商品のカテゴリー情報を判定する
+
+        Returns:
+            dict: {"metal": "gold"|"silver"|"platinum", "series": str, "type": "coin"|"bar"|None}
+        """
+        if not self.client:
+            return {}
+
+        try:
+            prompt = f"""以下の商品情報から、素材・シリーズ・タイプを判定してください。
+
+商品名: {product_name}
+URL: {url}
+
+判定基準:
+- 素材 (metal): "gold"（金貨/ゴールド）, "silver"（銀貨/シルバー）, "platinum"（プラチナ）
+- シリーズ (series): "maple", "vienna", "britannia", "eagle", "kangaroo", "kookaburra", "koala", "dragon", "lunar", "panda" など
+- タイプ (type): "coin"（コイン/ラウンド）, "bar"（バー/インゴット）, null（不明）
+
+JSON形式で回答してください:
+{{"metal": "...", "series": "...", "type": "..."}}
+
+注意:
+- URLに"silver"が含まれていれば銀貨、"gold"が含まれていれば金貨
+- "dragon", "lunar"などの干支シリーズは素材と組み合わせて判定
+- 判定できない場合はnullを設定
+"""
+
+            response = self.client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=200,
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            response_text = response.content[0].text
+            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            if json_match:
+                data = json.loads(json_match.group())
+                logger.info(f"  AI判定結果: {data}")
+                return data
+
+        except Exception as e:
+            logger.warning(f"  AI判定エラー: {e}")
+
+        return {}
 
 
 class JapaneseProductNameGenerator:
@@ -1568,8 +1695,8 @@ def fill_incomplete_rows() -> bool:
                 grp_ids = []
                 logger.info(f"  カテゴリー(既存値使用): 大={cat_big}, 小={cat_small}")
             else:
-                # なければ商品名から判定
-                cat_big, cat_small, grp_ids = detector.detect(product_info["name"])
+                # なければ商品名とURLから判定（AIサポート）
+                cat_big, cat_small, grp_ids = detector.detect(product_info["name"], source_url)
                 logger.info(f"  カテゴリー(自動判定): 大={cat_big}, 小={cat_small}")
 
             # 為替レートと計算価格を取得
