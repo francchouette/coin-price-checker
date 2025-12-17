@@ -519,6 +519,233 @@ class CategoryDetector:
         return category_id_big, category_id_small, group_ids
 
 
+class JapaneseProductNameGenerator:
+    """英語の商品名から日本語の商品名を生成するクラス"""
+
+    # 国名マッピング
+    COUNTRY_MAP = {
+        "singapore": "シンガポール",
+        "usa": "アメリカ",
+        "us": "アメリカ",
+        "united states": "アメリカ",
+        "america": "アメリカ",
+        "uk": "イギリス",
+        "united kingdom": "イギリス",
+        "britain": "イギリス",
+        "british": "イギリス",
+        "canada": "カナダ",
+        "canadian": "カナダ",
+        "australia": "オーストラリア",
+        "australian": "オーストラリア",
+        "austria": "オーストリア",
+        "austrian": "オーストリア",
+        "china": "中国",
+        "chinese": "中国",
+        "south africa": "南アフリカ",
+        "switzerland": "スイス",
+        "swiss": "スイス",
+        "germany": "ドイツ",
+        "german": "ドイツ",
+        "turkey": "トルコ",
+        "turkish": "トルコ",
+        "mexico": "メキシコ",
+        "mexican": "メキシコ",
+    }
+
+    # シリーズ名マッピング
+    SERIES_MAP = {
+        "dragon": "ドラゴン",
+        "eagle": "イーグル",
+        "britannia": "ブリタニア",
+        "maple leaf": "メイプルリーフ",
+        "maple": "メイプルリーフ",
+        "kangaroo": "カンガルー",
+        "koala": "コアラ",
+        "kookaburra": "カワセミ",
+        "panda": "パンダ",
+        "philharmonic": "ウィーン",
+        "vienna": "ウィーン",
+        "krugerrand": "クルーガーランド",
+        "buffalo": "バッファロー",
+        "libertad": "リベルタード",
+        "lunar": "干支",
+        "queen's beast": "クイーンズビースト",
+        "queens beast": "クイーンズビースト",
+        "tudor beast": "チューダービースト",
+        "royal arms": "ロイヤルアームズ",
+    }
+
+    # メーカー名マッピング
+    MAKER_MAP = {
+        "pamp": "PAMP",
+        "valcambi": "ヴァルカンビ",
+        "nadir": "ナディール",
+        "9fine mint": "9ファインミント",
+        "perth mint": "パースミント",
+        "royal mint": "ロイヤルミント",
+        "bullionstar": "ブリオンスター",
+    }
+
+    # 素材マッピング
+    METAL_MAP = {
+        "gold": ("金貨", "ゴールド"),
+        "silver": ("銀貨", "シルバー"),
+        "platinum": ("プラチナ貨", "プラチナ"),
+        "palladium": ("パラジウム貨", "パラジウム"),
+    }
+
+    def generate(self, product_info: dict, quantity: int = 1) -> str:
+        """
+        英語の商品情報から日本語の商品名を生成する
+
+        Args:
+            product_info: スクレイピングで取得した商品情報
+            quantity: 枚数（E列から取得）
+
+        Returns:
+            str: 日本語の商品名
+        """
+        name = product_info.get("name", "")
+        specs = product_info.get("specs", "")
+        description = product_info.get("description", "")
+        full_text = f"{name} {specs} {description}".lower()
+
+        # 年号を抽出
+        year = self._extract_year(full_text)
+
+        # 重量を抽出
+        weight = self._extract_weight(full_text)
+
+        # 素材を判定
+        metal_type, is_ingot = self._detect_metal_and_type(full_text)
+
+        # 国名を抽出
+        country = self._extract_country(full_text)
+
+        # シリーズ名またはメーカー名を抽出
+        series_or_maker = self._extract_series_or_maker(full_text, is_ingot)
+
+        # 枚数の単位
+        unit = "本" if is_ingot else "枚"
+
+        if is_ingot:
+            # インゴットの命名規則
+            # [メーカー名] [国名] [重量] [種類]インゴット 新品未使用【[個数]】
+            ingot_type = "ゴールドインゴット" if "gold" in metal_type else "シルバーインゴット"
+            if "platinum" in metal_type:
+                ingot_type = "プラチナインゴット"
+
+            parts = []
+            if series_or_maker:
+                parts.append(series_or_maker)
+            if country:
+                parts.append(country)
+            if weight:
+                parts.append(weight)
+            parts.append(ingot_type)
+            parts.append("新品未使用")
+            parts.append(f"【{quantity}{unit}】")
+
+            return " ".join(parts)
+        else:
+            # コインの命名規則
+            # [年号] [シリーズ名] [国名] [額面] [重量] 新品未使用 [種類] 【[枚数]】 ([付属品])
+            coin_type = self.METAL_MAP.get(metal_type, ("地金型銀貨", "シルバー"))[0]
+            coin_type = f"地金型{coin_type}"
+
+            parts = []
+            if year:
+                parts.append(year)
+            if series_or_maker:
+                parts.append(series_or_maker)
+            if country:
+                parts.append(country)
+            if weight:
+                parts.append(weight)
+            parts.append("新品未使用")
+            parts.append(coin_type)
+            parts.append(f"【{quantity}{unit}】")
+            parts.append("(コインケース付)")
+
+            return " ".join(parts)
+
+    def _extract_year(self, text: str) -> str:
+        """年号を抽出"""
+        import re
+        # 2020-2030の範囲で年号を検索
+        match = re.search(r'\b(20[2-3][0-9])\b', text)
+        if match:
+            return match.group(1)
+        return ""
+
+    def _extract_weight(self, text: str) -> str:
+        """重量を抽出して日本語形式に変換"""
+        import re
+
+        # オンス表記
+        oz_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:oz|ounce)', text)
+        if oz_match:
+            oz_val = float(oz_match.group(1))
+            if oz_val == 1:
+                return "1オンス"
+            elif oz_val == 0.5:
+                return "1/2オンス"
+            elif oz_val == 0.25:
+                return "1/4オンス"
+            elif oz_val == 0.1:
+                return "1/10オンス"
+            else:
+                return f"{oz_val}オンス"
+
+        # グラム表記
+        g_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:g|gram)(?:s)?(?!\w)', text)
+        if g_match:
+            g_val = g_match.group(1)
+            return f"{g_val}g"
+
+        # kg表記
+        kg_match = re.search(r'(\d+(?:\.\d+)?)\s*kg', text)
+        if kg_match:
+            kg_val = kg_match.group(1)
+            return f"{kg_val}kg"
+
+        return ""
+
+    def _detect_metal_and_type(self, text: str) -> tuple[str, bool]:
+        """素材とインゴットかどうかを判定"""
+        is_ingot = any(kw in text for kw in ["ingot", "bar", "インゴット", "バー"])
+
+        if "gold" in text or "金" in text:
+            return "gold", is_ingot
+        elif "silver" in text or "銀" in text:
+            return "silver", is_ingot
+        elif "platinum" in text or "プラチナ" in text:
+            return "platinum", is_ingot
+        elif "palladium" in text:
+            return "palladium", is_ingot
+
+        return "silver", is_ingot  # デフォルト
+
+    def _extract_country(self, text: str) -> str:
+        """国名を抽出"""
+        for eng, jpn in self.COUNTRY_MAP.items():
+            if eng in text:
+                return jpn
+        return ""
+
+    def _extract_series_or_maker(self, text: str, is_ingot: bool) -> str:
+        """シリーズ名またはメーカー名を抽出"""
+        if is_ingot:
+            for eng, jpn in self.MAKER_MAP.items():
+                if eng in text:
+                    return jpn
+        else:
+            for eng, jpn in self.SERIES_MAP.items():
+                if eng in text:
+                    return jpn
+        return ""
+
+
 def get_incomplete_rows(sheet_client: SpreadsheetClient) -> list[dict]:
     """
     D列（取得元URL）が入力されていて、B列（商品名）が空の行を取得する
@@ -610,6 +837,7 @@ def update_row_with_product_info(
     timestamp: str,
     exchange_rate: float = None,
     calculated_price: float = None,
+    japanese_name: str = None,
     sync_mode: str = "ドラフト作成"
 ) -> bool:
     """
@@ -636,10 +864,11 @@ def update_row_with_product_info(
 
         updates = []
 
-        # B列: 商品名
+        # B列: 商品名（日本語商品名があればそちらを使用）
+        product_name = japanese_name if japanese_name else product_info.get("name", "")
         updates.append({
             'range': f'B{row_num}',
-            'values': [[product_info.get("name", "")]]
+            'values': [[product_name]]
         })
 
         # M列: 取得元価格
@@ -802,7 +1031,10 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
     else:
         logger.warning("為替レートの取得に失敗しました。P列・Q列は更新されません。")
 
-    # 7. スクレイパーを初期化して各行を処理
+    # 7. 日本語商品名ジェネレーターを初期化
+    name_generator = JapaneseProductNameGenerator()
+
+    # 8. スクレイパーを初期化して各行を処理
     success_count = 0
     error_count = 0
 
@@ -822,10 +1054,15 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
                 error_count += 1
                 continue
 
-            logger.info(f"  商品名: {product_info['name']}")
+            logger.info(f"  商品名(英語): {product_info['name']}")
             logger.info(f"  価格: {product_info['price']} {product_info['currency']}")
             logger.info(f"  在庫: {'あり' if product_info['in_stock'] else 'なし'}")
             logger.info(f"  画像: {len(product_info['image_urls'])}枚")
+
+            # 日本語商品名を生成
+            quantity = row_info.get("quantity", 1)
+            japanese_name = name_generator.generate(product_info, quantity)
+            logger.info(f"  商品名(日本語): {japanese_name}")
 
             # カテゴリー判定
             cat_big, cat_small, grp_ids = detector.detect(product_info["name"])
@@ -890,6 +1127,7 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
                     timestamp,
                     exchange_rate,
                     calculated_price,
+                    japanese_name,
                     sync_mode
                 ):
                     logger.info(f"  → 更新完了")
