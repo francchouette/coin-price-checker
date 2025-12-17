@@ -26,6 +26,7 @@ from playwright.sync_api import sync_playwright
 
 from .colorme import ColorMeClient
 from .config import Config
+from .exchange_rate import ExchangeRateClient
 from .spreadsheet import SpreadsheetClient
 
 # ロギング設定
@@ -607,6 +608,8 @@ def update_row_with_product_info(
     simple_description: str,
     colorme_image_urls: list[str],
     timestamp: str,
+    exchange_rate: float = None,
+    calculated_price: float = None,
     sync_mode: str = "ドラフト作成"
 ) -> bool:
     """
@@ -650,6 +653,20 @@ def update_row_with_product_info(
             'range': f'N{row_num}',
             'values': [[product_info.get("currency", "USD")]]
         })
+
+        # P列: 外部-為替レート
+        if exchange_rate is not None:
+            updates.append({
+                'range': f'P{row_num}',
+                'values': [[str(round(exchange_rate, 4))]]
+            })
+
+        # Q列: 外部-本体計算価格（原価）
+        if calculated_price is not None:
+            updates.append({
+                'range': f'Q{row_num}',
+                'values': [[str(int(calculated_price))]]
+            })
 
         # Y列: 最終更新
         updates.append({
@@ -778,7 +795,14 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
     # 5. カテゴリー判定器を初期化
     detector = CategoryDetector(categories, groups)
 
-    # 6. スクレイパーを初期化して各行を処理
+    # 6. 為替レートクライアントを初期化
+    exchange_client = ExchangeRateClient()
+    if exchange_client.fetch_rates():
+        logger.info("為替レートを取得しました")
+    else:
+        logger.warning("為替レートの取得に失敗しました。P列・Q列は更新されません。")
+
+    # 7. スクレイパーを初期化して各行を処理
     success_count = 0
     error_count = 0
 
@@ -806,6 +830,18 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
             # カテゴリー判定
             cat_big, cat_small, grp_ids = detector.detect(product_info["name"])
             logger.info(f"  カテゴリー: 大={cat_big}, 小={cat_small}")
+
+            # 為替レートと計算価格を取得
+            exchange_rate = None
+            calculated_price = None
+            currency = product_info.get("currency", "USD")
+            price = product_info.get("price", 0)
+            if price > 0:
+                exchange_rate = exchange_client.get_rate(currency, "JPY")
+                if exchange_rate:
+                    calculated_price = price * exchange_rate
+                    logger.info(f"  為替レート: 1 {currency} = {exchange_rate:.4f} JPY")
+                    logger.info(f"  計算価格: {int(calculated_price)} 円")
 
             # 商品説明を生成
             description, simple_description = "", ""
@@ -852,6 +888,8 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
                     simple_description,
                     colorme_image_urls,
                     timestamp,
+                    exchange_rate,
+                    calculated_price,
                     sync_mode
                 ):
                     logger.info(f"  → 更新完了")
