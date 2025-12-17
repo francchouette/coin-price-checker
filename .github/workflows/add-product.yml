@@ -3,15 +3,6 @@ name: Add Product
 on:
   # 手動実行のみ
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: 'ドライラン（確認のみ）'
-        required: false
-        default: 'true'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
 
 jobs:
   add-product:
@@ -49,17 +40,7 @@ jobs:
           python -m playwright install chromium
           python -m playwright install-deps chromium
 
-      - name: Run add product (dry run)
-        if: ${{ github.event.inputs.dry_run == 'true' }}
-        env:
-          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          python -m src.add_product
-
-      - name: Run add product (execute)
-        if: ${{ github.event.inputs.dry_run == 'false' }}
+      - name: Run add product
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
