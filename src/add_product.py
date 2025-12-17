@@ -532,9 +532,26 @@ class DescriptionGenerator:
 class CategoryDetector:
     """商品名からカテゴリーを自動判定するクラス"""
 
+    # 素材キーワードマッピング
+    METAL_KEYWORDS = {
+        "gold": ["gold", "金貨", "ゴールド", "金", "au"],
+        "silver": ["silver", "銀貨", "シルバー", "銀", "ag"],
+        "platinum": ["platinum", "プラチナ", "白金", "pt"],
+        "palladium": ["palladium", "パラジウム", "pd"],
+    }
+
+    # 商品タイプキーワード
+    TYPE_KEYWORDS = {
+        "coin": ["coin", "コイン", "貨", "round", "ラウンド"],
+        "bar": ["bar", "ingot", "インゴット", "バー", "地金"],
+    }
+
     def __init__(self, categories: list[dict], groups: list[dict]):
         self.categories = categories
         self.groups = groups
+        # カテゴリー名をログ出力（デバッグ用）
+        for cat in categories:
+            logger.info(f"  カテゴリー: {cat.get('name_big', '')} / {cat.get('name_small', '')} (ID: {cat.get('id_big', 0)})")
 
     def detect(self, product_name: str) -> tuple[int, int, list[int]]:
         """
@@ -549,43 +566,72 @@ class CategoryDetector:
         category_id_small = 0
         group_ids = []
 
-        # キーワードマッチングでカテゴリーを判定
+        # 1. 商品名から素材タイプを判定
+        detected_metal = None
+        for metal, keywords in self.METAL_KEYWORDS.items():
+            if any(kw in name_lower for kw in keywords):
+                detected_metal = metal
+                break
+
+        # 2. 商品名から商品タイプを判定
+        detected_type = None
+        for ptype, keywords in self.TYPE_KEYWORDS.items():
+            if any(kw in name_lower for kw in keywords):
+                detected_type = ptype
+                break
+
+        logger.info(f"  判定: 素材={detected_metal}, タイプ={detected_type}")
+
+        # 3. カテゴリーマッチング（より柔軟に）
+        best_match = None
+        best_score = 0
+
         for cat in self.categories:
             cat_name = (cat.get("name_big", "") + cat.get("name_small", "")).lower()
+            score = 0
 
-            # 金貨
-            if any(kw in name_lower for kw in ["gold", "金貨", "ゴールド", "金"]):
-                if "金" in cat_name or "gold" in cat_name:
-                    category_id_big = cat.get("id_big", 0)
-                    category_id_small = cat.get("id_small", 0)
-                    break
+            # 素材マッチング
+            if detected_metal:
+                for kw in self.METAL_KEYWORDS[detected_metal]:
+                    if kw in cat_name:
+                        score += 10
+                        break
 
-            # 銀貨
-            if any(kw in name_lower for kw in ["silver", "銀貨", "シルバー", "銀"]):
-                if "銀" in cat_name or "silver" in cat_name:
-                    category_id_big = cat.get("id_big", 0)
-                    category_id_small = cat.get("id_small", 0)
-                    break
+            # タイプマッチング
+            if detected_type:
+                for kw in self.TYPE_KEYWORDS[detected_type]:
+                    if kw in cat_name:
+                        score += 5
+                        break
 
-            # プラチナ
-            if any(kw in name_lower for kw in ["platinum", "プラチナ"]):
-                if "プラチナ" in cat_name or "platinum" in cat_name:
-                    category_id_big = cat.get("id_big", 0)
-                    category_id_small = cat.get("id_small", 0)
-                    break
+            if score > best_score:
+                best_score = score
+                best_match = cat
 
-            # インゴット
-            if any(kw in name_lower for kw in ["ingot", "インゴット", "バー"]):
-                if "インゴット" in cat_name or "バー" in cat_name:
-                    category_id_big = cat.get("id_big", 0)
-                    category_id_small = cat.get("id_small", 0)
-                    break
+        # 4. マッチしたカテゴリーがあれば使用、なければ最初のカテゴリーをデフォルト
+        if best_match and best_score > 0:
+            category_id_big = best_match.get("id_big", 0)
+            category_id_small = best_match.get("id_small", 0)
+        elif self.categories:
+            # デフォルト: 最初のカテゴリー
+            category_id_big = self.categories[0].get("id_big", 0)
+            category_id_small = self.categories[0].get("id_small", 0)
+            logger.info(f"  カテゴリーマッチなし、デフォルト使用: {category_id_big}")
 
-        # グループ判定
+        # 5. グループ判定（商品名のキーワードとグループ名でマッチング）
         for grp in self.groups:
             grp_name = grp.get("name", "").lower()
-            if grp_name and any(kw in name_lower for kw in grp_name.split()):
-                group_ids.append(grp.get("id", 0))
+            if not grp_name:
+                continue
+
+            # グループ名の単語と商品名をマッチング
+            grp_words = [w for w in grp_name.replace("-", " ").split() if len(w) >= 2]
+            for word in grp_words:
+                if word in name_lower:
+                    grp_id = grp.get("id", 0)
+                    if grp_id and grp_id not in group_ids:
+                        group_ids.append(grp_id)
+                    break
 
         return category_id_big, category_id_small, group_ids
 
@@ -885,6 +931,22 @@ def get_incomplete_rows(sheet_client: SpreadsheetClient) -> list[dict]:
                     if len(row) > 13 and row[13].strip():
                         existing_currency = row[13].strip()
 
+                    # 既存のカテゴリーID（AE列、index 30）
+                    existing_category_id = 0
+                    if len(row) > 30 and row[30].strip():
+                        try:
+                            existing_category_id = int(row[30].strip())
+                        except ValueError:
+                            pass
+
+                    # 既存のサブカテゴリーID（AF列、index 31）
+                    existing_subcategory_id = 0
+                    if len(row) > 31 and row[31].strip():
+                        try:
+                            existing_subcategory_id = int(row[31].strip())
+                        except ValueError:
+                            pass
+
                     incomplete_rows.append({
                         "row_num": i,
                         "source_url": source_url,
@@ -892,7 +954,9 @@ def get_incomplete_rows(sheet_client: SpreadsheetClient) -> list[dict]:
                         "margin_rate": margin_rate,
                         "shipping": shipping,
                         "sync_mode": sync_mode,
-                        "existing_currency": existing_currency
+                        "existing_currency": existing_currency,
+                        "existing_category_id": existing_category_id,
+                        "existing_subcategory_id": existing_subcategory_id
                     })
 
         logger.info(f"未処理行を検出: {len(incomplete_rows)}件")
@@ -1152,9 +1216,20 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
             japanese_name = name_generator.generate(product_info, quantity)
             logger.info(f"  商品名(日本語): {japanese_name}")
 
-            # カテゴリー判定
-            cat_big, cat_small, grp_ids = detector.detect(product_info["name"])
-            logger.info(f"  カテゴリー: 大={cat_big}, 小={cat_small}")
+            # カテゴリー判定（既存値を優先）
+            existing_cat_id = row_info.get("existing_category_id", 0)
+            existing_subcat_id = row_info.get("existing_subcategory_id", 0)
+
+            if existing_cat_id > 0:
+                # スプレッドシートに既存のカテゴリーIDがあれば使用
+                cat_big = existing_cat_id
+                cat_small = existing_subcat_id
+                grp_ids = []
+                logger.info(f"  カテゴリー(既存値使用): 大={cat_big}, 小={cat_small}")
+            else:
+                # なければ商品名から判定
+                cat_big, cat_small, grp_ids = detector.detect(product_info["name"])
+                logger.info(f"  カテゴリー(自動判定): 大={cat_big}, 小={cat_small}")
 
             # 為替レートと計算価格を取得
             # 既存の通貨設定がある場合はそちらを優先
