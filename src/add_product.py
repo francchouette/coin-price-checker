@@ -376,13 +376,13 @@ class ProductScraper:
 
             # 画像URL
             try:
-                img_elems = page.query_selector_all(".product-image img, .gallery img, [itemprop='image'], .product-gallery img, .main-image img")
+                # BullionStarはstatic.bullionstar.comから画像を配信、classなしのimg要素
+                img_elems = page.query_selector_all("img[src*='static.bullionstar.com'], img[src*='bullionstar.com/files']")
                 for img in img_elems[:10]:
-                    src = img.get_attribute("src") or img.get_attribute("data-src") or img.get_attribute("data-zoom-image")
-                    if src:
-                        if not src.startswith("http"):
-                            src = f"https://www.bullionstar.com{src}"
-                        if src not in result["image_urls"]:
+                    src = img.get_attribute("src")
+                    if src and "static.bullionstar.com" in src:
+                        # サムネイル（73_73_）ではなく大きい画像（300_300_以上）を取得
+                        if "73_73_" not in src and src not in result["image_urls"]:
                             result["image_urls"].append(src)
             except Exception:
                 pass
