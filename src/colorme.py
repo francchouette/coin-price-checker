@@ -174,10 +174,17 @@ class ColorMeClient:
             data = response.json()
 
             groups = []
-            for grp in data.get("groups", []):
+            raw_groups = data.get("groups", [])
+
+            # 最初のグループのフィールドをログ出力（デバッグ用）
+            if raw_groups:
+                logger.info(f"グループAPIレスポンス例: {list(raw_groups[0].keys())}")
+
+            for grp in raw_groups:
                 groups.append({
                     "id": grp.get("id", 0),
-                    "name": grp.get("name", "")
+                    "name": grp.get("name", ""),
+                    "parent_id": grp.get("parent_id") or grp.get("parent_group_id") or 0
                 })
 
             logger.info(f"グループ取得完了: {len(groups)}件")
