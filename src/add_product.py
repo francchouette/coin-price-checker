@@ -4,15 +4,16 @@
 カラーミー商品管理シートで、D列（取得元URL）が入力されていて
 B列（商品名）が空の行を検出し、自動で情報を埋める。
 
-使用方法:
-    # ドライラン（確認のみ）
-    python -m src.add_product
+AC列の同期モードに応じて処理を行う:
+- ドラフト作成: スプレッドシートのみ更新（カラーミー登録なし）
+- 取得のみ: スプレッドシートのみ更新
+- 更新: カラーミーの既存商品を更新
+- 新規登録: カラーミーに新規商品登録
 
-    # 実際に処理を実行
-    python -m src.add_product --execute
+使用方法:
+    python -m src.add_product
 """
 
-import argparse
 import json
 import logging
 import os
@@ -485,8 +486,11 @@ class DescriptionGenerator:
             try:
                 import anthropic
                 self.client = anthropic.Anthropic(api_key=self.api_key)
+                logger.info("説明生成器: 初期化完了（APIキー設定済み）")
             except ImportError:
                 logger.warning("anthropicライブラリがインストールされていません")
+        else:
+            logger.warning("説明生成器: ANTHROPIC_API_KEYが設定されていません")
 
     def generate(self, product_info: dict) -> tuple[str, str]:
         """
@@ -511,6 +515,7 @@ class DescriptionGenerator:
         )
 
         try:
+            logger.info("  Claude APIを呼び出し中（説明生成）...")
             response = self.client.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=2000,
@@ -518,13 +523,30 @@ class DescriptionGenerator:
             )
 
             response_text = response.content[0].text
+            logger.debug(f"  API応答（先頭200文字）: {response_text[:200]}")
+
             json_match = re.search(r'\{[\s\S]*\}', response_text)
             if json_match:
-                data = json.loads(json_match.group())
-                return data.get("description", ""), data.get("simple_description", "")
+                try:
+                    data = json.loads(json_match.group())
+                    desc = data.get("description", "")
+                    simple_desc = data.get("simple_description", "")
+                    if desc:
+                        logger.info(f"  説明生成成功: {len(desc)}文字")
+                    else:
+                        logger.warning("  JSONは取得できたが、descriptionが空です")
+                    return desc, simple_desc
+                except json.JSONDecodeError as je:
+                    logger.error(f"  JSON解析エラー: {je}")
+                    logger.error(f"  解析対象: {json_match.group()[:200]}")
+            else:
+                logger.warning("  応答にJSONが含まれていません")
+                logger.warning(f"  応答内容: {response_text[:300]}")
 
         except Exception as e:
             logger.error(f"説明生成エラー: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
         return "", ""
 
@@ -962,6 +984,160 @@ class JapaneseProductNameGenerator:
         return ""
 
 
+class ModelNumberGenerator:
+    """
+    型番をAI（Claude API）で自動生成するクラス
+
+    命名規則:
+    - コイン: ITM-{年号}-{国コード}-{カテゴリ}-{シリーズ}-{枚数}
+      例: ITM-2026-GBR-SCJ-BRT-100
+    - インゴット: ITM-{国コード}-{カテゴリ}-{メーカー}-{数量}-{重量}
+      例: ITM-CH-GIJ-PAM-001-100G
+    """
+
+    # 型番生成用プロンプト
+    PROMPT_TEMPLATE = """あなたは貴金属商品の型番を生成するエキスパートです。
+
+以下の商品情報から、指定された命名規則に従って型番を生成してください。
+
+## 商品情報
+- 商品名: {product_name}
+- 仕様: {specs}
+- 説明: {description}
+- 数量: {quantity}
+
+## 命名規則
+
+### コイン（年号付き）の場合:
+ITM-{{年号}}-{{国コード}}-{{カテゴリ}}-{{シリーズ}}-{{枚数3桁}}
+
+### インゴット/バーの場合:
+ITM-{{国コード}}-{{カテゴリ}}-{{メーカー}}-{{数量3桁}}-{{重量}}
+
+## コード一覧
+
+### 国コード:
+- GBR: イギリス (UK, Britain, Great Britain)
+- AUT: オーストリア (Austria)
+- CAD: カナダ (Canada)
+- USA: アメリカ (USA, US, America)
+- AUS: オーストラリア (Australia)
+- ZAF: 南アフリカ (South Africa)
+- CH: スイス (Switzerland, Swiss)
+- TR: トルコ (Turkey)
+- CHN: 中国 (China)
+- MEX: メキシコ (Mexico)
+- DEU: ドイツ (Germany)
+- SGP: シンガポール (Singapore)
+
+### カテゴリコード:
+- GCJ: 金貨 (Gold Coin)
+- SCJ: 銀貨 (Silver Coin)
+- PCJ: プラチナ貨 (Platinum Coin)
+- GIJ: 金インゴット (Gold Ingot/Bar)
+- SIJ: 銀インゴット (Silver Ingot/Bar)
+- PIJ: プラチナインゴット (Platinum Ingot/Bar)
+
+### シリーズコード（コイン用）:
+- BRT: ブリタニア (Britannia)
+- WIN: ウィーン (Vienna, Philharmonic)
+- MPL: メイプルリーフ (Maple Leaf)
+- EGL: イーグル (Eagle)
+- KGR: カンガルー (Kangaroo)
+- KKB: カワセミ (Kookaburra)
+- KOA: コアラ (Koala)
+- PND: パンダ (Panda)
+- KUR: クルーガーランド (Krugerrand)
+- BUF: バッファロー (Buffalo)
+- LBT: リベルタード (Libertad)
+- LNR: 干支/ルナー (Lunar)
+- DRG: ドラゴン (Dragon)
+- QUB: クイーンズビースト (Queen's Beast)
+- TDB: チューダービースト (Tudor Beast)
+- RYA: ロイヤルアームズ (Royal Arms)
+- OTH: その他 (Other)
+
+### メーカーコード（インゴット用）:
+- PAM: PAMP
+- VCB: ヴァルカンビ (Valcambi)
+- NDR: ナディール (Nadir)
+- QFM: 9ファインミント (9Fine Mint)
+- PTH: パースミント (Perth Mint)
+- RYM: ロイヤルミント (Royal Mint)
+- BST: ブリオンスター (BullionStar)
+- ARG: アルゴルヘレウス (Argor Heraeus)
+- CRS: クレディスイス (Credit Suisse)
+- OTH: その他 (Other)
+
+### 重量コード（インゴット用）:
+- 1G, 5G, 10G, 20G, 50G, 100G, 250G, 500G（グラム）
+- 1K, 5K（キログラム）
+- 1OZ（オンス、31g相当）
+
+## 例
+- "2026 1 oz Silver Britannia" (5枚) → ITM-2026-GBR-SCJ-BRT-005
+- "PAMP Suisse 100g Gold Bar" (1本) → ITM-CH-GIJ-PAM-001-100G
+- "2024 1 oz Silver Dragon Round USA" (5枚) → ITM-2024-USA-SCJ-DRG-005
+
+## 出力形式
+型番のみを1行で出力してください。説明は不要です。
+"""
+
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
+        self.client = None
+        if self.api_key:
+            try:
+                import anthropic
+                self.client = anthropic.Anthropic(api_key=self.api_key)
+                logger.info("型番生成器: 初期化完了（APIキー設定済み）")
+            except ImportError:
+                logger.warning("anthropicライブラリがインストールされていません")
+        else:
+            logger.warning("型番生成器: ANTHROPIC_API_KEYが設定されていません")
+
+    def generate(self, product_info: dict, quantity: int = 1) -> str:
+        """
+        商品情報から型番をAIで生成する
+
+        Args:
+            product_info: スクレイピングで取得した商品情報
+            quantity: 枚数/本数
+
+        Returns:
+            str: 型番 (例: ITM-2026-GBR-SCJ-BRT-100)
+        """
+        if not self.client:
+            logger.warning("ANTHROPIC_API_KEYが設定されていません。型番生成をスキップします。")
+            return ""
+
+        prompt = self.PROMPT_TEMPLATE.format(
+            product_name=product_info.get("name", ""),
+            specs=product_info.get("specs", ""),
+            description=product_info.get("description", "")[:500],  # 長すぎる場合は切り詰め
+            quantity=quantity
+        )
+
+        try:
+            response = self.client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=100,
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            model_number = response.content[0].text.strip()
+            # 型番形式の検証（ITM-で始まる）
+            if model_number.startswith("ITM-"):
+                return model_number
+            else:
+                logger.warning(f"不正な型番形式: {model_number}")
+                return ""
+
+        except Exception as e:
+            logger.error(f"型番生成エラー: {e}")
+            return ""
+
+
 def get_incomplete_rows(sheet_client: SpreadsheetClient) -> list[dict]:
     """
     D列（取得元URL）が入力されていて、B列（商品名）が空の行を取得する
@@ -1080,7 +1256,8 @@ def update_row_with_product_info(
     japanese_name: str = None,
     product_id: int = None,
     sync_mode: str = "ドラフト作成",
-    existing_currency: str = None
+    existing_currency: str = None,
+    model_number: str = None
 ) -> bool:
     """
     指定行に商品情報を更新する
@@ -1096,6 +1273,7 @@ def update_row_with_product_info(
         timestamp: 更新日時
         sync_mode: 同期モード（ドラフト作成/新規登録）
         existing_currency: 既存の通貨（設定済みの場合は上書きしない）
+        model_number: 型番（自動生成）
     """
     if not sheet_client._spreadsheet:
         return False
@@ -1163,10 +1341,11 @@ def update_row_with_product_info(
 
         # AC列: 同期モードはユーザーが設定するため、ここでは更新しない
 
-        # AD列: 型番
+        # AD列: 型番（自動生成された型番を使用、なければスクレイピングのSKU）
+        sku_value = model_number if model_number else product_info.get("sku", "")
         updates.append({
             'range': f'AD{row_num}',
-            'values': [[product_info.get("sku", "")]]
+            'values': [[sku_value]]
         })
 
         # AE列: カテゴリーID（大）
@@ -1230,12 +1409,15 @@ def update_row_with_product_info(
         return False
 
 
-def fill_incomplete_rows(dry_run: bool = True) -> bool:
+def fill_incomplete_rows() -> bool:
     """
     未処理行を検出し、商品情報を自動入力する
 
-    Args:
-        dry_run: Trueの場合、実際の更新は行わない
+    AC列の同期モードに応じて処理を行う:
+    - ドラフト作成: スプレッドシートのみ更新（カラーミー登録なし）
+    - 取得のみ: スプレッドシートのみ更新
+    - 更新: カラーミーの既存商品を更新
+    - 新規登録: カラーミーに新規商品登録
 
     Returns:
         bool: 成功時True
@@ -1249,14 +1431,13 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
         logger.error("スプレッドシートへの接続に失敗しました")
         return False
 
-    # 2. カラーミーAPIに接続（dry_runフラグを渡す）
+    # 2. カラーミーAPIに接続
     colorme_client = None
     if Config.is_colorme_enabled():
-        colorme_client = ColorMeClient(dry_run=dry_run)
+        colorme_client = ColorMeClient()
         categories = colorme_client.get_categories()
         groups = colorme_client.get_groups()
         logger.info(f"カテゴリー: {len(categories)}件, グループ: {len(groups)}件")
-        logger.info(f"ドライランモード: {dry_run}")
     else:
         logger.warning("カラーミーAPIが設定されていません。カテゴリー判定と画像アップロードはスキップされます。")
         categories = []
@@ -1286,7 +1467,10 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
     # 7. 日本語商品名ジェネレーターを初期化
     name_generator = JapaneseProductNameGenerator()
 
-    # 8. スクレイパーを初期化して各行を処理
+    # 8. 型番ジェネレーターを初期化
+    model_number_generator = ModelNumberGenerator()
+
+    # 9. スクレイパーを初期化して各行を処理
     success_count = 0
     error_count = 0
 
@@ -1315,6 +1499,10 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
             quantity = row_info.get("quantity", 1)
             japanese_name = name_generator.generate(product_info, quantity)
             logger.info(f"  商品名(日本語): {japanese_name}")
+
+            # 型番を生成
+            model_number = model_number_generator.generate(product_info, quantity)
+            logger.info(f"  型番: {model_number}")
 
             # カテゴリー判定（既存値を優先）
             existing_cat_id = row_info.get("existing_category_id", 0)
@@ -1353,130 +1541,106 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
                 logger.info("  商品説明を生成中...")
                 description, simple_description = generator.generate(product_info)
                 if description:
-                    logger.info("  → 説明生成完了")
+                    logger.info(f"  → 説明生成完了 ({len(description)}文字)")
+                else:
+                    logger.warning("  → 説明生成失敗（空の説明が返されました）")
+            else:
+                logger.warning("  説明生成スキップ: APIクライアントが初期化されていません")
 
             # カラーミー画像URL
             colorme_image_urls = []
 
-            if dry_run:
-                logger.info("  === ドライラン ===")
-                logger.info(f"  更新予定: B列={japanese_name[:50] if japanese_name else product_info['name'][:30]}...")
-                logger.info(f"  更新予定: M列={product_info['price']}, N列={product_info['currency']}")
-                logger.info(f"  更新予定: 画像={len(product_info['image_urls'])}枚")
-                if sync_mode == "新規登録":
-                    logger.info("  → カラーミーへ新規登録＋画像アップロードが実行されます")
-                elif sync_mode == "更新":
-                    logger.info("  → カラーミーへの更新が実行されます")
-                elif sync_mode == "ドラフト作成":
-                    logger.info("  → スプレッドシートのみ更新（ドラフト作成）")
+            # カラーミー登録用の商品ID
+            registered_product_id = None
+
+            # sync_mode が「新規登録」の場合、カラーミーへ新規登録
+            if sync_mode == "新規登録" and colorme_client:
+                logger.info("  カラーミーへ新規商品登録中...")
+
+                # ColorMeProductを作成
+                colorme_product = ColorMeProduct(
+                    product_id=0,  # 新規登録なのでID未定
+                    name=japanese_name or product_info.get("name", ""),
+                    current_price=int(calculated_price) if calculated_price else 0,
+                    colorme_url="",
+                    source_url=source_url,
+                    quantity=quantity,
+                    margin_rate=row_info.get("margin_rate", 1.1),
+                    model_number=model_number,  # 自動生成した型番を使用
+                    category_id_big=cat_big,
+                    category_id_small=cat_small,
+                    group_ids=grp_ids,
+                    regular_price=int(calculated_price) if calculated_price else 0,
+                    stock_quantity=10 if product_info.get("in_stock") else 0,
+                    stock_managed=True,
+                    expl=description,
+                    simple_expl=simple_description,
+                    image_urls=product_info.get("image_urls", [])[:10],
+                    display_control="表示"
+                )
+
+                # 商品を新規登録
+                new_product_id, error = colorme_client.create_product(colorme_product)
+                if new_product_id > 0:
+                    registered_product_id = new_product_id
+                    logger.info(f"  → 商品登録成功: ID={new_product_id}")
+
+                    # 画像をアップロード
+                    image_urls = product_info.get("image_urls", [])[:10]
+                    if image_urls:
+                        logger.info(f"  画像アップロード中... ({len(image_urls)}枚)")
+                        success, img_error = colorme_client.upload_product_images(new_product_id, image_urls)
+                        if success:
+                            logger.info("  → 画像アップロード成功")
+                        else:
+                            logger.warning(f"  → 画像アップロード一部失敗: {img_error}")
                 else:
-                    logger.info("  → スプレッドシートのみ更新（取得のみ）")
+                    logger.error(f"  → 商品登録失敗: {error}")
+
+            elif sync_mode == "更新" and colorme_client:
+                logger.info("  更新モード: カラーミー既存商品の更新（未実装）")
+            elif sync_mode == "ドラフト作成":
+                logger.info("  ドラフト作成モード: スプレッドシートのみ更新（カラーミー登録なし）")
+            elif sync_mode == "取得のみ":
+                logger.info("  取得のみモード: スプレッドシートのみ更新")
+
+            # スプレッドシートを更新
+            if update_row_with_product_info(
+                sheet_client,
+                row_num,
+                product_info,
+                (cat_big, cat_small, grp_ids),
+                description,
+                simple_description,
+                colorme_image_urls,
+                timestamp,
+                exchange_rate,
+                calculated_price,
+                japanese_name,
+                registered_product_id,
+                sync_mode,
+                existing_currency,
+                model_number
+            ):
+                logger.info(f"  → 更新完了")
+                success_count += 1
             else:
-                # カラーミー登録用の商品ID
-                registered_product_id = None
-
-                # sync_mode が「新規登録」の場合、カラーミーへ新規登録
-                if sync_mode == "新規登録" and colorme_client:
-                    logger.info("  カラーミーへ新規商品登録中...")
-
-                    # ColorMeProductを作成
-                    colorme_product = ColorMeProduct(
-                        product_id=0,  # 新規登録なのでID未定
-                        name=japanese_name or product_info.get("name", ""),
-                        current_price=int(calculated_price) if calculated_price else 0,
-                        colorme_url="",
-                        source_url=source_url,
-                        quantity=quantity,
-                        margin_rate=row_info.get("margin_rate", 1.1),
-                        model_number=product_info.get("sku", ""),
-                        category_id_big=cat_big,
-                        category_id_small=cat_small,
-                        group_ids=grp_ids,
-                        regular_price=int(calculated_price) if calculated_price else 0,
-                        stock_quantity=10 if product_info.get("in_stock") else 0,
-                        stock_managed=True,
-                        expl=description,
-                        simple_expl=simple_description,
-                        image_urls=product_info.get("image_urls", [])[:10],
-                        display_control="表示"
-                    )
-
-                    # 商品を新規登録
-                    new_product_id, error = colorme_client.create_product(colorme_product)
-                    if new_product_id > 0:
-                        registered_product_id = new_product_id
-                        logger.info(f"  → 商品登録成功: ID={new_product_id}")
-
-                        # 画像をアップロード
-                        image_urls = product_info.get("image_urls", [])[:10]
-                        if image_urls:
-                            logger.info(f"  画像アップロード中... ({len(image_urls)}枚)")
-                            success, img_error = colorme_client.upload_product_images(new_product_id, image_urls)
-                            if success:
-                                logger.info("  → 画像アップロード成功")
-                            else:
-                                logger.warning(f"  → 画像アップロード一部失敗: {img_error}")
-                    else:
-                        logger.error(f"  → 商品登録失敗: {error}")
-
-                elif sync_mode == "更新" and colorme_client:
-                    logger.info("  更新モード: カラーミー既存商品の更新（未実装）")
-                elif sync_mode == "ドラフト作成":
-                    logger.info("  ドラフト作成モード: スプレッドシートのみ更新（カラーミー登録なし）")
-                elif sync_mode == "取得のみ":
-                    logger.info("  取得のみモード: スプレッドシートのみ更新")
-
-                # スプレッドシートを更新
-                if update_row_with_product_info(
-                    sheet_client,
-                    row_num,
-                    product_info,
-                    (cat_big, cat_small, grp_ids),
-                    description,
-                    simple_description,
-                    colorme_image_urls,
-                    timestamp,
-                    exchange_rate,
-                    calculated_price,
-                    japanese_name,
-                    registered_product_id,
-                    sync_mode,
-                    existing_currency
-                ):
-                    logger.info(f"  → 更新完了")
-                    success_count += 1
-                else:
-                    logger.error(f"  → 更新失敗")
-                    error_count += 1
+                logger.error(f"  → 更新失敗")
+                error_count += 1
 
     # 結果サマリー
     logger.info("=" * 50)
-    if dry_run:
-        logger.info(f"ドライラン完了: {len(incomplete_rows)}件を処理予定")
-        logger.info("実際に更新するには --execute オプションを付けて実行してください")
-    else:
-        logger.info(f"処理完了: 成功 {success_count}件, 失敗 {error_count}件")
+    logger.info(f"処理完了: 成功 {success_count}件, 失敗 {error_count}件")
 
     return error_count == 0
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="カラーミー商品管理シートの未処理行に商品情報を自動入力する"
-    )
-    parser.add_argument(
-        "--execute",
-        action="store_true",
-        help="実際に更新を実行する（デフォルトはドライラン）"
-    )
-
-    args = parser.parse_args()
-
     logger.info("=" * 50)
     logger.info("新商品情報自動入力スクリプト")
     logger.info("=" * 50)
 
-    success = fill_incomplete_rows(dry_run=not args.execute)
+    success = fill_incomplete_rows()
     sys.exit(0 if success else 1)
 
 

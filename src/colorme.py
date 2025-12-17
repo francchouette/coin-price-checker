@@ -67,14 +67,12 @@ class ColorMeClient:
 
     API_BASE = "https://api.shop-pro.jp/v1"
 
-    def __init__(self, access_token: Optional[str] = None, dry_run: Optional[bool] = None):
+    def __init__(self, access_token: Optional[str] = None):
         """
         Args:
             access_token: アクセストークン（省略時は環境変数から取得）
-            dry_run: ドライランモード（省略時は環境変数から取得）
         """
         self.access_token = access_token or Config.COLORME_ACCESS_TOKEN
-        self.dry_run = dry_run if dry_run is not None else Config.COLORME_DRY_RUN
 
     def _headers(self) -> dict:
         """APIリクエスト用ヘッダーを返す"""
@@ -205,11 +203,6 @@ class ColorMeClient:
 
         if not name:
             return 0, "グループ名が空です"
-
-        # ドライランモード
-        if self.dry_run:
-            logger.info(f"[DRY RUN] グループ新規作成: {name}")
-            return 999999, ""
 
         try:
             group_data = {
@@ -348,11 +341,6 @@ class ColorMeClient:
             return False
 
         if not updates:
-            return True
-
-        # ドライランモードの場合は実際に更新しない
-        if self.dry_run:
-            logger.info(f"[DRY RUN] 商品更新: 商品ID {product_id} → {updates}")
             return True
 
         try:
@@ -774,11 +762,6 @@ class ColorMeClient:
         if not updates:
             return True, ""
 
-        # ドライランモード
-        if self.dry_run:
-            logger.info(f"[DRY RUN] 商品全項目更新: 商品ID {product.product_id} → {list(updates.keys())}")
-            return True, ""
-
         try:
             response = requests.put(
                 f"{self.API_BASE}/products/{product.product_id}.json",
@@ -859,11 +842,6 @@ class ColorMeClient:
         if product.simple_expl:
             product_data["simple_expl"] = product.simple_expl
 
-        # ドライランモード
-        if self.dry_run:
-            logger.info(f"[DRY RUN] 商品新規登録: {product.name} → {list(product_data.keys())}")
-            return 999999, ""  # ダミーID
-
         try:
             response = requests.post(
                 f"{self.API_BASE}/products.json",
@@ -903,11 +881,6 @@ class ColorMeClient:
             return False, "アクセストークンが設定されていません"
 
         if not image_url:
-            return True, ""
-
-        # ドライランモード
-        if self.dry_run:
-            logger.info(f"[DRY RUN] 画像アップロード: 商品ID {product_id}, URL: {image_url[:50]}...")
             return True, ""
 
         try:
