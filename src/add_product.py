@@ -304,13 +304,25 @@ class ProductScraper:
         """BullionStarから商品情報を取得"""
         try:
             page = self.context.new_page()
+
+            # JPY表示用のCookieを設定（ページアクセス前に設定が必要）
+            self.context.add_cookies([
+                {
+                    "name": "currency",
+                    "value": "JPY",
+                    "domain": ".bullionstar.com",
+                    "path": "/"
+                }
+            ])
+            logger.info("  BullionStar: JPY通貨Cookieを設定")
+
             page.goto(url, wait_until="networkidle", timeout=60000)
             page.wait_for_timeout(3000)
 
             result = {
                 "name": "",
                 "price": 0.0,
-                "currency": "SGD",  # シンガポールドル
+                "currency": "JPY",  # Cookie設定によりJPY表示
                 "in_stock": False,
                 "description": "",
                 "specs": "",
@@ -336,24 +348,44 @@ class ProductScraper:
             except Exception:
                 pass
 
-            # 価格（SGD）
+            # 価格（数量別価格テーブルから取得 - shops/bullionstar.pyと同じ方式）
             try:
-                price_elem = page.query_selector(".product-price, .price, [itemprop='price'], .current-price")
-                if price_elem:
-                    price_text = price_elem.inner_text()
-                    # SGD/USD/EURなどの通貨記号を除去
-                    price_match = re.search(r'[\d,]+\.?\d*', price_text.replace(',', ''))
-                    if price_match:
-                        result["price"] = float(price_match.group().replace(',', ''))
-                    # 通貨判定
-                    if 'USD' in price_text or '$' in price_text:
-                        result["currency"] = "USD"
-                    elif 'EUR' in price_text or '€' in price_text:
-                        result["currency"] = "EUR"
-                    elif 'SGD' in price_text or 'S$' in price_text:
-                        result["currency"] = "SGD"
-            except Exception:
-                pass
+                rows = page.query_selector_all(".info tr")
+
+                # JPYを優先、他の通貨もフォールバックとして対応
+                patterns = [
+                    (r'¥([\d,]+)', 'JPY'),           # JPY（優先）
+                    (r'US\$([\d,]+\.?\d*)', 'USD'),  # USD
+                    (r'S\$([\d,]+\.?\d*)', 'SGD'),   # SGD
+                    (r'€([\d,]+\.?\d*)', 'EUR'),     # EUR
+                    (r'£([\d,]+\.?\d*)', 'GBP'),     # GBP
+                ]
+
+                for row in rows:
+                    text = row.inner_text().strip()
+
+                    # ヘッダー行はスキップ
+                    if "Quantity" in text or "Price" in text:
+                        continue
+
+                    # 数量パターンがある行のみ処理（"1 - 9" や "1 - 99" など）
+                    if not re.search(r'\d+\s*-\s*\d+', text):
+                        continue
+
+                    for pattern, currency in patterns:
+                        match = re.search(pattern, text)
+                        if match:
+                            price_str = match.group(1).replace(',', '')
+                            price = float(price_str)
+                            if price > 0:
+                                result["price"] = price
+                                result["currency"] = currency
+                                logger.info(f"  価格検出: {currency} {price:,.0f}")
+                                break
+                    if result["price"] > 0:
+                        break
+            except Exception as e:
+                logger.warning(f"価格抽出エラー: {e}")
 
             # 在庫状況
             try:
