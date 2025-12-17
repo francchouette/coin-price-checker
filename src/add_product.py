@@ -317,11 +317,21 @@ class ProductScraper:
                 "sku": ""
             }
 
+            # 商品キーワードは商品名取得後に設定
+            product_keywords = []
+
             # 商品名
             try:
                 name_elem = page.query_selector("h1.product-name, h1[itemprop='name'], h1")
                 if name_elem:
                     result["name"] = name_elem.inner_text().strip()
+                    # 商品名からキーワードを抽出（画像フィルタリング用）
+                    # 例: "2024 1 oz Silver Dragon Round" → ["2024", "silver", "dragon", "round"]
+                    name_words = re.findall(r'[a-zA-Z0-9]+', result["name"].lower())
+                    # 3文字以上の単語をキーワードとして使用（一般的な単語を除外）
+                    common_words = {"the", "and", "for", "with", "from", "new", "buy"}
+                    product_keywords = [w for w in name_words if len(w) >= 3 and w not in common_words]
+                    logger.info(f"  商品キーワード: {product_keywords[:10]}")
             except Exception:
                 pass
 
@@ -377,30 +387,75 @@ class ProductScraper:
 
             # 画像URL
             try:
-                # BullionStarの商品画像はzoomWindowのbackground-imageに格納
-                # まずzoomWindowから高解像度画像を取得
-                zoom_windows = page.query_selector_all(".zoomWindow")
-                for zw in zoom_windows:
-                    style = zw.get_attribute("style") or ""
-                    # background-image: url("...") からURLを抽出
-                    bg_match = re.search(r'background-image:\s*url\(["\']?([^"\']+)["\']?\)', style)
-                    if bg_match:
-                        img_url = bg_match.group(1)
-                        if img_url and "/files/" in img_url and img_url not in result["image_urls"]:
-                            result["image_urls"].append(img_url)
+                # 関連商品セクションを除外して商品画像を取得
+                # 除外するセクションのセレクタ
+                exclude_selectors = [
+                    "[class*='customer']",      # customers-who-viewed等
+                    "[class*='related']",       # related products
+                    "[class*='recommend']",     # recommended
+                    "[class*='blog']",          # blog posts
+                    "[class*='search-result']", # search results
+                    "[class*='footer']",        # footer
+                    "[class*='header']",        # header
+                    "[class*='nav']",           # navigation
+                ]
 
-                # zoomWindowがない場合、商品画像ギャラリーから取得
-                if not result["image_urls"]:
-                    # 商品ページの画像ギャラリー（サムネイル除く）
-                    gallery_imgs = page.query_selector_all(".product-gallery img, .product-image img, [data-zoom-image]")
-                    for img in gallery_imgs[:10]:
-                        # data-zoom-imageがあればそれを優先（高解像度）
-                        src = img.get_attribute("data-zoom-image") or img.get_attribute("src")
-                        if src and "/files/" in src:
-                            # 小さいサムネイルを除外
-                            if not any(small in src for small in ["73_73_", "100_100_", "125_125_"]):
-                                if src not in result["image_urls"]:
-                                    result["image_urls"].append(src)
+                # 除外セクション内の画像URLを収集
+                excluded_urls = set()
+                for selector in exclude_selectors:
+                    try:
+                        sections = page.query_selector_all(selector)
+                        for section in sections:
+                            imgs = section.query_selector_all("img[src*='/files/']")
+                            for img in imgs:
+                                src = img.get_attribute("src")
+                                if src:
+                                    excluded_urls.add(src)
+                    except Exception:
+                        pass
+
+                # 全ての/files/画像を取得（除外セクション外のもの）
+                all_imgs = page.query_selector_all("img[src*='/files/']")
+                candidate_urls = []
+                first_image_pattern = None
+
+                for img in all_imgs:
+                    src = img.get_attribute("src")
+                    if not src or src in excluded_urls:
+                        continue
+
+                    # 最初の商品画像からパターンを学習
+                    if first_image_pattern is None and "/files/" in src:
+                        # ファイル名から商品識別パターンを抽出
+                        # 例: coin-silver-bstar-dragonround2024 から "dragonround2024" や "bstar" を取得
+                        filename = src.split("/")[-1]
+                        # 数字プレフィックス（サイズ）を除去
+                        filename_clean = re.sub(r'^\d+_\d+_', '', filename)
+                        # ファイル名のパターンを保存
+                        first_image_pattern = filename_clean.split("-")[0:4]  # 最初の4セグメント
+                        logger.info(f"  画像パターン: {first_image_pattern}")
+
+                    # サムネイルサイズを高解像度に変換
+                    high_res_url = re.sub(r'/(\d+)_(\d+)_', '/1200_1200_', src)
+                    if high_res_url not in candidate_urls:
+                        candidate_urls.append(high_res_url)
+
+                # 同じパターンの画像のみをフィルタリング
+                if first_image_pattern and len(candidate_urls) > 2:
+                    filtered_urls = []
+                    pattern_str = "-".join(first_image_pattern[:3])  # 最初の3セグメントでマッチ
+                    for url in candidate_urls:
+                        if pattern_str in url.lower():
+                            filtered_urls.append(url)
+                    if filtered_urls:
+                        candidate_urls = filtered_urls
+
+                # 重複を除去して追加
+                for url in candidate_urls[:10]:
+                    if url not in result["image_urls"]:
+                        result["image_urls"].append(url)
+
+                logger.info(f"  取得画像: {len(result['image_urls'])}枚")
             except Exception as e:
                 logger.warning(f"画像取得エラー: {e}")
 
