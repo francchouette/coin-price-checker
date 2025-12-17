@@ -1527,30 +1527,39 @@ def fill_incomplete_rows() -> bool:
                 logger.info(f"  カテゴリー(自動判定): 大={cat_big}, 小={cat_small}")
 
             # 為替レートと計算価格を取得
-            # 既存の通貨設定がある場合はそちらを優先
+            # N列（既存通貨）の設定がある場合はそちらを優先
             # O列の為替種類に応じてレートを選択（クレカ or Wise）
             exchange_rate = None
             calculated_price = None
             existing_currency = row_info.get("existing_currency", "")
             exchange_type = row_info.get("exchange_type", "クレカ")
+            # N列で通貨が指定されていればそれを使用、なければスクレイピングで検出した通貨
             currency = existing_currency if existing_currency else product_info.get("currency", "USD")
             price = product_info.get("price", 0)
-            if price > 0:
-                if exchange_type == "Wise":
-                    # Wiseレートを使用
-                    exchange_rate = wise_client.get_rate(currency, "JPY")
-                    logger.info(f"  為替種類: Wise")
-                else:
-                    # クレカレート（デフォルト）を使用
-                    exchange_rate = exchange_client.get_credit_card_rate(currency, "JPY")
-                    logger.info(f"  為替種類: クレカ")
 
-                if exchange_rate:
-                    calculated_price = price * exchange_rate
-                    logger.info(f"  為替レート: 1 {currency} = {exchange_rate:.4f} JPY")
-                    logger.info(f"  計算価格: {int(calculated_price)} 円")
+            if price > 0:
+                # JPYが指定されている場合は為替変換不要
+                if currency.upper() == "JPY":
+                    exchange_rate = 1.0
+                    calculated_price = price
+                    logger.info(f"  通貨: JPY（為替変換なし）")
                 else:
-                    logger.warning(f"  為替レート取得失敗: {currency}")
+                    # 外貨の場合は為替レートを適用
+                    if exchange_type == "Wise":
+                        # Wiseレートを使用
+                        exchange_rate = wise_client.get_rate(currency, "JPY")
+                        logger.info(f"  為替種類: Wise")
+                    else:
+                        # クレカレート（デフォルト）を使用
+                        exchange_rate = exchange_client.get_credit_card_rate(currency, "JPY")
+                        logger.info(f"  為替種類: クレカ")
+
+                    if exchange_rate:
+                        calculated_price = price * exchange_rate
+                        logger.info(f"  為替レート: 1 {currency} = {exchange_rate:.4f} JPY")
+                        logger.info(f"  計算価格: {int(calculated_price)} 円")
+                    else:
+                        logger.warning(f"  為替レート取得失敗: {currency}")
 
             # 商品説明を生成
             description, simple_description = "", ""
