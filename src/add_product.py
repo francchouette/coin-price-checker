@@ -1657,6 +1657,16 @@ def fill_incomplete_rows() -> bool:
                     registered_product_id = new_product_id
                     logger.info(f"  → 商品登録成功: ID={new_product_id}")
 
+                    # 商品説明を更新（新規登録APIでは説明が反映されない場合があるため）
+                    if description or simple_description:
+                        logger.info("  商品説明を更新中...")
+                        colorme_product.product_id = new_product_id
+                        update_success, update_error = colorme_client.update_product_full(colorme_product)
+                        if update_success:
+                            logger.info("  → 商品説明の更新成功")
+                        else:
+                            logger.warning(f"  → 商品説明の更新失敗: {update_error}")
+
                     # 画像をアップロード
                     image_urls = product_info.get("image_urls", [])[:10]
                     if image_urls:
