@@ -25,40 +25,41 @@ class ColorMeProduct:
     source_url: str  # 価格取得元URL（Bullionstar, APMEXなど）（D列）
     quantity: int  # セット枚数
     margin_rate: float  # マージン率（1.1 = 10%）
-    update_enabled: bool = False  # 価格更新ON/OFF
-    stock_sync: bool = False  # 在庫連動ON/OFF
-    stock_quantity: int = 10  # 在庫あり時の数量
-    display_control: str = ""  # 表示連動: "連動" = 在庫に連動, "表示" = 常に表示, "非表示" = 常に非表示, "変更しない" or 空 = 変更しない
-    source_currency: str = "USD"  # 取得元の通貨
-    exchange_type: str = "クレカ"  # 為替種類: "クレカ" or "Wise"
-    shipping_cost: int = 0  # 送料（Q列）
-    misc_cost: int = 0  # 諸経費（R列）
-    cost: int = 0  # 原価（T列）- カラーミーのcostフィールドに反映
-    # 外部価格履歴用フィールド（Y-AA列）
-    previous_source_price: float = 0.0  # Y列: 前回の取得元価格
-    source_change_rate: float = 0.0  # Z列: 変動率
-    source_stock_status: str = ""  # AA列: 在庫状況 "In Stock" / "Out of Stock"
+    fixed_margin: int = 0  # 固定マージン価格（G列）- 手入力
+    update_enabled: bool = False  # 価格更新ON/OFF（H列）
+    stock_sync: bool = False  # 在庫連動ON/OFF（I列）
+    stock_quantity: int = 10  # 在庫あり時の数量（J列）
+    display_control: str = ""  # 表示連動（K列）: "連動" = 在庫に連動, "表示" = 常に表示, "非表示" = 常に非表示, "変更しない" or 空 = 変更しない
+    source_currency: str = "USD"  # 取得元の通貨（N列）
+    exchange_type: str = "クレカ"  # 為替種類（O列）: "クレカ" or "Wise"
+    shipping_cost: int = 0  # 送料（R列）
+    misc_cost: int = 0  # 諸経費（S列）
+    cost: int = 0  # 原価（U列）- カラーミーのcostフィールドに反映
+    # 外部価格履歴用フィールド（Z-AB列）※G列追加により1列ずれ
+    previous_source_price: float = 0.0  # Z列: 前回の取得元価格
+    source_change_rate: float = 0.0  # AA列: 変動率
+    source_stock_status: str = ""  # AB列: 在庫状況 "In Stock" / "Out of Stock"
 
-    # === 拡張フィールド（AB列以降） ===
-    sync_mode: str = ""  # AB列: 同期モード "取得のみ" / "更新" / "新規登録" / "なし"
-    model_number: str = ""  # AC列: 型番
-    category_id_big: int = 0  # AD列: カテゴリーID
-    category_id_small: int = 0  # AE列: サブカテゴリーID
-    group_ids: list[int] = field(default_factory=list)  # AF列: グループID（カンマ区切り）
-    regular_price: int = 0  # AG列: 定価（APIのprice）
-    members_price: int = 0  # AH列: 会員価格
-    delivery_charge: int = 0  # AI列: 個別送料
-    stock_managed: bool = True  # AJ列: 在庫管理 "する" / "しない"
-    soldout_display: bool = True  # AK列: 売切れ表示 "表示" / "非表示"
-    few_num: int = 0  # AL列: 適正在庫数
-    min_num: int = 1  # AM列: 最小購入数
-    max_num: int = 0  # AN列: 最大購入数（0=無制限）
-    expl: str = ""  # AO列: 商品説明
-    simple_expl: str = ""  # AP列: 簡易説明
-    image_url: str = ""  # AQ列: 商品画像URL（メイン）
-    other_image_urls: list[str] = field(default_factory=list)  # AR列: 追加画像URL
-    sync_status: str = ""  # AS列: 同期ステータス
-    sync_datetime: str = ""  # AT列: 同期日時
+    # === 拡張フィールド（AC列以降） ===  ※G列追加により1列ずれ
+    sync_mode: str = ""  # AC列: 同期モード "取得のみ" / "更新" / "新規登録" / "なし"
+    model_number: str = ""  # AD列: 型番
+    category_id_big: int = 0  # AE列: カテゴリーID
+    category_id_small: int = 0  # AF列: サブカテゴリーID
+    group_ids: list[int] = field(default_factory=list)  # AG列: グループID（カンマ区切り）
+    regular_price: int = 0  # AH列: 定価（APIのprice）
+    members_price: int = 0  # AI列: 会員価格
+    delivery_charge: int = 0  # AJ列: 個別送料
+    stock_managed: bool = True  # AK列: 在庫管理 "する" / "しない"
+    soldout_display: bool = True  # AL列: 売切れ表示 "表示" / "非表示"
+    few_num: int = 0  # AM列: 適正在庫数
+    min_num: int = 1  # AN列: 最小購入数
+    max_num: int = 0  # AO列: 最大購入数（0=無制限）
+    expl: str = ""  # AP列: 商品説明
+    simple_expl: str = ""  # AQ列: 簡易説明
+    # 画像URL（AR〜BA列: 最大10枚）
+    image_urls: list[str] = field(default_factory=list)  # AR〜BA列: 画像URL1〜10
+    sync_status: str = ""  # BB列: 同期ステータス
+    sync_datetime: str = ""  # BC列: 同期日時
 
 
 class ColorMeClient:
@@ -490,18 +491,24 @@ class ColorMeClient:
         if isinstance(group_ids, str):
             group_ids = [int(g) for g in group_ids.split(",") if g.strip().isdigit()]
 
-        # 画像URL
-        image_url = data.get("image_url") or ""
+        # 画像URL（最大10枚）
+        image_urls = []
+        # メイン画像
+        main_image = data.get("image_url") or ""
+        if main_image:
+            image_urls.append(main_image)
+        # 追加画像
         other_images = data.get("images") or []
-        other_image_urls = []
         if isinstance(other_images, list):
             for img in other_images:
                 if isinstance(img, dict):
                     url = img.get("url") or img.get("image_url") or ""
-                    if url:
-                        other_image_urls.append(url)
-                elif isinstance(img, str) and img:
-                    other_image_urls.append(img)
+                    if url and url not in image_urls:
+                        image_urls.append(url)
+                elif isinstance(img, str) and img and img not in image_urls:
+                    image_urls.append(img)
+        # 10枚まで
+        image_urls = image_urls[:10]
 
         # 在庫管理フラグ
         stock_managed = data.get("stock_managed")
@@ -541,8 +548,7 @@ class ColorMeClient:
             max_num=data.get("max_num") or 0,
             expl=data.get("expl") or "",
             simple_expl=data.get("simple_expl") or "",
-            image_url=image_url,
-            other_image_urls=other_image_urls,
+            image_urls=image_urls,
             display_control="表示" if data.get("display_state") == "showing" else "非表示",
         )
 
@@ -810,34 +816,26 @@ class ColorMeClient:
     def upload_product_images(
         self,
         product_id: int,
-        main_image_url: str,
-        other_image_urls: list[str]
+        image_urls: list[str]
     ) -> tuple[bool, str]:
         """
         商品の全画像をアップロードする
 
         Args:
             product_id: 商品ID
-            main_image_url: メイン画像URL
-            other_image_urls: 追加画像URLリスト
+            image_urls: 画像URLリスト（最大10枚、1枚目がメイン画像）
 
         Returns:
             tuple[bool, str]: (成功したか, エラーメッセージ)
         """
         errors = []
 
-        # メイン画像
-        if main_image_url:
-            success, error = self.upload_product_image(product_id, main_image_url, is_main=True)
-            if not success:
-                errors.append(f"メイン画像: {error}")
-
-        # 追加画像（最大49枚）
-        for i, url in enumerate(other_image_urls[:49]):
+        for i, url in enumerate(image_urls[:10]):
             if url:
-                success, error = self.upload_product_image(product_id, url, is_main=False)
+                is_main = (i == 0)  # 1枚目がメイン画像
+                success, error = self.upload_product_image(product_id, url, is_main=is_main)
                 if not success:
-                    errors.append(f"追加画像{i+1}: {error}")
+                    errors.append(f"画像{i+1}: {error}")
 
         if errors:
             return False, "; ".join(errors)

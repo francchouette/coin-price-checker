@@ -340,17 +340,17 @@ class SpreadsheetClient:
             url_set = set(urls)
             stock_status = {}
 
-            # カラーミー商品管理シートのAA列（在庫状況）から取得
+            # カラーミー商品管理シートのAB列（在庫状況）から取得
             try:
                 sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME)
                 records = sheet.get_all_values()
 
                 for row in records[1:]:  # ヘッダーをスキップ
-                    if len(row) >= 27:
+                    if len(row) >= 28:
                         source_url = row[3].strip()  # D列: 取得元URL
                         if source_url in url_set and source_url not in stock_status:
-                            # AA列: 在庫状況（index 26）
-                            stock_status[source_url] = row[26].strip() == "In Stock"
+                            # AB列: 在庫状況（index 27）
+                            stock_status[source_url] = row[27].strip() == "In Stock"
 
                 if stock_status:
                     logger.info(f"カラーミー商品管理シートから在庫状況を{len(stock_status)}件取得")
@@ -379,19 +379,19 @@ class SpreadsheetClient:
             url_set = set(urls)
             latest_prices = {}
 
-            # カラーミー商品管理シートのL列（取得元価格）から取得
+            # カラーミー商品管理シートのM列（取得元価格）から取得
             try:
                 sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME)
                 records = sheet.get_all_values()
 
                 for row in records[1:]:  # ヘッダーをスキップ
-                    if len(row) >= 12:
+                    if len(row) >= 13:
                         source_url = row[3].strip()  # D列: 取得元URL
                         if source_url in url_set and source_url not in latest_prices:
-                            # L列: 取得元価格（index 11）
-                            if row[11].strip():
+                            # M列: 取得元価格（index 12）
+                            if row[12].strip():
                                 try:
-                                    latest_prices[source_url] = float(row[11].strip())
+                                    latest_prices[source_url] = float(row[12].strip())
                                 except ValueError:
                                     continue
 
@@ -439,24 +439,25 @@ class SpreadsheetClient:
         D: 取得元URL (3) - 入力
         E: 枚数 (4) - 入力
         F: マージン率 (5) - 入力
-        G: 価格更新 (6) - 入力 ON/OFF
-        H: 在庫連動 (7) - 入力 ON/OFF
-        I: 在庫数量 (8) - 入力
-        J: 表示連動 (9) - 入力 連動/表示/非表示/変更しない
-        K: 現在価格 (10) - 自動（カラーミーAPIから取得）
-        L: 取得元価格 (11) - 自動
-        M: 取得通貨 (12) - 入力 USD, SGD, EUR等
-        N: 為替種類 (13) - 入力 クレカ, Wise
-        O: 為替レート (14) - 自動（JPYの場合は1）
-        P: 本体計算価格 (15) - 自動（取得価格×為替×枚数）
-        Q: 送料 (16) - 入力
-        R: 諸経費 (17) - 入力
-        S: 販売価格 (18) - 自動 = round(P×F+Q+R, -2)
-        T: 原価（諸経費込み） (19) - ユーザー入力/数式（更新しない）
-        U: 販売粗利 (20) - ユーザー入力/数式（更新しない）
-        V: 販売粗利率 (21) - 数式（更新しない）
-        W: 差額 (22) - ユーザー入力/数式（更新しない）
-        X: 最終更新 (23) - 自動
+        G: 固定マージン価格 (6) - 入力（新規追加）
+        H: 価格更新 (7) - 入力 ON/OFF
+        I: 在庫連動 (8) - 入力 ON/OFF
+        J: 在庫数量 (9) - 入力
+        K: 表示連動 (10) - 入力 連動/表示/非表示/変更しない
+        L: 現在価格 (11) - 自動（カラーミーAPIから取得）
+        M: 取得元価格 (12) - 自動
+        N: 取得通貨 (13) - 入力 USD, SGD, EUR等
+        O: 為替種類 (14) - 入力 クレカ, Wise
+        P: 為替レート (15) - 自動（JPYの場合は1）
+        Q: 本体計算価格 (16) - 自動（取得価格×為替×枚数）
+        R: 送料 (17) - 入力
+        S: 諸経費 (18) - 入力
+        T: 販売価格 (19) - 手入力/数式（プログラムから更新しない）
+        U: 原価（諸経費込み） (20) - ユーザー入力/数式（更新しない）
+        V: 販売粗利 (21) - ユーザー入力/数式（更新しない）
+        W: 販売粗利率 (22) - 数式（更新しない）
+        X: 差額 (23) - ユーザー入力/数式（更新しない）
+        Y: 最終更新 (24) - 自動
 
         Returns:
             list: ColorMeProduct のリスト
@@ -499,216 +500,222 @@ class SpreadsheetClient:
                                 except ValueError:
                                     pass
 
-                            # 価格更新（G列、index 6）
+                            # 固定マージン価格（G列、index 6）- 新規追加
+                            fixed_margin = 0
+                            if len(row) >= 7 and row[6].strip():
+                                try:
+                                    fixed_margin = int(float(row[6].strip().replace(',', '')))
+                                except ValueError:
+                                    pass
+
+                            # 価格更新（H列、index 7）
                             update_enabled = False
-                            if len(row) >= 7 and row[6].strip().upper() == "ON":
+                            if len(row) >= 8 and row[7].strip().upper() == "ON":
                                 update_enabled = True
 
-                            # 在庫連動（H列、index 7）
+                            # 在庫連動（I列、index 8）
                             stock_sync = False
-                            if len(row) >= 8 and row[7].strip().upper() == "ON":
+                            if len(row) >= 9 and row[8].strip().upper() == "ON":
                                 stock_sync = True
 
-                            # 在庫数量（I列、index 8）
+                            # 在庫数量（J列、index 9）
                             stock_quantity = 10
-                            if len(row) >= 9 and row[8].strip():
+                            if len(row) >= 10 and row[9].strip():
                                 try:
-                                    stock_quantity = int(row[8].strip())
+                                    stock_quantity = int(row[9].strip())
                                 except ValueError:
                                     pass
 
-                            # 表示連動（J列、index 9）
+                            # 表示連動（K列、index 10）
                             display_control = ""
-                            if len(row) >= 10:
-                                display_control = row[9].strip()
+                            if len(row) >= 11:
+                                display_control = row[10].strip()
 
-                            # 現在価格（K列、index 10）- 計算結果から読み取り
+                            # 現在価格（L列、index 11）- 計算結果から読み取り
                             current_price = 0
-                            if len(row) >= 11 and row[10].strip():
+                            if len(row) >= 12 and row[11].strip():
                                 try:
                                     # カンマ区切りの数値に対応
-                                    current_price = int(row[10].strip().replace(',', ''))
+                                    current_price = int(row[11].strip().replace(',', ''))
                                 except ValueError:
                                     pass
 
-                            # 取得通貨（M列、index 12）
+                            # 取得通貨（N列、index 13）
                             source_currency = "USD"
-                            if len(row) >= 13 and row[12].strip():
-                                source_currency = row[12].strip().upper()
-
-                            # 為替種類（N列、index 13）
-                            exchange_type = "クレカ"
                             if len(row) >= 14 and row[13].strip():
-                                exchange_type = row[13].strip()
+                                source_currency = row[13].strip().upper()
 
-                            # 送料（Q列、index 16）
+                            # 為替種類（O列、index 14）
+                            exchange_type = "クレカ"
+                            if len(row) >= 15 and row[14].strip():
+                                exchange_type = row[14].strip()
+
+                            # 送料（R列、index 17）
                             shipping_cost = 0
-                            if len(row) >= 17 and row[16].strip():
-                                try:
-                                    shipping_cost = int(float(row[16].strip().replace(',', '')))
-                                except ValueError:
-                                    pass
-
-                            # 諸経費（R列、index 17）
-                            misc_cost = 0
                             if len(row) >= 18 and row[17].strip():
                                 try:
-                                    misc_cost = int(float(row[17].strip().replace(',', '')))
+                                    shipping_cost = int(float(row[17].strip().replace(',', '')))
                                 except ValueError:
                                     pass
 
-                            # T列: 原価（index 19）
+                            # 諸経費（S列、index 18）
+                            misc_cost = 0
+                            if len(row) >= 19 and row[18].strip():
+                                try:
+                                    misc_cost = int(float(row[18].strip().replace(',', '')))
+                                except ValueError:
+                                    pass
+
+                            # U列: 原価（index 20）
                             cost = 0
-                            if len(row) >= 20 and row[19].strip():
+                            if len(row) >= 21 and row[20].strip():
                                 try:
-                                    cost = int(float(row[19].strip().replace(',', '')))
+                                    cost = int(float(row[20].strip().replace(',', '')))
                                 except ValueError:
                                     pass
 
-                            # Y列: 前回価格（index 24）
+                            # Z列: 前回価格（index 25）
                             previous_source_price = 0.0
-                            if len(row) >= 25 and row[24].strip():
-                                try:
-                                    previous_source_price = float(row[24].strip())
-                                except ValueError:
-                                    pass
-
-                            # Z列: 変動率（index 25）
-                            source_change_rate = 0.0
                             if len(row) >= 26 and row[25].strip():
                                 try:
-                                    rate_str = row[25].strip().replace('%', '').replace('+', '')
+                                    previous_source_price = float(row[25].strip())
+                                except ValueError:
+                                    pass
+
+                            # AA列: 変動率（index 26）
+                            source_change_rate = 0.0
+                            if len(row) >= 27 and row[26].strip():
+                                try:
+                                    rate_str = row[26].strip().replace('%', '').replace('+', '')
                                     source_change_rate = float(rate_str)
                                 except ValueError:
                                     pass
 
-                            # AA列: 在庫状況（index 26）
+                            # AB列: 在庫状況（index 27）
                             source_stock_status = ""
-                            if len(row) >= 27:
-                                source_stock_status = row[26].strip()
-
-                            # === 拡張列（AB列以降）===
-                            # AB列: 同期モード（index 27）
-                            sync_mode = ""
                             if len(row) >= 28:
-                                sync_mode = row[27].strip()
+                                source_stock_status = row[27].strip()
 
-                            # AC列: 型番（index 28）
-                            model_number = ""
+                            # === 拡張列（AC列以降）===
+                            # AC列: 同期モード（index 28）
+                            sync_mode = ""
                             if len(row) >= 29:
-                                model_number = row[28].strip()
+                                sync_mode = row[28].strip()
 
-                            # AD列: カテゴリーID（index 29）
+                            # AD列: 型番（index 29）
+                            model_number = ""
+                            if len(row) >= 30:
+                                model_number = row[29].strip()
+
+                            # AE列: カテゴリーID（index 30）
                             category_id_big = 0
-                            if len(row) >= 30 and row[29].strip():
-                                try:
-                                    category_id_big = int(row[29].strip())
-                                except ValueError:
-                                    pass
-
-                            # AE列: サブカテゴリーID（index 30）
-                            category_id_small = 0
                             if len(row) >= 31 and row[30].strip():
                                 try:
-                                    category_id_small = int(row[30].strip())
+                                    category_id_big = int(row[30].strip())
                                 except ValueError:
                                     pass
 
-                            # AF列: グループID（index 31）- カンマ区切り
-                            group_ids = []
+                            # AF列: サブカテゴリーID（index 31）
+                            category_id_small = 0
                             if len(row) >= 32 and row[31].strip():
                                 try:
-                                    group_ids = [int(g.strip()) for g in row[31].split(",") if g.strip().isdigit()]
+                                    category_id_small = int(row[31].strip())
                                 except ValueError:
                                     pass
 
-                            # AG列: 定価（index 32）
-                            regular_price = 0
+                            # AG列: グループID（index 32）- カンマ区切り
+                            group_ids = []
                             if len(row) >= 33 and row[32].strip():
                                 try:
-                                    regular_price = int(float(row[32].strip().replace(',', '')))
+                                    group_ids = [int(g.strip()) for g in row[32].split(",") if g.strip().isdigit()]
                                 except ValueError:
                                     pass
 
-                            # AH列: 会員価格（index 33）
-                            members_price = 0
+                            # AH列: 定価（index 33）
+                            regular_price = 0
                             if len(row) >= 34 and row[33].strip():
                                 try:
-                                    members_price = int(float(row[33].strip().replace(',', '')))
+                                    regular_price = int(float(row[33].strip().replace(',', '')))
                                 except ValueError:
                                     pass
 
-                            # AI列: 個別送料（index 34）
-                            delivery_charge = 0
+                            # AI列: 会員価格（index 34）
+                            members_price = 0
                             if len(row) >= 35 and row[34].strip():
                                 try:
-                                    delivery_charge = int(float(row[34].strip().replace(',', '')))
+                                    members_price = int(float(row[34].strip().replace(',', '')))
                                 except ValueError:
                                     pass
 
-                            # AJ列: 在庫管理（index 35）
-                            stock_managed = True
+                            # AJ列: 個別送料（index 35）
+                            delivery_charge = 0
                             if len(row) >= 36 and row[35].strip():
-                                stock_managed = row[35].strip() != "しない"
-
-                            # AK列: 売切れ表示（index 36）
-                            soldout_display = True
-                            if len(row) >= 37 and row[36].strip():
-                                soldout_display = row[36].strip() != "非表示"
-
-                            # AL列: 適正在庫数（index 37）
-                            few_num = 0
-                            if len(row) >= 38 and row[37].strip():
                                 try:
-                                    few_num = int(row[37].strip())
+                                    delivery_charge = int(float(row[35].strip().replace(',', '')))
                                 except ValueError:
                                     pass
 
-                            # AM列: 最小購入数（index 38）
-                            min_num = 1
+                            # AK列: 在庫管理（index 36）
+                            stock_managed = True
+                            if len(row) >= 37 and row[36].strip():
+                                stock_managed = row[36].strip() != "しない"
+
+                            # AL列: 売切れ表示（index 37）
+                            soldout_display = True
+                            if len(row) >= 38 and row[37].strip():
+                                soldout_display = row[37].strip() != "非表示"
+
+                            # AM列: 適正在庫数（index 38）
+                            few_num = 0
                             if len(row) >= 39 and row[38].strip():
                                 try:
-                                    min_num = int(row[38].strip())
+                                    few_num = int(row[38].strip())
                                 except ValueError:
                                     pass
 
-                            # AN列: 最大購入数（index 39）
-                            max_num = 0
+                            # AN列: 最小購入数（index 39）
+                            min_num = 1
                             if len(row) >= 40 and row[39].strip():
                                 try:
-                                    max_num = int(row[39].strip())
+                                    min_num = int(row[39].strip())
                                 except ValueError:
                                     pass
 
-                            # AO列: 商品説明（index 40）
+                            # AO列: 最大購入数（index 40）
+                            max_num = 0
+                            if len(row) >= 41 and row[40].strip():
+                                try:
+                                    max_num = int(row[40].strip())
+                                except ValueError:
+                                    pass
+
+                            # AP列: 商品説明（index 41）
                             expl = ""
-                            if len(row) >= 41:
-                                expl = row[40]
-
-                            # AP列: 簡易説明（index 41）
-                            simple_expl = ""
                             if len(row) >= 42:
-                                simple_expl = row[41]
+                                expl = row[41]
 
-                            # AQ列: 商品画像URL（index 42）
-                            image_url = ""
+                            # AQ列: 簡易説明（index 42）
+                            simple_expl = ""
                             if len(row) >= 43:
-                                image_url = row[42].strip()
+                                simple_expl = row[42]
 
-                            # AR列: 追加画像URL（index 43）- カンマ区切り
-                            other_image_urls = []
-                            if len(row) >= 44 and row[43].strip():
-                                other_image_urls = [u.strip() for u in row[43].split(",") if u.strip()]
+                            # AR〜BA列: 画像URL1〜10（index 43〜52）
+                            image_urls = []
+                            for img_idx in range(43, 53):  # index 43〜52
+                                if len(row) > img_idx and row[img_idx].strip():
+                                    image_urls.append(row[img_idx].strip())
+                                else:
+                                    image_urls.append("")
 
-                            # AS列: 同期ステータス（index 44）
+                            # BB列: 同期ステータス（index 53）
                             sync_status = ""
-                            if len(row) >= 45:
-                                sync_status = row[44].strip()
+                            if len(row) >= 54:
+                                sync_status = row[53].strip()
 
-                            # AT列: 同期日時（index 45）
+                            # BC列: 同期日時（index 54）
                             sync_datetime = ""
-                            if len(row) >= 46:
-                                sync_datetime = row[45].strip()
+                            if len(row) >= 55:
+                                sync_datetime = row[54].strip()
 
                             products.append(ColorMeProduct(
                                 product_id=int(product_id),
@@ -718,6 +725,7 @@ class SpreadsheetClient:
                                 source_url=source_url,
                                 quantity=quantity,
                                 margin_rate=margin_rate,
+                                fixed_margin=fixed_margin,
                                 update_enabled=update_enabled,
                                 stock_sync=stock_sync,
                                 stock_quantity=stock_quantity,
@@ -746,8 +754,7 @@ class SpreadsheetClient:
                                 max_num=max_num,
                                 expl=expl,
                                 simple_expl=simple_expl,
-                                image_url=image_url,
-                                other_image_urls=other_image_urls,
+                                image_urls=image_urls,
                                 sync_status=sync_status,
                                 sync_datetime=sync_datetime,
                             ))
@@ -768,25 +775,26 @@ class SpreadsheetClient:
 
         更新する列:
         C: カラーミー商品URL（自動生成）
-        K: 現在価格（カラーミーAPIから取得）
-        L: 取得元価格
-        O: 為替レート（JPYの場合は1）
-        P: 本体計算価格（取得価格×為替×枚数）
-        S: 販売価格 = round(P×F+Q+R, -2)
-        X: 最終更新
-        Y: 外部-前回価格（今回の取得元価格を次回の前回価格として保存）
-        Z: 外部-変動率
-        AA: 外部-在庫状況
+        L: 現在価格（カラーミーAPIから取得）
+        M: 取得元価格
+        P: 為替レート（JPYの場合は1）
+        Q: 本体計算価格（取得価格×為替×枚数）
+        Y: 最終更新
+        Z: 外部-前回価格（今回の取得元価格を次回の前回価格として保存）
+        AA: 外部-変動率
+        AB: 外部-在庫状況
 
         更新しない列（入力項目・数式）:
-        M: 取得通貨（入力）
-        N: 為替種類（入力）
-        Q: 送料（入力）
-        R: 諸経費（入力）
-        T: 原価（諸経費込み）（ユーザー入力/数式）
-        U: 販売粗利（ユーザー入力/数式）
-        V: 販売粗利率（数式）
-        W: 差額（ユーザー入力/数式）
+        G: 固定マージン価格（入力）
+        N: 取得通貨（入力）
+        O: 為替種類（入力）
+        R: 送料（入力）
+        S: 諸経費（入力）
+        T: 販売価格（手入力/数式）
+        U: 原価（諸経費込み）（ユーザー入力/数式）
+        V: 販売粗利（ユーザー入力/数式）
+        W: 販売粗利率（数式）
+        X: 差額（ユーザー入力/数式）
 
         Args:
             results: 計算結果のリスト（change_rate, in_stockを含む）
@@ -826,49 +834,43 @@ class SpreadsheetClient:
                         'range': f'C{row_num}',
                         'values': [[colorme_url]]
                     })
-                    # K-L列: 現在価格, 取得元価格
-                    # L列は小数点以下2桁を保持するため文字列でフォーマット
+                    # L-M列: 現在価格, 取得元価格
+                    # M列は小数点以下2桁を保持するため文字列でフォーマット
                     source_price = r["source_price"]
                     source_price_formatted = f"{source_price:.2f}" if isinstance(source_price, float) else source_price
                     updates.append({
-                        'range': f'K{row_num}:L{row_num}',
+                        'range': f'L{row_num}:M{row_num}',
                         'values': [[
                             r["colorme_price"],
                             source_price_formatted,
                         ]]
                     })
-                    # O-P列: 為替レート, 本体計算価格
-                    # （M列「取得通貨」とN列「為替種類」はスキップ）
+                    # P-Q列: 為替レート, 本体計算価格
+                    # （N列「取得通貨」とO列「為替種類」はスキップ）
                     updates.append({
-                        'range': f'O{row_num}:P{row_num}',
+                        'range': f'P{row_num}:Q{row_num}',
                         'values': [[
                             r["exchange_rate"],
-                            r["base_price"],  # P列: 取得価格×為替×枚数
+                            r["base_price"],  # Q列: 取得価格×為替×枚数
                         ]]
                     })
-                    # S列: 販売価格 = round(P×F+Q+R, -2)
-                    # （Q列「送料」, R列「諸経費」はユーザー入力）
+                    # T列: 販売価格 → ユーザーが手動で数式を入れるためスキップ
+                    # （R列「送料」, S列「諸経費」はユーザー入力）
+                    # U-X列: 原価、販売粗利、販売粗利率、差額 → ユーザーが手動で計算式を入れるためスキップ
+                    # Y列: 最終更新
                     updates.append({
-                        'range': f'S{row_num}',
-                        'values': [[r["selling_price"]]]
-                    })
-                    # T-U列: 原価（諸経費込み）, 販売粗利 → ユーザーが手動で計算式を入れるためスキップ
-                    # W列: 差額 → ユーザー入力のためスキップ
-                    # （V列「販売粗利率（数式）」もスキップ）
-                    # X列: 最終更新
-                    updates.append({
-                        'range': f'X{row_num}',
+                        'range': f'Y{row_num}',
                         'values': [[timestamp]]
                     })
-                    # Y-AA列: 前回価格, 変動率, 在庫状況（ダッシュボード統合）
+                    # Z-AB列: 前回価格, 変動率, 在庫状況（ダッシュボード統合）
                     change_rate = r.get("change_rate", 0)
                     in_stock = r.get("in_stock", True)
                     updates.append({
-                        'range': f'Y{row_num}:AA{row_num}',
+                        'range': f'Z{row_num}:AB{row_num}',
                         'values': [[
-                            source_price_formatted,  # Y列: 今回の価格を次回の前回価格として保存
-                            f"{change_rate:+.2f}%" if change_rate else "",  # Z列: 変動率
-                            "In Stock" if in_stock else "Out of Stock"  # AA列: 在庫状況
+                            source_price_formatted,  # Z列: 今回の価格を次回の前回価格として保存
+                            f"{change_rate:+.2f}%" if change_rate else "",  # AA列: 変動率
+                            "In Stock" if in_stock else "Out of Stock"  # AB列: 在庫状況
                         ]]
                     })
 
@@ -942,7 +944,7 @@ class SpreadsheetClient:
                 product = colorme_client._api_response_to_product(product_data)
 
                 if product_id in existing_products:
-                    # 既存商品：商品名とAB列以降を更新
+                    # 既存商品：商品名とAC列以降を更新
                     existing = existing_products[product_id]
                     row_num = existing["row"]
 
@@ -953,32 +955,32 @@ class SpreadsheetClient:
                             'values': [[product_name]]
                         })
 
-                    # AB列以降のカラーミー情報を更新（AC列から開始、AB列の同期モードは入力項目なのでスキップ）
-                    # AC列: 型番
+                    # AC列以降のカラーミー情報を更新（AD列から開始、AC列の同期モードは入力項目なのでスキップ）
+                    # AD列: 型番
                     updates.append({
-                        'range': f'AC{row_num}',
+                        'range': f'AD{row_num}',
                         'values': [[product.model_number or ""]]
                     })
 
-                    # AD-AE列: カテゴリーID, サブカテゴリーID
+                    # AE-AF列: カテゴリーID, サブカテゴリーID
                     updates.append({
-                        'range': f'AD{row_num}:AE{row_num}',
+                        'range': f'AE{row_num}:AF{row_num}',
                         'values': [[
                             product.category_id_big if product.category_id_big > 0 else "",
                             product.category_id_small if product.category_id_small > 0 else ""
                         ]]
                     })
 
-                    # AF列: グループID（カンマ区切り）
+                    # AG列: グループID（カンマ区切り）
                     group_ids_str = ",".join(str(g) for g in product.group_ids) if product.group_ids else ""
                     updates.append({
-                        'range': f'AF{row_num}',
+                        'range': f'AG{row_num}',
                         'values': [[group_ids_str]]
                     })
 
-                    # AG-AI列: 定価, 会員価格, 個別送料
+                    # AH-AJ列: 定価, 会員価格, 個別送料
                     updates.append({
-                        'range': f'AG{row_num}:AI{row_num}',
+                        'range': f'AH{row_num}:AJ{row_num}',
                         'values': [[
                             product.regular_price if product.regular_price > 0 else "",
                             product.members_price if product.members_price > 0 else "",
@@ -986,18 +988,18 @@ class SpreadsheetClient:
                         ]]
                     })
 
-                    # AJ-AK列: 在庫管理, 売切れ表示
+                    # AK-AL列: 在庫管理, 売切れ表示
                     updates.append({
-                        'range': f'AJ{row_num}:AK{row_num}',
+                        'range': f'AK{row_num}:AL{row_num}',
                         'values': [[
                             "する" if product.stock_managed else "しない",
                             "表示" if product.soldout_display else "非表示"
                         ]]
                     })
 
-                    # AL-AN列: 適正在庫数, 最小購入数, 最大購入数
+                    # AM-AO列: 適正在庫数, 最小購入数, 最大購入数
                     updates.append({
-                        'range': f'AL{row_num}:AN{row_num}',
+                        'range': f'AM{row_num}:AO{row_num}',
                         'values': [[
                             product.few_num if product.few_num > 0 else "",
                             product.min_num if product.min_num > 0 else "",
@@ -1005,35 +1007,43 @@ class SpreadsheetClient:
                         ]]
                     })
 
-                    # AO-AP列: 商品説明, 簡易説明
+                    # AP-AQ列: 商品説明, 簡易説明
                     updates.append({
-                        'range': f'AO{row_num}:AP{row_num}',
+                        'range': f'AP{row_num}:AQ{row_num}',
                         'values': [[
                             product.expl or "",
                             product.simple_expl or ""
                         ]]
                     })
 
-                    # AQ-AR列: 商品画像URL, 追加画像URL
-                    other_urls_str = ",".join(product.other_image_urls) if product.other_image_urls else ""
+                    # AR-BA列: 画像URL1〜10（10列）
+                    image_values = []
+                    for i in range(10):
+                        if i < len(product.image_urls):
+                            image_values.append(product.image_urls[i] or "")
+                        else:
+                            image_values.append("")
                     updates.append({
-                        'range': f'AQ{row_num}:AR{row_num}',
-                        'values': [[
-                            product.image_url or "",
-                            other_urls_str
-                        ]]
+                        'range': f'AR{row_num}:BA{row_num}',
+                        'values': [image_values]
                     })
 
                     result["updated"] += 1
                     logger.info(f"更新: {product_id} - {product_name}")
                 else:
-                    # 新規商品：行を追加（AB列以降のカラーミー情報も含む）
+                    # 新規商品：行を追加（AC列以降のカラーミー情報も含む）
                     # 行番号を計算（現在の最終行 + 追加済み行数 + 1）
                     new_row_num = len(all_data) + len(new_rows) + 1
 
                     # グループIDをカンマ区切り文字列に
                     group_ids_str = ",".join(str(g) for g in product.group_ids) if product.group_ids else ""
-                    other_urls_str = ",".join(product.other_image_urls) if product.other_image_urls else ""
+                    # 画像URL（10列分）
+                    image_values = []
+                    for i in range(10):
+                        if i < len(product.image_urls):
+                            image_values.append(product.image_urls[i] or "")
+                        else:
+                            image_values.append("")
 
                     new_row = [
                         str(product_id),   # A: カラーミー商品ID
@@ -1042,46 +1052,46 @@ class SpreadsheetClient:
                         "",                # D: 取得元URL
                         "1",               # E: 枚数
                         "1.1",             # F: マージン率
-                        "OFF",             # G: 価格更新
-                        "OFF",             # H: 在庫連動
-                        "10",              # I: 在庫数量
-                        "",                # J: 表示連動
-                        "",                # K: 現在価格
-                        "",                # L: 取得元価格
-                        "USD",             # M: 取得通貨（デフォルト）
-                        "クレカ",          # N: 為替種類（デフォルト）
-                        "",                # O: 為替レート
-                        "",                # P: 本体計算価格
-                        "",                # Q: 送料
-                        "",                # R: 諸経費
-                        "",                # S: 販売価格
-                        "",                # T: 原価
-                        "",                # U: 販売粗利
-                        "",                # V: 販売粗利率
-                        "",                # W: 差額
-                        "",                # X: 最終更新
-                        "",                # Y: 前回価格
-                        "",                # Z: 変動率
-                        "",                # AA: 在庫状況
-                        "",                # AB: 同期モード（入力項目）
-                        product.model_number or "",  # AC: 型番
-                        product.category_id_big if product.category_id_big > 0 else "",  # AD: カテゴリーID
-                        product.category_id_small if product.category_id_small > 0 else "",  # AE: サブカテゴリーID
-                        group_ids_str,     # AF: グループID
-                        product.regular_price if product.regular_price > 0 else "",  # AG: 定価
-                        product.members_price if product.members_price > 0 else "",  # AH: 会員価格
-                        product.delivery_charge if product.delivery_charge > 0 else "",  # AI: 個別送料
-                        "する" if product.stock_managed else "しない",  # AJ: 在庫管理
-                        "表示" if product.soldout_display else "非表示",  # AK: 売切れ表示
-                        product.few_num if product.few_num > 0 else "",  # AL: 適正在庫数
-                        product.min_num if product.min_num > 0 else "",  # AM: 最小購入数
-                        product.max_num if product.max_num > 0 else "",  # AN: 最大購入数
-                        product.expl or "",  # AO: 商品説明
-                        product.simple_expl or "",  # AP: 簡易説明
-                        product.image_url or "",  # AQ: 商品画像URL
-                        other_urls_str,    # AR: 追加画像URL
-                        "",                # AS: 同期ステータス
-                        "",                # AT: 同期日時
+                        "",                # G: 固定マージン価格（入力項目）
+                        "OFF",             # H: 価格更新
+                        "OFF",             # I: 在庫連動
+                        "10",              # J: 在庫数量
+                        "",                # K: 表示連動
+                        "",                # L: 現在価格
+                        "",                # M: 取得元価格
+                        "USD",             # N: 取得通貨（デフォルト）
+                        "クレカ",          # O: 為替種類（デフォルト）
+                        "",                # P: 為替レート
+                        "",                # Q: 本体計算価格
+                        "",                # R: 送料
+                        "",                # S: 諸経費
+                        "",                # T: 販売価格（手入力）
+                        "",                # U: 原価
+                        "",                # V: 販売粗利
+                        "",                # W: 販売粗利率
+                        "",                # X: 差額
+                        "",                # Y: 最終更新
+                        "",                # Z: 前回価格
+                        "",                # AA: 変動率
+                        "",                # AB: 在庫状況
+                        "",                # AC: 同期モード（入力項目）
+                        product.model_number or "",  # AD: 型番
+                        product.category_id_big if product.category_id_big > 0 else "",  # AE: カテゴリーID
+                        product.category_id_small if product.category_id_small > 0 else "",  # AF: サブカテゴリーID
+                        group_ids_str,     # AG: グループID
+                        product.regular_price if product.regular_price > 0 else "",  # AH: 定価
+                        product.members_price if product.members_price > 0 else "",  # AI: 会員価格
+                        product.delivery_charge if product.delivery_charge > 0 else "",  # AJ: 個別送料
+                        "する" if product.stock_managed else "しない",  # AK: 在庫管理
+                        "表示" if product.soldout_display else "非表示",  # AL: 売切れ表示
+                        product.few_num if product.few_num > 0 else "",  # AM: 適正在庫数
+                        product.min_num if product.min_num > 0 else "",  # AN: 最小購入数
+                        product.max_num if product.max_num > 0 else "",  # AO: 最大購入数
+                        product.expl or "",  # AP: 商品説明
+                        product.simple_expl or "",  # AQ: 簡易説明
+                    ] + image_values + [   # AR〜BA: 画像URL1〜10
+                        "",                # BB: 同期ステータス
+                        "",                # BC: 同期日時
                     ]
                     new_rows.append(new_row)
                     result["added"] += 1
@@ -1218,8 +1228,9 @@ class SpreadsheetClient:
             # 既存のヘッダー数を確認
             existing_count = len(header_row)
 
-            # AB列（index 27）から追加が必要か確認
-            if existing_count < 28:
+            # AC列（index 28）から追加が必要か確認
+            # ※G列（固定マージン価格）追加により、拡張列はAC列から開始
+            if existing_count < 29:
                 # ヘッダーが足りない場合は追加
                 headers_to_add = Config.COLORME_EXTENDED_HEADERS
                 start_col = existing_count + 1
@@ -1298,35 +1309,35 @@ class SpreadsheetClient:
                 if not row_num:
                     continue
 
-                # 拡張列の更新（AB〜AT列）
-                # AB列（同期モード）は入力なので更新しない
-                # AC〜AR列を更新
+                # 拡張列の更新（AC〜AU列）
+                # AC列（同期モード）は入力なので更新しない
+                # AD〜AS列を更新
 
-                # AC列: 型番
+                # AD列: 型番
                 updates.append({
-                    'range': f'AC{row_num}',
+                    'range': f'AD{row_num}',
                     'values': [[product.model_number or ""]]
                 })
 
-                # AD-AE列: カテゴリーID, サブカテゴリーID
+                # AE-AF列: カテゴリーID, サブカテゴリーID
                 updates.append({
-                    'range': f'AD{row_num}:AE{row_num}',
+                    'range': f'AE{row_num}:AF{row_num}',
                     'values': [[
                         product.category_id_big if product.category_id_big > 0 else "",
                         product.category_id_small if product.category_id_small > 0 else ""
                     ]]
                 })
 
-                # AF列: グループID（カンマ区切り）
+                # AG列: グループID（カンマ区切り）
                 group_ids_str = ",".join(str(g) for g in product.group_ids) if product.group_ids else ""
                 updates.append({
-                    'range': f'AF{row_num}',
+                    'range': f'AG{row_num}',
                     'values': [[group_ids_str]]
                 })
 
-                # AG-AI列: 定価, 会員価格, 個別送料
+                # AH-AJ列: 定価, 会員価格, 個別送料
                 updates.append({
-                    'range': f'AG{row_num}:AI{row_num}',
+                    'range': f'AH{row_num}:AJ{row_num}',
                     'values': [[
                         product.regular_price if product.regular_price > 0 else "",
                         product.members_price if product.members_price > 0 else "",
@@ -1334,18 +1345,18 @@ class SpreadsheetClient:
                     ]]
                 })
 
-                # AJ-AK列: 在庫管理, 売切れ表示
+                # AK-AL列: 在庫管理, 売切れ表示
                 updates.append({
-                    'range': f'AJ{row_num}:AK{row_num}',
+                    'range': f'AK{row_num}:AL{row_num}',
                     'values': [[
                         "する" if product.stock_managed else "しない",
                         "表示" if product.soldout_display else "非表示"
                     ]]
                 })
 
-                # AL-AN列: 適正在庫数, 最小購入数, 最大購入数
+                # AM-AO列: 適正在庫数, 最小購入数, 最大購入数
                 updates.append({
-                    'range': f'AL{row_num}:AN{row_num}',
+                    'range': f'AM{row_num}:AO{row_num}',
                     'values': [[
                         product.few_num if product.few_num > 0 else "",
                         product.min_num if product.min_num > 0 else "",
@@ -1353,28 +1364,30 @@ class SpreadsheetClient:
                     ]]
                 })
 
-                # AO-AP列: 商品説明, 簡易説明
+                # AP-AQ列: 商品説明, 簡易説明
                 updates.append({
-                    'range': f'AO{row_num}:AP{row_num}',
+                    'range': f'AP{row_num}:AQ{row_num}',
                     'values': [[
                         product.expl or "",
                         product.simple_expl or ""
                     ]]
                 })
 
-                # AQ-AR列: 商品画像URL, 追加画像URL
-                other_urls_str = ",".join(product.other_image_urls) if product.other_image_urls else ""
+                # AR-BA列: 画像URL1〜10（10列）
+                image_values = []
+                for i in range(10):
+                    if i < len(product.image_urls):
+                        image_values.append(product.image_urls[i] or "")
+                    else:
+                        image_values.append("")
                 updates.append({
-                    'range': f'AQ{row_num}:AR{row_num}',
-                    'values': [[
-                        product.image_url or "",
-                        other_urls_str
-                    ]]
+                    'range': f'AR{row_num}:BA{row_num}',
+                    'values': [image_values]
                 })
 
-                # AS-AT列: 同期ステータス, 同期日時
+                # BB-BC列: 同期ステータス, 同期日時
                 updates.append({
-                    'range': f'AS{row_num}:AT{row_num}',
+                    'range': f'BB{row_num}:BC{row_num}',
                     'values': [[
                         product.sync_status or "成功",
                         timestamp
@@ -1447,9 +1460,9 @@ class SpreadsheetClient:
                     'values': [[str(new_product_id)]]
                 })
 
-            # AS-AT列: 同期ステータス, 同期日時
+            # BB-BC列: 同期ステータス, 同期日時
             updates.append({
-                'range': f'AS{row_num}:AT{row_num}',
+                'range': f'BB{row_num}:BC{row_num}',
                 'values': [[status, timestamp]]
             })
 

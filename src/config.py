@@ -119,27 +119,36 @@ class Config:
     # シート名
     SHEET_COLORME: str = "カラーミー商品管理"
 
-    # カラーミー商品管理シートの拡張列ヘッダー（AB列以降）
+    # カラーミー商品管理シートの拡張列ヘッダー（AC列以降）
+    # ※G列（固定マージン価格）追加により、旧AB列以降が1列ずれている
     COLORME_EXTENDED_HEADERS: list[str] = [
-        "同期モード",      # AB列 (index 27)
-        "型番",           # AC列 (index 28)
-        "カテゴリーID",    # AD列 (index 29)
-        "サブカテゴリーID", # AE列 (index 30)
-        "グループID",      # AF列 (index 31)
-        "定価",           # AG列 (index 32)
-        "会員価格",        # AH列 (index 33)
-        "個別送料",        # AI列 (index 34)
-        "在庫管理",        # AJ列 (index 35)
-        "売切れ表示",      # AK列 (index 36)
-        "適正在庫数",      # AL列 (index 37)
-        "最小購入数",      # AM列 (index 38)
-        "最大購入数",      # AN列 (index 39)
-        "商品説明",        # AO列 (index 40)
-        "簡易説明",        # AP列 (index 41)
-        "商品画像URL",     # AQ列 (index 42)
-        "追加画像URL",     # AR列 (index 43)
-        "同期ステータス",   # AS列 (index 44)
-        "同期日時",        # AT列 (index 45)
+        "同期モード",      # AC列 (index 28)
+        "型番",           # AD列 (index 29)
+        "カテゴリーID",    # AE列 (index 30)
+        "サブカテゴリーID", # AF列 (index 31)
+        "グループID",      # AG列 (index 32)
+        "定価",           # AH列 (index 33)
+        "会員価格",        # AI列 (index 34)
+        "個別送料",        # AJ列 (index 35)
+        "在庫管理",        # AK列 (index 36)
+        "売切れ表示",      # AL列 (index 37)
+        "適正在庫数",      # AM列 (index 38)
+        "最小購入数",      # AN列 (index 39)
+        "最大購入数",      # AO列 (index 40)
+        "商品説明",        # AP列 (index 41)
+        "簡易説明",        # AQ列 (index 42)
+        "画像URL1",       # AR列 (index 43)
+        "画像URL2",       # AS列 (index 44)
+        "画像URL3",       # AT列 (index 45)
+        "画像URL4",       # AU列 (index 46)
+        "画像URL5",       # AV列 (index 47)
+        "画像URL6",       # AW列 (index 48)
+        "画像URL7",       # AX列 (index 49)
+        "画像URL8",       # AY列 (index 50)
+        "画像URL9",       # AZ列 (index 51)
+        "画像URL10",      # BA列 (index 52)
+        "同期ステータス",   # BB列 (index 53)
+        "同期日時",        # BC列 (index 54)
     ]
 
     # 商品マスタシート名（サイト別）

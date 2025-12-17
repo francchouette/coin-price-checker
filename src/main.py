@@ -592,11 +592,10 @@ def update_to_colorme(
             logger.info(f"  → 成功")
 
             # 画像アップロード（URLが指定されている場合）
-            if product.image_url or product.other_image_urls:
+            if any(product.image_urls):
                 img_success, img_error = colorme_client.upload_product_images(
                     product.product_id,
-                    product.image_url,
-                    product.other_image_urls
+                    product.image_urls
                 )
                 if not img_success:
                     status = f"成功（画像エラー: {img_error}）"
@@ -651,11 +650,10 @@ def create_in_colorme(
             logger.info(f"  → 成功 (新ID: {new_id})")
 
             # 画像アップロード（URLが指定されている場合）
-            if product.image_url or product.other_image_urls:
+            if any(product.image_urls):
                 img_success, img_error = colorme_client.upload_product_images(
                     new_id,
-                    product.image_url,
-                    product.other_image_urls
+                    product.image_urls
                 )
                 if not img_success:
                     status = f"成功（画像エラー: {img_error}）"
