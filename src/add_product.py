@@ -27,7 +27,7 @@ from playwright.sync_api import sync_playwright
 
 from .colorme import ColorMeClient, ColorMeProduct
 from .config import Config
-from .exchange_rate import ExchangeRateClient
+from .exchange_rate import ExchangeRateClient, WiseRateClient
 from .spreadsheet import SpreadsheetClient
 
 # ロギング設定
@@ -1206,6 +1206,11 @@ def get_incomplete_rows(sheet_client: SpreadsheetClient) -> list[dict]:
                     if len(row) > 13 and row[13].strip():
                         existing_currency = row[13].strip()
 
+                    # 為替種類（O列、index 14）- "クレカ" or "Wise"
+                    exchange_type = "クレカ"  # デフォルト
+                    if len(row) > 14 and row[14].strip():
+                        exchange_type = row[14].strip()
+
                     # 既存のカテゴリーID（AE列、index 30）
                     existing_category_id = 0
                     if len(row) > 30 and row[30].strip():
@@ -1230,6 +1235,7 @@ def get_incomplete_rows(sheet_client: SpreadsheetClient) -> list[dict]:
                         "shipping": shipping,
                         "sync_mode": sync_mode,
                         "existing_currency": existing_currency,
+                        "exchange_type": exchange_type,
                         "existing_category_id": existing_category_id,
                         "existing_subcategory_id": existing_subcategory_id
                     })
@@ -1459,6 +1465,7 @@ def fill_incomplete_rows() -> bool:
 
     # 6. 為替レートクライアントを初期化
     exchange_client = ExchangeRateClient()
+    wise_client = WiseRateClient()
     if exchange_client.fetch_rates():
         logger.info("為替レートを取得しました")
     else:
@@ -1521,13 +1528,23 @@ def fill_incomplete_rows() -> bool:
 
             # 為替レートと計算価格を取得
             # 既存の通貨設定がある場合はそちらを優先
+            # O列の為替種類に応じてレートを選択（クレカ or Wise）
             exchange_rate = None
             calculated_price = None
             existing_currency = row_info.get("existing_currency", "")
+            exchange_type = row_info.get("exchange_type", "クレカ")
             currency = existing_currency if existing_currency else product_info.get("currency", "USD")
             price = product_info.get("price", 0)
             if price > 0:
-                exchange_rate = exchange_client.get_rate(currency, "JPY")
+                if exchange_type == "Wise":
+                    # Wiseレートを使用
+                    exchange_rate = wise_client.get_rate(currency, "JPY")
+                    logger.info(f"  為替種類: Wise")
+                else:
+                    # クレカレート（デフォルト）を使用
+                    exchange_rate = exchange_client.get_credit_card_rate(currency, "JPY")
+                    logger.info(f"  為替種類: クレカ")
+
                 if exchange_rate:
                     calculated_price = price * exchange_rate
                     logger.info(f"  為替レート: 1 {currency} = {exchange_rate:.4f} JPY")
