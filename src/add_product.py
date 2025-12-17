@@ -1249,13 +1249,14 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
         logger.error("スプレッドシートへの接続に失敗しました")
         return False
 
-    # 2. カラーミーAPIに接続
+    # 2. カラーミーAPIに接続（dry_runフラグを渡す）
     colorme_client = None
     if Config.is_colorme_enabled():
-        colorme_client = ColorMeClient()
+        colorme_client = ColorMeClient(dry_run=dry_run)
         categories = colorme_client.get_categories()
         groups = colorme_client.get_groups()
         logger.info(f"カテゴリー: {len(categories)}件, グループ: {len(groups)}件")
+        logger.info(f"ドライランモード: {dry_run}")
     else:
         logger.warning("カラーミーAPIが設定されていません。カテゴリー判定と画像アップロードはスキップされます。")
         categories = []
