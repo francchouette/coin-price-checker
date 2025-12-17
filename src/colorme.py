@@ -948,8 +948,8 @@ class ColorMeClient:
         self,
         product_id: int,
         image_urls: list[str],
-        initial_delay: float = 3.0,
-        max_retries: int = 3
+        initial_delay: float = 10.0,
+        max_retries: int = 5
     ) -> tuple[bool, str]:
         """
         商品の全画像をアップロードする
@@ -965,9 +965,9 @@ class ColorMeClient:
         """
         import time
 
-        # 商品登録直後はAPIが認識するまで待機
+        # 商品登録直後はAPIが認識するまで待機（カラーミーAPIは登録反映に時間がかかる）
         if initial_delay > 0:
-            logger.info(f"画像アップロード前に{initial_delay}秒待機...")
+            logger.info(f"画像アップロード前に{initial_delay}秒待機（API反映待ち）...")
             time.sleep(initial_delay)
 
         errors = []
@@ -985,7 +985,7 @@ class ColorMeClient:
                         break
                     if "404" in error:
                         # 404の場合はリトライ（APIが商品を認識するまで待機）
-                        wait_time = (retry + 1) * 2  # 2秒, 4秒, 6秒
+                        wait_time = 5 + (retry * 5)  # 5秒, 10秒, 15秒, 20秒, 25秒
                         logger.info(f"  404エラー、{wait_time}秒後にリトライ ({retry + 1}/{max_retries})")
                         time.sleep(wait_time)
                     else:
