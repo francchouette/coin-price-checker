@@ -189,6 +189,53 @@ class ColorMeClient:
             logger.error(f"グループ取得エラー: {e}")
             return []
 
+    def create_group(self, name: str, parent_id: int = 0) -> tuple[int, str]:
+        """
+        グループを新規作成する
+
+        Args:
+            name: グループ名
+            parent_id: 親グループID（0の場合はルート）
+
+        Returns:
+            tuple[int, str]: (作成されたグループID, エラーメッセージ)
+        """
+        if not self.access_token:
+            return 0, "アクセストークンが設定されていません"
+
+        if not name:
+            return 0, "グループ名が空です"
+
+        # ドライランモード
+        if self.dry_run:
+            logger.info(f"[DRY RUN] グループ新規作成: {name}")
+            return 999999, ""
+
+        try:
+            group_data = {
+                "name": name,
+                "display_state": "showing"
+            }
+            if parent_id > 0:
+                group_data["parent_id"] = parent_id
+
+            response = requests.post(
+                f"{self.API_BASE}/groups.json",
+                headers=self._headers(),
+                json={"group": group_data},
+                timeout=30
+            )
+            response.raise_for_status()
+            result = response.json()
+            new_id = result.get("group", {}).get("id", 0)
+            logger.info(f"グループ新規作成成功: {name} → ID: {new_id}")
+            return new_id, ""
+
+        except requests.RequestException as e:
+            error_msg = str(e)
+            logger.error(f"グループ作成エラー: {error_msg}")
+            return 0, error_msg
+
     def get_current_prices(self, product_ids: list[int]) -> dict[int, int]:
         """
         複数商品の現在価格を取得する

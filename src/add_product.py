@@ -532,12 +532,61 @@ class DescriptionGenerator:
 class CategoryDetector:
     """商品名からカテゴリーを自動判定するクラス"""
 
+    # カテゴリーID（固定値）
+    CATEGORY_IDS = {
+        "gold": 2961572,
+        "silver": 2961573,
+    }
+
+    # グループマスター（キー: 内部名, 値: {id, name, parent_key}）
+    GROUP_MASTER = {
+        # 素材グループ（親）
+        "gold": {"id": 3110187, "name": "Gold", "parent_key": None},
+        "silver": {"id": 3110193, "name": "Silver", "parent_key": None},
+        "platinum": {"id": 3119343, "name": "Platinum", "parent_key": None},
+        # シリーズ（金）- 親: gold
+        "maple_gold": {"id": 3110188, "name": "メイプルリーフ カナダ", "parent_key": "gold"},
+        "vienna_gold": {"id": 3110189, "name": "ウィーン オーストリア", "parent_key": "gold"},
+        "britannia_gold": {"id": 3110190, "name": "ブリタニア イギリス", "parent_key": "gold"},
+        "eagle_gold": {"id": 3110191, "name": "イーグル アメリカ", "parent_key": "gold"},
+        "kangaroo_gold": {"id": 3110192, "name": "カンガルー オーストラリア", "parent_key": "gold"},
+        "queens_beast": {"id": 3117632, "name": "クイーンズビースト", "parent_key": "gold"},
+        # シリーズ（銀）- 親: silver
+        "maple_silver": {"id": 3110200, "name": "メイプルリーフ カナダ", "parent_key": "silver"},
+        "vienna_silver": {"id": 3110199, "name": "ウィーン オーストリア", "parent_key": "silver"},
+        "britannia_silver": {"id": 3110198, "name": "ブリタニア イギリス", "parent_key": "silver"},
+        "eagle_silver": {"id": 3110197, "name": "イーグル アメリカ", "parent_key": "silver"},
+        "kookaburra": {"id": 3110194, "name": "カワセミ オーストラリア", "parent_key": "silver"},
+        "kangaroo_silver": {"id": 3110196, "name": "カンガルー オーストラリア", "parent_key": "silver"},
+        "koala": {"id": 3110195, "name": "コアラ オーストラリア", "parent_key": "silver"},
+        # タイプ
+        "coin": {"id": 3115142, "name": "コイン", "parent_key": None},
+        "bar": {"id": 3115143, "name": "バー", "parent_key": None},
+        "premier": {"id": 3115144, "name": "プレミア", "parent_key": None},
+    }
+
     # 素材キーワードマッピング
     METAL_KEYWORDS = {
         "gold": ["gold", "金貨", "ゴールド", "金", "au"],
         "silver": ["silver", "銀貨", "シルバー", "銀", "ag"],
         "platinum": ["platinum", "プラチナ", "白金", "pt"],
-        "palladium": ["palladium", "パラジウム", "pd"],
+    }
+
+    # シリーズキーワードマッピング（キー: シリーズ内部名, 値: {keywords, display_name}）
+    SERIES_MASTER = {
+        "maple": {"keywords": ["maple", "メイプル"], "display_name": "メイプルリーフ カナダ"},
+        "vienna": {"keywords": ["vienna", "philharmonic", "ウィーン", "フィルハーモニー"], "display_name": "ウィーン オーストリア"},
+        "britannia": {"keywords": ["britannia", "ブリタニア"], "display_name": "ブリタニア イギリス"},
+        "eagle": {"keywords": ["eagle", "イーグル"], "display_name": "イーグル アメリカ"},
+        "kangaroo": {"keywords": ["kangaroo", "カンガルー"], "display_name": "カンガルー オーストラリア"},
+        "kookaburra": {"keywords": ["kookaburra", "カワセミ"], "display_name": "カワセミ オーストラリア"},
+        "koala": {"keywords": ["koala", "コアラ"], "display_name": "コアラ オーストラリア"},
+        "queens_beast": {"keywords": ["queen's beast", "queens beast", "クイーンズビースト"], "display_name": "クイーンズビースト"},
+        "panda": {"keywords": ["panda", "パンダ"], "display_name": "パンダ 中国"},
+        "dragon": {"keywords": ["dragon", "ドラゴン", "龍"], "display_name": "ドラゴン 干支"},
+        "lunar": {"keywords": ["lunar", "干支"], "display_name": "干支シリーズ"},
+        "krugerrand": {"keywords": ["krugerrand", "クルーガーランド"], "display_name": "クルーガーランド 南アフリカ"},
+        "buffalo": {"keywords": ["buffalo", "バッファロー"], "display_name": "バッファロー アメリカ"},
     }
 
     # 商品タイプキーワード
@@ -546,12 +595,48 @@ class CategoryDetector:
         "bar": ["bar", "ingot", "インゴット", "バー", "地金"],
     }
 
-    def __init__(self, categories: list[dict], groups: list[dict]):
+    def __init__(self, categories: list[dict], groups: list[dict], colorme_client=None):
         self.categories = categories
         self.groups = groups
-        # カテゴリー名をログ出力（デバッグ用）
-        for cat in categories:
-            logger.info(f"  カテゴリー: {cat.get('name_big', '')} / {cat.get('name_small', '')} (ID: {cat.get('id_big', 0)})")
+        self.colorme_client = colorme_client
+        # APIから取得したグループ名→IDのマッピングを作成
+        self.existing_groups = {g["name"]: g["id"] for g in groups}
+
+    def _get_or_create_group(self, group_key: str) -> int:
+        """グループIDを取得、存在しない場合は作成"""
+        if group_key not in self.GROUP_MASTER:
+            return 0
+
+        master = self.GROUP_MASTER[group_key]
+        group_id = master["id"]
+        group_name = master["name"]
+
+        # 既存グループに存在するか確認
+        if group_name in self.existing_groups:
+            return self.existing_groups[group_name]
+
+        # マスターのIDが存在するか確認（API取得グループと照合）
+        for g in self.groups:
+            if g["id"] == group_id:
+                return group_id
+
+        # 存在しない場合は作成
+        if self.colorme_client:
+            parent_id = 0
+            if master["parent_key"] and master["parent_key"] in self.GROUP_MASTER:
+                parent_id = self.GROUP_MASTER[master["parent_key"]]["id"]
+
+            logger.info(f"  グループ作成中: {group_name} (親ID: {parent_id})")
+            new_id, error = self.colorme_client.create_group(group_name, parent_id)
+            if new_id > 0:
+                # マスターとキャッシュを更新
+                self.GROUP_MASTER[group_key]["id"] = new_id
+                self.existing_groups[group_name] = new_id
+                return new_id
+            else:
+                logger.warning(f"  グループ作成失敗: {error}")
+
+        return group_id  # フォールバック: マスターのID
 
     def detect(self, product_name: str) -> tuple[int, int, list[int]]:
         """
@@ -561,79 +646,93 @@ class CategoryDetector:
             tuple[int, int, list[int]]: (大カテゴリーID, 小カテゴリーID, グループIDリスト)
         """
         name_lower = product_name.lower()
-
-        category_id_big = 0
-        category_id_small = 0
         group_ids = []
 
-        # 1. 商品名から素材タイプを判定
+        # 1. 素材タイプを判定 → カテゴリーID決定
         detected_metal = None
         for metal, keywords in self.METAL_KEYWORDS.items():
             if any(kw in name_lower for kw in keywords):
                 detected_metal = metal
                 break
 
-        # 2. 商品名から商品タイプを判定
+        # カテゴリーID決定（金/銀のみ）
+        if detected_metal == "gold":
+            category_id_big = self.CATEGORY_IDS["gold"]
+        elif detected_metal == "silver":
+            category_id_big = self.CATEGORY_IDS["silver"]
+        else:
+            # デフォルトは銀
+            category_id_big = self.CATEGORY_IDS["silver"]
+            detected_metal = "silver"
+
+        # 2. 素材グループを追加
+        metal_group_id = self._get_or_create_group(detected_metal)
+        if metal_group_id:
+            group_ids.append(metal_group_id)
+
+        # 3. シリーズを判定 → グループID追加
+        detected_series = None
+        for series, info in self.SERIES_MASTER.items():
+            if any(kw in name_lower for kw in info["keywords"]):
+                detected_series = series
+                break
+
+        if detected_series:
+            # 素材に応じたシリーズグループを取得/作成
+            series_key = f"{detected_series}_{detected_metal}"
+            if series_key in self.GROUP_MASTER:
+                series_group_id = self._get_or_create_group(series_key)
+            else:
+                # 素材別グループがない場合は汎用グループを作成
+                series_group_id = self._get_or_create_series_group(detected_series, detected_metal)
+
+            if series_group_id:
+                group_ids.append(series_group_id)
+
+        # 4. 商品タイプを判定 → グループID追加
         detected_type = None
         for ptype, keywords in self.TYPE_KEYWORDS.items():
             if any(kw in name_lower for kw in keywords):
                 detected_type = ptype
                 break
 
-        logger.info(f"  判定: 素材={detected_metal}, タイプ={detected_type}")
+        if detected_type:
+            type_group_id = self._get_or_create_group(detected_type)
+            if type_group_id:
+                group_ids.append(type_group_id)
 
-        # 3. カテゴリーマッチング（より柔軟に）
-        best_match = None
-        best_score = 0
+        logger.info(f"  判定: 素材={detected_metal}, シリーズ={detected_series}, タイプ={detected_type}")
+        logger.info(f"  → カテゴリー={category_id_big}, グループ={group_ids}")
 
-        for cat in self.categories:
-            cat_name = (cat.get("name_big", "") + cat.get("name_small", "")).lower()
-            score = 0
+        return category_id_big, 0, group_ids
 
-            # 素材マッチング
-            if detected_metal:
-                for kw in self.METAL_KEYWORDS[detected_metal]:
-                    if kw in cat_name:
-                        score += 10
-                        break
+    def _get_or_create_series_group(self, series: str, metal: str) -> int:
+        """シリーズグループを取得、存在しない場合は作成"""
+        if series not in self.SERIES_MASTER:
+            return 0
 
-            # タイプマッチング
-            if detected_type:
-                for kw in self.TYPE_KEYWORDS[detected_type]:
-                    if kw in cat_name:
-                        score += 5
-                        break
+        series_info = self.SERIES_MASTER[series]
+        group_name = series_info["display_name"]
 
-            if score > best_score:
-                best_score = score
-                best_match = cat
+        # 既存グループに存在するか確認
+        if group_name in self.existing_groups:
+            return self.existing_groups[group_name]
 
-        # 4. マッチしたカテゴリーがあれば使用、なければ最初のカテゴリーをデフォルト
-        if best_match and best_score > 0:
-            category_id_big = best_match.get("id_big", 0)
-            category_id_small = best_match.get("id_small", 0)
-        elif self.categories:
-            # デフォルト: 最初のカテゴリー
-            category_id_big = self.categories[0].get("id_big", 0)
-            category_id_small = self.categories[0].get("id_small", 0)
-            logger.info(f"  カテゴリーマッチなし、デフォルト使用: {category_id_big}")
+        # 存在しない場合は作成
+        if self.colorme_client:
+            parent_id = self.GROUP_MASTER.get(metal, {}).get("id", 0)
+            logger.info(f"  新シリーズグループ作成中: {group_name} (親: {metal})")
+            new_id, error = self.colorme_client.create_group(group_name, parent_id)
+            if new_id > 0:
+                # マスターを更新
+                new_key = f"{series}_{metal}"
+                self.GROUP_MASTER[new_key] = {"id": new_id, "name": group_name, "parent_key": metal}
+                self.existing_groups[group_name] = new_id
+                return new_id
+            else:
+                logger.warning(f"  グループ作成失敗: {error}")
 
-        # 5. グループ判定（商品名のキーワードとグループ名でマッチング）
-        for grp in self.groups:
-            grp_name = grp.get("name", "").lower()
-            if not grp_name:
-                continue
-
-            # グループ名の単語と商品名をマッチング
-            grp_words = [w for w in grp_name.replace("-", " ").split() if len(w) >= 2]
-            for word in grp_words:
-                if word in name_lower:
-                    grp_id = grp.get("id", 0)
-                    if grp_id and grp_id not in group_ids:
-                        group_ids.append(grp_id)
-                    break
-
-        return category_id_big, category_id_small, group_ids
+        return 0
 
 
 class JapaneseProductNameGenerator:
@@ -1173,8 +1272,8 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
     # 4. 説明生成器を初期化
     generator = DescriptionGenerator()
 
-    # 5. カテゴリー判定器を初期化
-    detector = CategoryDetector(categories, groups)
+    # 5. カテゴリー判定器を初期化（グループ自動作成機能付き）
+    detector = CategoryDetector(categories, groups, colorme_client)
 
     # 6. 為替レートクライアントを初期化
     exchange_client = ExchangeRateClient()
