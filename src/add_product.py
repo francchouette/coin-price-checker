@@ -377,14 +377,16 @@ class ProductScraper:
 
             # 画像URL
             try:
-                # BullionStarはstatic.bullionstar.comから画像を配信、classなしのimg要素
-                img_elems = page.query_selector_all("img[src*='static.bullionstar.com'], img[src*='bullionstar.com/files']")
+                # BullionStarの商品画像は /files/ パス配下（/img/ はアイコン類）
+                img_elems = page.query_selector_all("img[src*='static.bullionstar.com/files/']")
                 for img in img_elems[:10]:
                     src = img.get_attribute("src")
-                    if src and "static.bullionstar.com" in src:
-                        # サムネイル（73_73_）ではなく大きい画像（300_300_以上）を取得
-                        if "73_73_" not in src and src not in result["image_urls"]:
-                            result["image_urls"].append(src)
+                    if src and "/files/" in src:
+                        # サムネイル（73_73_、100_100_）ではなく大きい画像を取得
+                        # SVGファイルは除外
+                        if not any(small in src for small in ["73_73_", "100_100_", ".svg"]):
+                            if src not in result["image_urls"]:
+                                result["image_urls"].append(src)
             except Exception:
                 pass
 
