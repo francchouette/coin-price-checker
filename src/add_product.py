@@ -521,6 +521,12 @@ class CategoryDetector:
 def get_incomplete_rows(sheet_client: SpreadsheetClient) -> list[dict]:
     """
     D列（取得元URL）が入力されていて、B列（商品名）が空の行を取得する
+    AC列（同期モード）が「取得のみ」または「更新」の行が対象
+
+    同期モード:
+        - 「取得のみ」: スプレッドシートのみ更新（カラーミー登録なし）
+        - 「更新」: カラーミーへ登録
+        - 空または他の値: スキップ
 
     Returns:
         list[dict]: 未処理行のリスト
@@ -529,6 +535,7 @@ def get_incomplete_rows(sheet_client: SpreadsheetClient) -> list[dict]:
             - quantity: 枚数
             - margin_rate: マージン率
             - shipping: 送料（R列）
+            - sync_mode: 同期モード（AC列）
     """
     if not sheet_client._spreadsheet:
         return []
@@ -542,9 +549,14 @@ def get_incomplete_rows(sheet_client: SpreadsheetClient) -> list[dict]:
             if len(row) >= 4:
                 source_url = row[3].strip() if len(row) > 3 else ""  # D列
                 product_name = row[1].strip() if len(row) > 1 else ""  # B列
+                sync_mode = row[28].strip() if len(row) > 28 else ""  # AC列（index 28）
 
                 # D列にURLがあり、B列が空の行を検出
+                # AC列が「ドラフト作成」「取得のみ」「更新」の場合のみ処理
                 if source_url and not product_name:
+                    if sync_mode not in ["ドラフト作成", "取得のみ", "更新"]:
+                        continue  # 空や他の値はスキップ
+
                     # 枚数（E列）
                     quantity = 1
                     if len(row) > 4 and row[4].strip():
@@ -574,7 +586,8 @@ def get_incomplete_rows(sheet_client: SpreadsheetClient) -> list[dict]:
                         "source_url": source_url,
                         "quantity": quantity,
                         "margin_rate": margin_rate,
-                        "shipping": shipping
+                        "shipping": shipping,
+                        "sync_mode": sync_mode
                     })
 
         logger.info(f"未処理行を検出: {len(incomplete_rows)}件")
@@ -593,7 +606,8 @@ def update_row_with_product_info(
     description: str,
     simple_description: str,
     colorme_image_urls: list[str],
-    timestamp: str
+    timestamp: str,
+    sync_mode: str = "ドラフト作成"
 ) -> bool:
     """
     指定行に商品情報を更新する
@@ -607,6 +621,7 @@ def update_row_with_product_info(
         simple_description: 簡易説明
         colorme_image_urls: カラーミー画像URLリスト
         timestamp: 更新日時
+        sync_mode: 同期モード（ドラフト作成/新規登録）
     """
     if not sheet_client._spreadsheet:
         return False
@@ -649,11 +664,7 @@ def update_row_with_product_info(
             'values': [[in_stock]]
         })
 
-        # AC列: 同期モード（新規登録）
-        updates.append({
-            'range': f'AC{row_num}',
-            'values': [["新規登録"]]
-        })
+        # AC列: 同期モードはユーザーが設定するため、ここでは更新しない
 
         # AD列: 型番
         updates.append({
@@ -775,8 +786,10 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
         for row_info in incomplete_rows:
             row_num = row_info["row_num"]
             source_url = row_info["source_url"]
+            sync_mode = row_info["sync_mode"]
 
             logger.info(f"処理中: 行 {row_num} - {source_url}")
+            logger.info(f"  同期モード: {sync_mode}")
 
             # 商品情報をスクレイピング
             product_info = scraper.scrape(source_url)
@@ -802,7 +815,7 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
                 if description:
                     logger.info("  → 説明生成完了")
 
-            # カラーミー画像URL（実行時のみ）
+            # カラーミー画像URL
             colorme_image_urls = []
 
             if dry_run:
@@ -810,8 +823,26 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
                 logger.info(f"  更新予定: B列={product_info['name'][:30]}...")
                 logger.info(f"  更新予定: M列={product_info['price']}, N列={product_info['currency']}")
                 logger.info(f"  更新予定: 画像={len(product_info['image_urls'])}枚")
+                if sync_mode == "更新":
+                    logger.info("  → カラーミーへの登録が実行されます")
+                elif sync_mode == "ドラフト作成":
+                    logger.info("  → スプレッドシートのみ更新（ドラフト作成）")
+                else:
+                    logger.info("  → スプレッドシートのみ更新（取得のみ）")
             else:
-                # 実際に更新
+                # sync_mode が「更新」の場合のみカラーミーへ登録
+                if sync_mode == "更新" and colorme_client:
+                    logger.info("  カラーミーへ商品登録中...")
+                    # TODO: カラーミーへの商品登録・画像アップロード処理
+                    # colorme_image_urls = colorme_client.upload_images(product_info["image_urls"])
+                    # colorme_client.register_product(...)
+                    logger.info("  → カラーミー登録機能は今後実装予定")
+                elif sync_mode == "ドラフト作成":
+                    logger.info("  ドラフト作成モード: スプレッドシートのみ更新（カラーミー登録なし）")
+                elif sync_mode == "取得のみ":
+                    logger.info("  取得のみモード: スプレッドシートのみ更新")
+
+                # スプレッドシートを更新
                 if update_row_with_product_info(
                     sheet_client,
                     row_num,
@@ -820,7 +851,8 @@ def fill_incomplete_rows(dry_run: bool = True) -> bool:
                     description,
                     simple_description,
                     colorme_image_urls,
-                    timestamp
+                    timestamp,
+                    sync_mode
                 ):
                     logger.info(f"  → 更新完了")
                     success_count += 1

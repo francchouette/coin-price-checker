@@ -1,0 +1,1787 @@
+<div class="u-mar-b-60">
+<div class="c-form-table">
+<div class="c-form-table__content">
+<div id="product-edt-product-name" class="c-form-table__unit">
+<div class="c-form-table__heading">
+商品名 <span class="c-form-table__required-mark">必須</span>
+</div>
+<div class="c-form-table__body">
+<div class="c-textfield">
+<textarea name="product_name" onkeydown="return prohibitEnter();" class="js-payment-colormepay-validate" data-validate="required" data-validate-error-message-class="js-error--product_name" style="height: 4em;">2026 ブリタニア イギリス 100ポンド 1オンス 新品未使用 地金型金貨 【3枚】(コインケース・簡易箱付)</textarea>
+<p class="c-description c-text c-text--danger js-error--product_name"></p>
+</div>
+</div>
+</div>
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+<span>カテゴリー</span><span class="c-form-table__required-mark">必須</span>
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+あなたのショップ内で、「<a href="/?mode=category_edt&amp;type=INS" target="_blank">カテゴリー<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>」別に商品を表示できます。<br>
+複数のカテゴリーを選択する場合は、「<a href="/?mode=group_lst" target="_blank">グループ<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>」を設定してください。
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<select name="category_id" class="c-flippers-selectbox product-edt__category-select">
+<option value="2961572/0">■Gold</option>
+<option value="2961572/1" selected="selected">－　地金型</option>
+<option value="2961572/2">－　プレミア型</option>
+<option value="2961572/3">－　Krugerrand</option>
+<option value="2961572/4">－　Maple Leaf</option>
+<option value="2961573/0">■Silver</option>
+<option value="2961573/1">－　地金型</option>
+<option value="2961573/2">－　プレミア型</option>
+
+</select>
+</div>
+</div>
+<p class="product-edt__toggle-box js-toggle-box c-toggle-box-menu--active" data-box-name="product_id-group-model_number">商品ID、グループ、型番</p>
+<div class="product-edt__toggle-box-content c-toggle-box c-toggle-box-remember" data-box-name="product_id-group-model_number" style="">
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+商品ID
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+自動的に付与されるため、変更できません。
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<div class="gn_txt_fm_verdana gn_txt_16px gn_pd_5">
+<a href="https://ybx.jp/?pid=189761559" title="ショップ上の商品を確認する" target="_blank">189761559</a>
+</div>
+</div>
+</div>
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+グループ
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+複数のカテゴリーを選択する場合は、「<a href="/?mode=group_lst" target="_blank">グループ<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>」を設定してください。
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<select id="groupSelect" title="------------" multiple="" name="group_id[]" class="c-flippers-selectbox product-edt__group-select" style="display: none;"><option value="3110187" selected="selected"></option><option value="3110190" selected="selected"></option><option value="3115142" selected="selected"></option></select><select title="------------" class="c-flippers-selectbox product-edt__group-select selectlist-select" style=""><option>------------</option>
+<option value="3110187" selected="selected" disabled="disabled">Gold</option>
+<option value="3110188"> - メイプルリーフ カナダ</option>
+<option value="3110189"> - ウィーン オーストリア</option>
+<option value="3110190" selected="selected" disabled="disabled"> - ブリタニア イギリス</option>
+<option value="3110191"> - イーグル アメリカ</option>
+<option value="3110192"> - カンガルー オーストラリア</option>
+<option value="3117632"> - クイーンズビースト</option>
+<option value="3110193">Silver</option>
+<option value="3110200"> - メイプルリーフ カナダ</option>
+<option value="3110199"> - ウィーン オーストリア</option>
+<option value="3110198"> - ブリタニア イギリス</option>
+<option value="3110197"> - イーグル アメリカ</option>
+<option value="3110194"> - カワセミ オーストラリア</option>
+<option value="3110196"> - カンガルー オーストラリア</option>
+<option value="3110195"> - コアラ オーストラリア</option>
+<option value="3119343">Platinum</option>
+<option value="3115142" selected="selected" disabled="disabled">コイン</option>
+<option value="3115143">バー</option>
+<option value="3115144">プレミア</option>
+
+</select><ul class="selectlist-list"><li class="selectlist-item" style="">Gold</li><li class="selectlist-item" style=""> - ブリタニア イギリス</li><li class="selectlist-item" style="">コイン</li></ul>
+</div>
+</div>
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+型番
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+ISBNなどを入力してください。
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<div class="c-textfield">
+<input type="text" name="model_number" class="product-edt__model-number" value="ITM-2026-GBR-GCJ-BRT-003">
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="u-mar-b-60">
+<div class="c-form-table">
+<div class="c-form-table__content">
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+販売価格
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+<p>未入力の場合0円となりますのでお気をつけください。</p>
+<p>販売価格の表示形式や税率は、<a href="./?mode=env_price" target="_blank">消費税設定<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>で変更できます。</p>
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<div class="c-form-layout c-form-layout--inline-block">
+<div class="c-textfield c-form-layout__item c-form-layout__item--one-third">
+<input type="text" name="sales_price" class="js-digitize js-product-edt__sales-price u-text-align-right" value="2344900" data-gtm-form-interact-field-id="0">
+</div>
+<span class="c-form-layout__item">円</span>
+</div>
+<div class="js-product-edt__tax-reduced product-edt__tax-reduced">
+<div class="c-flippers-checkbox c-flippers-checkbox--fit-left">
+<label>
+<input type="checkbox" id="tax_reduced" name="tax_reduced" value="1" checked="">
+<span>軽減税率を設定</span>
+</label>
+</div>
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+<ul>
+<li>
+「<a target="_blank" href="https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/01.pdf ">軽減税率の対象品目<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>」(国税庁PDF) で、該当するか確認できます
+</li>
+<li>
+内税・外税の表示設定は、「<a target="_blank" href="https://admin.shop-pro.jp/?mode=env_price">消費税設定<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>」で確認してください
+</li>
+</ul>
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<p class="c-note">
+商品に保証プランをつけて販売したい方は「<a class="gn_txt_11px" href="https://app.shop-pro.jp/apps/428?utm_source=admin_product_edt&amp;utm_medium=txtlink-apps&amp;utm_content=proteger" target="_blank">proteger（プロテジャー）<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>」(アプリ)
+</p>
+<input type="hidden" name="old_price" value="2344900">
+<div>
+<span class="js-product-edt__open-price-preview">表示例を閉じる ▲</span>
+<p class="c-alert c-alert--sub product-edt__preview-price">
+ショップでの表示例<br>
+<strong>
+<span class="js-product-edt__preview-price-main" data-tax-type="0" data-price-disp="1" data-tax="10" data-reduce-tax-rate="8" data-tax-round="0" data-is-reduced-tax-product="1">107,999,999円(税込)</span>
+</strong>
+</p>
+</div>
+</div>
+</div>
+<p class="product-edt__toggle-box js-toggle-box c-toggle-box-menu--active" data-box-name="members_price-price-cost-postage">会員価格、定価、原価、個別送料</p>
+<div class="product-edt__toggle-box-content c-toggle-box c-toggle-box-remember" data-box-name="members_price-price-cost-postage" style="">
+<div class="c-form-table__unit">
+<div class="c-form-table__heading c-form-table__heading--disabled">
+会員価格
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+<ul>
+<li>「<a href="https://admin.shop-pro.jp/?mode=members" target="_blank">会員専用ページ設定<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>」で、「会員専用ページを使用する」に設定すると、会員価格が表示されます</li>
+<li>「<a href="https://admin.shop-pro.jp/?mode=members_product" target="_blank">会員用商品設定<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>」で、会員専用ページへの商品掲載を設定できます</li>
+</ul>
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<div class="c-form-layout c-form-layout--inline-block">
+<div class="c-textfield c-form-layout__item c-form-layout__item--one-third">
+<input type="text" name="members_price" class="js-digitize js-product-edt__members-price product-edt__members-price u-text-align-right" value="99999999" disabled="">
+</div>
+<span class="c-form-layout__item">円</span>
+<span class="js-enter_members_price_auto c-button c-button--sub c-button--small c-form-layout__item c-button--disabled">販売価格と同じ値を自動入力</span>
+</div>
+<p class="c-note">
+卸価格で販売したい方は「<a class="gn_txt_11px" href="https://help.shop-pro.jp/hc/ja/articles/360063612973" target="_blank">卸販売アプリ<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>」(マニュアル)
+</p>
+</div>
+</div>
+
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+定価
+</div>
+<div class="c-form-table__body">
+<div class="c-form-layout c-form-layout--inline-block">
+<div class="c-textfield c-form-layout__item c-form-layout__item--one-third">
+<input type="text" name="price" class="js-digitize u-text-align-right" value="2344900" data-gtm-form-interact-field-id="1">
+</div>
+<span class="c-form-layout__item">円</span>
+</div>
+</div>
+</div>
+
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+原価
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+ショップ上には表示されません。
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<div class="c-form-layout c-form-layout--inline-block">
+<div class="c-textfield c-form-layout__item c-form-layout__item--one-third">
+<input type="text" name="cost" class="js-digitize u-text-align-right" value="99999999">
+</div>
+<span class="c-form-layout__item">円</span>
+</div>
+</div>
+</div>
+<div class="c-form-table__unit js-delivery-charge">
+<div class="c-form-table__heading">
+個別送料
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+<ul>
+<li>送料無料の場合は、「0」を入力してください</li>
+<li>消費税は、「消費税設定」が適用されます</li>
+<li>ショップの商品全体の送料は、「<a href="./?mode=delivery_lst" target="_blank">配送設定<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>」で設定してください</li>
+</ul>
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<div class="c-form-layout c-form-layout--inline-block">
+<div class="c-textfield c-form-layout__item c-form-layout__item--one-third">
+<input type="text" name="postage" class="js-digitize u-text-align-right" value="1000">
+</div>
+<span class="c-form-layout__item">円</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="u-mar-b-60" id="product_images">
+<div class="c-form-table">
+<div class="c-form-table__content">
+<div id="ajax_img_form" class="c-form-table__unit">
+<div class="c-form-table__heading">
+商品画像
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+画像の追加後、
+<ul>
+<li>枠をドラッグアンドドロップすると順番を入れ替えできます</li>
+<li>画像クリックでプレビューできます</li>
+</ul>
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<div id="showAlertMsg" class="c-alert c-alert--danger" style="display:none;">
+※画像の推奨サイズを超えているため、正常にアップロードできない可能性があります。
+<ul>
+<li>１ファイル当たりのサイズ（上限5MB）</li>
+<li>画像サイズ<span id="alertSizeMsg"></span></li>
+</ul>
+</div>
+<div id="container" class="gn_border_normal_gray03_1px">
+<div id="filelist"></div>
+
+<div id="uploader" style="position: relative;"><div class="plupload_wrapper plupload_scroll"><div id="uploader_container" class="plupload_container" title="Using runtime: html5"><div class="plupload"><div class="plupload_content"><div class="plupload_filelist_header"><div class="plupload_file_name">ファイル名</div><div class="plupload_file_action">&nbsp;</div><div class="plupload_file_status"><span>ステータス</span></div><div class="plupload_file_size">サイズ</div><div class="plupload_clearer">&nbsp;</div></div><ul id="uploader_filelist" class="plupload_filelist"><li class="plupload_droptext"><span class="drag_drop_text">ここにファイルをドラッグ</span></li></ul><div class="plupload_filelist_footer"><div class="plupload_file_name"><div class="plupload_buttons"><a href="#" class="c-button c-button--small c-button--sub plupload_add" id="uploader_browse" style="position: relative; z-index: 0;">+ファイルを追加</a></div><span class="plupload_upload_status"></span></div><div class="plupload_file_action"></div><div class="plupload_file_status" style="display: none;"><span class="plupload_total_status">0%</span></div><div class="plupload_file_size" style="display: none;"><span class="plupload_total_file_size">0 b</span></div><div class="plupload_progress"><div class="plupload_progress_container"><div class="plupload_progress_bar"></div></div></div><div class="plupload_clearer">&nbsp;</div></div></div></div></div><input type="hidden" id="uploader_count" name="uploader_count" value="0"></div><div id="p1jcbs41ij5391kkh1umt15v3iog0_html5_container" class="plupload html5" style="position: absolute; background: transparent; width: 107px; height: 20px; overflow: hidden; z-index: -1; opacity: 0; top: 107px; left: 6px;"><input id="p1jcbs41ij5391kkh1umt15v3iog0_html5" style="font-size: 999px; position: absolute; width: 100%; height: 100%;" type="file" accept="image/jpeg,image/gif,image/png" multiple="multiple"></div></div>
+
+</div>
+
+<div id="uploaded_images" style="">
+<div>
+<ul id="image_sortable" class="clearfix ui-sortable"><li id="image_list_product_img" class="ui-state-default ui-sortable-handle"><div id="div_prev_product_img" style="width: 56px; height: 61px; margin: auto;"><a id="img_preview_link_product_img" href="https://img21.shop-pro.jp/PA01517/852/product/189761559.png?cmsp_timestamp=20251211144543" data-modaal-scope="modaal_176563015022307b7b5af7e89b"><img src="https://img21.shop-pro.jp/PA01517/852/product/189761559.png?cmsp_timestamp=20251211144543" id="img_preview_thumb_product_img" style="width: 56px; height: auto;"></a></div><input type="button" value="削除" class="c-button c-button--small" id="img_preview_delete_product_img"><div id="div_mb_product_img" style="line-height: normal; margin-top: 5px;"></div><input type="hidden" id="hd_uploaded_image_product_img" name="hd_uploaded_image_product_img" value="https://img21.shop-pro.jp/PA01517/852/product/189761559.png?cmsp_timestamp=20251211144543"></li><li id="image_list_other1_img" class="ui-state-default ui-sortable-handle"><div id="div_prev_other1_img" style="width: 56px; height: 61px; margin: auto;"><a id="img_preview_link_other1_img" href="https://img21.shop-pro.jp/PA01517/852/product/189761559_o1.png?cmsp_timestamp=20251211144543" data-modaal-scope="modaal_17656301502246c6626672fc9d"><img src="https://img21.shop-pro.jp/PA01517/852/product/189761559_o1.png?cmsp_timestamp=20251211144543" id="img_preview_thumb_other1_img" style="width: 56px; height: auto;"></a></div><input type="button" value="削除" class="c-button c-button--small" id="img_preview_delete_other1_img"><div id="div_mb_other1_img" style="line-height: normal; margin-top: 5px;"></div><input type="hidden" id="hd_uploaded_image_other1_img" name="hd_uploaded_image_other1_img" value="https://img21.shop-pro.jp/PA01517/852/product/189761559_o1.png?cmsp_timestamp=20251211144543"></li><li id="image_list_other2_img" class="ui-state-default ui-sortable-handle"><div id="div_prev_other2_img" style="width: 56px; height: 61px; margin: auto;"><a id="img_preview_link_other2_img" href="https://img21.shop-pro.jp/PA01517/852/product/189761559_o2.png?cmsp_timestamp=20251211144543" data-modaal-scope="modaal_17656301502247a52cc2306d43"><img src="https://img21.shop-pro.jp/PA01517/852/product/189761559_o2.png?cmsp_timestamp=20251211144543" id="img_preview_thumb_other2_img" style="width: 56px; height: auto;"></a></div><input type="button" value="削除" class="c-button c-button--small" id="img_preview_delete_other2_img"><div id="div_mb_other2_img" style="line-height: normal; margin-top: 5px;"></div><input type="hidden" id="hd_uploaded_image_other2_img" name="hd_uploaded_image_other2_img" value="https://img21.shop-pro.jp/PA01517/852/product/189761559_o2.png?cmsp_timestamp=20251211144543"></li><li id="image_list_other3_img" class="ui-state-default ui-sortable-handle"><div id="div_prev_other3_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other3_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other4_img" class="ui-state-default ui-sortable-handle"><div id="div_prev_other4_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other4_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other5_img" class="ui-state-default ui-sortable-handle"><div id="div_prev_other5_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other5_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other6_img" class="ui-state-default ui-sortable-handle"><div id="div_prev_other6_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other6_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other7_img" class="ui-state-default ui-sortable-handle"><div id="div_prev_other7_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other7_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other8_img" class="ui-state-default ui-sortable-handle"><div id="div_prev_other8_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other8_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other9_img" class="ui-state-default ui-sortable-handle"><div id="div_prev_other9_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other9_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other10_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other10_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other10_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other11_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other11_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other11_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other12_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other12_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other12_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other13_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other13_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other13_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other14_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other14_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other14_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other15_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other15_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other15_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other16_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other16_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other16_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other17_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other17_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other17_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other18_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other18_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other18_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other19_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other19_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other19_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other20_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other20_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other20_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other21_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other21_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other21_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other22_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other22_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other22_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other23_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other23_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other23_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other24_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other24_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other24_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other25_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other25_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other25_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other26_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other26_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other26_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other27_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other27_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other27_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other28_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other28_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other28_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other29_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other29_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other29_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other30_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other30_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other30_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other31_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other31_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other31_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other32_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other32_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other32_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other33_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other33_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other33_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other34_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other34_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other34_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other35_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other35_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other35_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other36_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other36_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other36_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other37_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other37_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other37_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other38_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other38_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other38_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other39_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other39_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other39_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other40_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other40_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other40_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other41_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other41_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other41_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other42_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other42_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other42_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other43_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other43_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other43_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other44_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other44_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other44_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other45_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other45_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other45_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other46_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other46_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other46_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other47_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other47_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other47_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other48_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other48_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other48_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li><li id="image_list_other49_img" class="ui-state-default ui-sortable-handle" style="display: none;"><div id="div_prev_other49_img" style="width: 56px; height: 61px; margin: auto;"></div><div id="div_mb_other49_img" style="line-height: normal; margin-top: 5px; display: none;"></div></li></ul>
+</div>
+<input type="hidden" id="image_sort_array" name="image_sort_array" value="image_list_product_img,image_list_other1_img,image_list_other2_img,image_list_other3_img,image_list_other4_img,image_list_other5_img,image_list_other6_img,image_list_other7_img,image_list_other8_img,image_list_other9_img,image_list_other10_img,image_list_other11_img,image_list_other12_img,image_list_other13_img,image_list_other14_img,image_list_other15_img,image_list_other16_img,image_list_other17_img,image_list_other18_img,image_list_other19_img,image_list_other20_img,image_list_other21_img,image_list_other22_img,image_list_other23_img,image_list_other24_img,image_list_other25_img,image_list_other26_img,image_list_other27_img,image_list_other28_img,image_list_other29_img,image_list_other30_img,image_list_other31_img,image_list_other32_img,image_list_other33_img,image_list_other34_img,image_list_other35_img,image_list_other36_img,image_list_other37_img,image_list_other38_img,image_list_other39_img,image_list_other40_img,image_list_other41_img,image_list_other42_img,image_list_other43_img,image_list_other44_img,image_list_other45_img,image_list_other46_img,image_list_other47_img,image_list_other48_img,image_list_other49_img">
+<input type="hidden" id="plupload_state" name="plupload_state">
+
+<div id="plupload_msg"></div>
+
+<div id="showMore" class="gn_txt_r gn_mg_r_5 gn_txt_fwb">
+<span class="c-text-link">もっと表示</span>
+</div>
+<div style="margin-top:5px;">
+｜<a href="javascript:gf_OpenNewWindow('./?mode=photo_viewer&amp;product_id=189761559&amp;type=img','PHOTOVIEWER','width=800:height=560');">商品画像を確認する</a>
+｜<a href="javascript:gf_OpenNewWindow('./?mode=imgsize&amp;window=sub','IMGSIZE','width=600:height=700');">画像サイズの変更</a>
+｜
+</div>
+<div class="gn_mg_r_5 gn_mg_l_5 gn_mg_t_10">
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="u-mar-b-60">
+<div class="c-form-table">
+<div class="c-form-table__content">
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+在庫数
+</div>
+<div class="c-form-table__body">
+<script type="text/javascript">
+// TODO: ここのscript部分、jsを記述している上部に引っ越したほうが良い
+$(function(){
+const $select = $('select[name="stock_flg"]');
+const $stockNum = $(".js-stock-num");
+const $stockNumInput = $('input[name="stock_num"]');
+const $stockAppTextLink = $(".product-lst__stock-app-text-link");
+const handleIsStockNumShown = () => {
+if($select.val() == 1){
+$stockNum.hide()                                                                                                                                                             ;
+$stockAppTextLink.hide()                                                                                                                                                     ;
+}
+else{
+$stockNum.show()                                                                                                                                                             ;
+$stockAppTextLink.show()                                                                                                                                                     ;
+if($stockNumInput.val() === ""){
+$stockNumInput.val("0");
+}
+}
+}                                                                                                                                                                            ;
+handleIsStockNumShown()                                                                                                                                                      ;
+$select.change(handleIsStockNumShown)                                                                                                                                        ;
+})                                                                                                                                                                           ;
+</script>
+<select name="stock_flg" class="c-flippers-selectbox">
+<option value="0" selected="selected">在庫管理する</option>
+<option value="1">在庫管理しない</option>
+
+</select>
+<div class="c-textfield js-stock-num">
+<input type="text" name="stock_num" class="js-digitize product-edt__stock-num u-text-align-right" value="0">
+</div>
+<div class="c-alert c-alert--sub c-alert--closable product-lst__stock-app-text-link" data-alert-name="PA01517852-product-edt-stock-appstore-link" style="">
+<link rel="stylesheet" href="styles/v1/pages/app_textlink.css?20230728">
+<script type="text/javascript">
+$(document).ready(function(){
+(function(){
+if (typeof $.cookie === "undefined") return                                                                                                                 ;
+var cookieName = "isAppTextlinkTitleToggleHidden-product_edt";
+if($.cookie(cookieName)){
+$(".js-app_textlink_cont").hide();
+}
+$(".js-app_textlink_title").click(function(){
+if($.cookie(cookieName)) {
+$(".js-app_textlink_title_toggle").text("-");
+$(".js-app_textlink_cont").slideDown();
+$.cookie(cookieName, null)                                                                                                                                  ;
+} else {
+$(".js-app_textlink_title_toggle").text("+");
+$(".js-app_textlink_cont").slideUp();
+$.cookie(cookieName, true)                                                                                                                                  ;
+}
+})                                                                                                                                                          ;
+}())                                                                                                                                                        ;
+})                                                                                                                                                          ;
+</script>
+
+<div class="u-text-align-center">
+<div class="product-edt__repeat-ad">
+<p class="product-edt__repeat-ad__item">
+<a href="https://admin.shop-pro.jp/?mode=restock" class="product-edt__repeat-ad__item-link">再入荷通知<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>
+<a href="https://note.com/colorme_apps/n/n17979c9772b6" class="product-edt__repeat-ad__item-link" target="_blank">受注・在庫連携機能のまとめ(note)<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>
+</p>
+</div>
+</div>
+
+<span class="c-alert__close-btn js-close-alert" style="top: 0.7em;">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>
+</span>
+</div>
+</div>
+</div>
+<p class="product-edt__toggle-box js-toggle-box c-toggle-box-menu--active" data-box-name="soldoutdisp_flg-min_num-max_num">在庫表示管理、購入数量</p>
+<div class="product-edt__toggle-box-content c-toggle-box c-toggle-box-remember" data-box-name="soldoutdisp_flg-min_num-max_num" style="">
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+在庫表示
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+「<a href="./?mode=stock_base" target="_blank">在庫表示設定<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>」の設定よりも優先されます。
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<dl class="product-edt__soldoutdisp">
+<dt>売り切れ時の商品表示</dt>
+<dd>
+<select name="soldoutdisp_flg" class="c-flippers-selectbox">
+<option value="">------------</option>
+<option value="0" selected="selected">表示する</option>
+<option value="1">表示しない</option>
+
+</select>
+</dd>
+<dt>適正在庫数</dt>
+<dd>
+<div class="c-textfield">
+<input type="text" name="few_num" class="js-digitize product-edt__few-num u-text-align-right" value="10">
+</div>
+</dd>
+</dl>
+<div class="u-text-align-right">
+<a href="#product_option" id="option_stock_cont" onclick="product_edt_js.optionStock();">
+各オプションの在庫数表示
+</a>&nbsp                                                                                                                           ;
+<a href="https://admin.shop-pro.jp/?mode=stock_base" target="_blank">
+通常時の在庫数表示<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg>
+</a>
+</div>
+</div>
+</div>
+
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+購入数量
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+1回の注文で購入できる数量を制限できます。
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<div class="c-textfield">
+最小：<input type="text" name="min_num" class="js-digitize product-edt__min-num u-text-align-right js-product-maximum-number-of-purchases" value="1">　　
+最大：<input type="text" name="max_num" id="max_num" class="js-digitize product-edt__max-num u-text-align-right js-product-minimum-number-of-purchases" value="10">
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="u-mar-b-60">
+<div class="c-form-table">
+<div class="c-form-table__content">
+<div id="product-edt-expl" class="c-form-table__unit">
+<div class="c-form-table__heading">
+商品説明
+</div>
+<div class="c-form-table__body">
+<p class="product-edt__cap u-text-align-right">
+<a href="javascript:gf_OpenNewWindow('./?mode=html_editor&amp;form_name=frm&amp;input_name=expl','HTMLEDITOR','width=920:height=720');" class="c-button c-button--small">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-edit"></use></svg>
+HTMLエディタ
+</a>
+</p>
+<div class="c-textfield u-mar-b-20">
+<textarea name="expl" rows="14">【品位】　約99.9％K24純金
+【重量】　１オンス（31.3g）
+【直径】　32.69mm
+
+&lt ;strong&gt;&lt;span style="font-size:large;"&gt;新国王時代を迎えた英国の象徴的金貨&lt;/span&gt;&lt;/strong&gt;
+
+1987年から続く英国王立造幣局の代表作、ブリタニア金貨の2026年版です。
+純度99.99%の24金、重量1オンス（約31.1g）で英国政府が品質を完全保証。
+新国王チャールズ3世の肖像を描いた記念すべき作品として、歴史的価値も高い特別な金貨です。
+
+表面にはマーティン・ジェニングズによる国王の気品ある横顔を刻印。
+裏面には約2000年にわたって英国の象徴として愛され続けるブリタニア女神が、トライデントとユニオンジャックの盾を持つ勇壮な姿で描かれています。
+
+角度によって南京錠からトライデントに変化する潜像技術や、波が動いているように見えるアニメーション効果など、「世界で最も安全なコイン」開発チームが手がけた4つの革新的セキュリティ機能を搭載しています。
+
+世界中で高い流通性を持ち現金化も容易。
+英国では税制優遇もあり、安定した資産価値とコレクション性を兼ね備えた理想的な投資商品です。
+
+古代の伝統と最新技術が見事に融合した、新時代の英国を代表する美しい金貨をぜひお手に取ってください。</textarea>
+</div>
+<link rel="stylesheet" href="styles/v1/pages/product_ai_assistant.css?20230907">
+
+<section class="js-product-edt-ai-assistant product-edt-ai-assistant">
+<div class="js-ai-cta ai-cta">
+<button type="button" class="c-button c-button--sub ai-cta__button" onclick="productExplAiAssistantHandler.openAiAssistantTermsModal()">
+<cms3-2-svg-icon icon="sparkles" inline="" aria-label="" aria-hidden=""></cms3-2-svg-icon>商品の説明文をAIに依頼
+</button>
+<cms3-2-ai-assistant-terms-modal id="productExpl">
+<span slot="terms-text">商品説明に適した文章をAIが生成します。</span>
+<span slot="terms-note">本機能を使って商品説明文を生成する際は、あらかじめ利用規約をご確認のうえ、実際の商品情報と相違がないことを十分チェックしてください。</span>
+</cms3-2-ai-assistant-terms-modal>
+</div>
+
+<div class="js-ai-main ai-main ai-main--has-product-name">
+<div class="c-note generating-area u-mar-b-20">
+<p class="generating-area__heading">AIが生成した説明文</p>
+<p class="generating-area__text generating-area__text--is-generated"></p>
+<p class="generating-area__text generating-area__text--is-generating"><span class="generating-area__waiting-text">現在生成中です。しばらくお待ちください・・・</span></p>
+<p class="generating-area__caption">
+※ 実際の商品情報と相違がないことを十分チェックした上でご利用ください。
+</p>
+<button type="button" class="c-button c-button--primary generating-area__button ga-click" data-ga-click-name="apply-text" data-ga-click-creative="ai-assistant" data-ga-click-page="admin-product_edt" onclick="productExplAiAssistantHandler.applyText()">
+商品説明欄に追加
+</button>
+<div class="tone-adjustment-area">
+<div class="tone-adjustment-form">
+<cms3-2-colorme-textbox tag="textarea" id="ai_assistant_tone_adjustment" class="tone-adjustment-form__textbox" webcomponent-mode="" rows="1"></cms3-2-colorme-textbox>
+<input type="hidden" id="hidden_token" name="t" value="591d23212428777d45aee76ad482fd2cd1732f5c241f8d0964a00de371b44aa866cdeb00c6cf3ba128e2ec7f774fbc63ec81b88646b02e67f835cbb4de471e6f">
+<button type="button" class="c-button c-button--sub c-button--block ga-click tone-adjustment-form__button" data-ga-click-name="tone_adjustment" data-ga-click-creative="ai-assistant" data-ga-click-page="admin-product_edt" onclick="productExplAiAssistantHandler.adjustTone()">
+トーンを変更
+</button>
+</div>
+<p class="tone-adjustment-area__example">
+例: 絵文字をなくしてください、丁寧な文章にしてください、など
+</p>
+</div>
+</div>
+<p class="c-description">
+<button id="ai-assistant-toggle-button" type="button" class="c-text-link js-toggle-box ai-content-toggle" data-box-name="ai-assistant-area">
+カラーミーAIアシスタント（β）
+</button>
+</p>
+<div class="c-description c-toggle-box c-toggle-box-remember ai-content" data-box-name="ai-assistant-area" style="display: none;">
+<h4 class="ai-content__heading">
+<cms3-2-svg-icon icon="sparkles" inline="" aria-label="" aria-hidden=""></cms3-2-svg-icon>カラーミーAIアシスタント（β）
+</h4>
+<p>
+商品の説明文を生成します。
+</p>
+<div>
+<cms3-2-follow-up-guide type="informative" size="small">
+より多くの情報を入力することで、文章の精度が上がります。
+<ul>
+<li><a href="https://help.shop-pro.jp/hc/ja/articles/15256765847827" class="ai-content__link" tabindex="1" target="_blank">特徴・仕様・利用シーン・使い方の入力例<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>（マニュアル）</li>
+</ul>
+</cms3-2-follow-up-guide>
+</div>
+<div>
+<cms3-2-colorme-textbox tag="textarea" id="ai_assistant_keywords" name="ai_assistant_keywords" class="ai-content__textbox" webcomponent-mode="" required="" maxlength="500" placeholder="特徴・仕様・利用シーン・使い方を入力" rows="5"></cms3-2-colorme-textbox>
+</div>
+<div class="ai-content__example">
+<p>
+複数のキーワード・文章を入力できます<br>
+例：<br>
+・完全有機栽培の伊予柑<br>
+・母の日やお中元<br>
+・ジャムやコンポートにしても美味しい<br>
+</p>
+</div>
+<div class="ai-content__notice">
+<cms3-2-follow-up-guide type="notice" size="small">
+<a href="#product-edt-product-name" class="ai-content__link" tabindex="1">商品名</a>を入力すると、説明文を生成できるようになります。
+</cms3-2-follow-up-guide>
+</div>
+<div class="c-button-layout c-button-layout--single">
+<a href="#product-edt-expl" class="c-button c-button--sub c-button--block ai-content__button ga-click" data-ga-click-name="generate-text" data-ga-click-creative="ai-assistant" data-ga-click-page="admin-product_edt" onclick="productExplAiAssistantHandler.generate()">
+説明文を生成
+</a>
+</div>
+</div>
+</div>
+</section>
+
+<script>
+let descriptionText = ''
+let toneAdjustText = ''
+
+document.getElementById('ai_assistant_keywords').addEventListener('cmsinput', e => descriptionText = e.detail.value)
+let element = document.getElementById('ai_assistant_tone_adjustment');
+if (element) {
+element.addEventListener('cmsinput', e => toneAdjustText = e.detail.value)                                           ;
+}
+
+const productExplAiAssistantHandler = {
+generatedText: '',
+init: function() {
+const productNameElement = document.querySelector('[name="product_name"]')
+const aiMain = document.querySelector('.js-ai-main')
+const aiAssistant = document.querySelector('.js-product-edt-ai-assistant')
+
+window.addEventListener('agreedAiAssistantTerms-productExpl', () => {
+localStorage.setItem('isAgreedToAiAssistantTerms', true)
+aiAssistant.classList.add('product-edt-ai-assistant--is-agreed')
+// uikit_js に依存する処理なので、ここだけjQuery記述を許容する
+uikit_js.toggleBoxHandler.showToggleBox($('.c-toggle-box[data-box-name="ai-assistant-area"]'))
+document.getElementById("ai-assistant-toggle-button").classList.add('c-toggle-box-menu--active')
+aiMain.scrollIntoView({behavior: 'smooth'})
+})
+
+this.toggleStateClass(
+localStorage.getItem('isAgreedToAiAssistantTerms'),
+aiAssistant,
+'product-edt-ai-assistant--is-agreed'
+)
+this.toggleStateClass(
+productNameElement.value,
+aiMain,
+'ai-main--has-product-name'
+)
+productNameElement.addEventListener('input',() => {
+this.toggleStateClass(
+productNameElement.value,
+aiMain,
+'ai-main--has-product-name'
+)
+})
+},
+openAiAssistantTermsModal: function () {
+window.dispatchEvent(new CustomEvent('openAiAssistantTermsModal-productExpl'));
+},
+toggleStateClass: function (condition, targetElement, className) {
+const hasClass = Array.from(targetElement.classList).includes(className)
+
+if(condition && !hasClass) {
+targetElement.classList.add(className)
+} else if(!condition && hasClass) {
+targetElement.classList.remove(className)
+}
+},
+generate: async function () {
+const productNameElement = document.querySelector('[name="product_name"]')
+const aiMain = document.querySelector('.js-ai-main')
+
+if (!validCustomInput()) return
+
+this.startWaitingAnimation()
+
+const setGeneratedState = () => this.toggleStateClass(true, aiMain, 'ai-main--is-generated')
+const setDoneState = () => this.toggleStateClass(false, aiMain, 'ai-main--is-generating')
+const setGeneratingState = () => {
+this.toggleStateClass(true, aiMain, 'ai-main--is-generating')
+this.toggleStateClass(false, aiMain, 'ai-main--is-generated')
+}
+
+const handleError = text => {
+alert(text)
+setDoneState()
+}
+
+setGeneratingState()
+
+const productName = productNameElement.value   ;
+const productFeatureKeywords = descriptionText ;
+
+let response = null
+try {
+response = await fetch(
+'/?mode=generate_product_description',
+{
+method: 'POST',
+headers: {
+'Content-Type': 'application/json'
+},
+body: JSON.stringify({ productName, productFeatureKeywords })
+}
+)
+} catch (e) {
+handleError('ネットワークエラーが発生したため処理を中断しました。再度お試しください。')
+
+throw e ;
+}
+
+const jsonResponse = await response.json()
+
+if (response.status !== 200) {
+const errorMessage = jsonResponse.title ? `エラーが発生しました。${jsonResponse.title}` : 'エラーが発生したため処理を中断しました。再度お試しください。';
+handleError(errorMessage)                                                                                                                                                                          ;
+return                                                                                                                                                                                             ;
+}
+
+document.querySelector('.generating-area__text--is-generated').innerText = jsonResponse.message
+this.generatedText = jsonResponse.message
+
+setDoneState()
+setGeneratedState()
+},
+applyText: function () {
+const aiMain = document.querySelector('.js-ai-main')
+const explTextArea = document.querySelector('[name="expl"]')
+explTextArea.value = `${this.generatedText}\n▲▲カラーミーAIアシスタント（β）が生成した文章です▲▲\n${explTextArea.value}`
+this.toggleStateClass(false, aiMain, 'ai-main--is-generated')
+const event = new Event('input')
+explTextArea.dispatchEvent(event)
+document.getElementById('product-edt-expl').scrollIntoView({behavior: 'smooth'})
+},
+startWaitingAnimation: function () {
+const waitingTextElement = document.querySelector('.generating-area__waiting-text')
+const splittedText = [...waitingTextElement.innerText]
+waitingTextElement.textContent = ''
+splittedText.forEach((char, i) => {
+setTimeout(() => {
+waitingTextElement.textContent += char                                                                                                                  ;
+}, 75 * ++i)                                                                                                                                            ;
+})                                                                                                                                                      ;
+},
+adjustTone: async function () {
+const aiMain = document.querySelector('.js-ai-main')
+const productNameElement = document.querySelector('[name="product_name"]')
+
+this.startWaitingAnimation()
+
+const setGeneratedState = () => this.toggleStateClass(true, aiMain, 'ai-main--is-generated')
+const setDoneState = () => this.toggleStateClass(false, aiMain, 'tone-adjustment-area--is-generating')
+const setGeneratingState = () => {
+this.toggleStateClass(true, aiMain, 'tone-adjustment-area--is-generating')
+this.toggleStateClass(false, aiMain, 'ai-main--is-generated')
+}
+
+const handleError = text => {
+alert(text)
+setDoneState()
+setGeneratedState()
+}
+
+setGeneratingState()
+
+const generatedAiDescriptionText = document.querySelector('.generating-area__text--is-generated').innerText
+const token = document.getElementById('hidden_token').value;
+
+const productName = productNameElement.value                                                                                ;
+const generatedDescription = generatedAiDescriptionText                                                                     ;
+const regenerateDescriptionInstruction = toneAdjustText                                                                     ;
+const productFeatureKeywords = descriptionText                                                                              ;
+let response = null
+try {
+response = await fetch(
+'/?mode=generate_product_description',
+{
+method: 'POST',
+body: JSON.stringify({ productName, generatedDescription, regenerateDescriptionInstruction, productFeatureKeywords})
+}
+)
+} catch (e) {
+handleError('ネットワークエラーが発生したため処理を中断しました。再度お試しください。')
+
+throw e ;
+}
+
+const jsonResponse = await response.json()
+
+if (response.status !== 200) {
+const errorMessage = jsonResponse.title ? `エラーが発生しました。${jsonResponse.title}` : 'エラーが発生したため処理を中断しました。再度お試しください。';
+handleError(errorMessage)                                                                                                                                                                          ;
+return                                                                                                                                                                                             ;
+}
+
+document.querySelector('.generating-area__text--is-generated').innerText = jsonResponse.message
+this.generatedText = jsonResponse.message
+
+setDoneState()
+setGeneratedState()
+}
+}
+window.addEventListener('DOMContentLoaded', () => {
+productExplAiAssistantHandler.init()                                                                                                                                                                                                     ;
+})
+</script>
+</div>
+</div>
+<p class="product-edt__toggle-box js-toggle-box c-toggle-box-menu--active" data-box-name="simple_expl-smartphone_expl">簡易説明、スマートフォンショップ用説明</p>
+<div class="product-edt__toggle-box-content c-toggle-box c-toggle-box-remember" data-box-name="simple_expl-smartphone_expl" style="">
+<div id="product-simple-expl" class="c-form-table__unit">
+<div class="c-form-table__heading">
+簡易説明
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+ショップの商品一覧ページに掲載されます。
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<div class="c-textfield u-mar-b-20">
+<input type="text" name="simple_expl" value="英国新国王チャールズ3世の肖像を刻んだブリタニア金貨。99.99%純金、1オンス。セキュリティ機能満載。投資にもコレクションにも最適。">
+</div>
+<link rel="stylesheet" href="styles/v1/pages/product_ai_assistant.css?20231010">
+
+<section class="js-product-simple-expl-ai-assistant product-edt-ai-assistant">
+<div class="js-ai-cta ai-cta">
+<button type="button" class="c-button c-button--sub ai-cta__button" onclick="productSimpleExplAiAssistantHandler.openAiAssistantTermsModal()">
+<cms3-2-svg-icon icon="sparkles" inline="" aria-label="" aria-hidden=""></cms3-2-svg-icon>商品の簡易説明文をAIに依頼
+</button>
+<cms3-2-ai-assistant-terms-modal id="simpleExpl">
+<span slot="terms-text">商品の簡単な説明に適した文章をAIが生成します。</span>
+<span slot="terms-note">本機能を使って簡易説明文を生成する際は、あらかじめ利用規約をご確認のうえ、実際の商品情報と相違がないことを十分チェックしてください。</span>
+</cms3-2-ai-assistant-terms-modal>
+</div>
+
+<div class="js-simple-expl-ai-main ai-main ai-main--has-product-name">
+<div class="c-note generating-area u-mar-b-20">
+<p class="generating-area__heading">AIが生成した簡易説明文</p>
+<p class="generating-area__text generating-area__text--is-generated ai-generated-expl"></p>
+<p class="generating-area__text generating-area__text--is-generating"><span class="generating-area__waiting-text ai-expl-waiting-text">現在生成中です。しばらくお待ちください・・・</span></p>
+<p class="generating-area__caption">
+※ 実際の商品情報と相違がないことを十分チェックした上でご利用ください。
+</p>
+<button type="button" class="c-button c-button--primary generating-area__button ga-click" data-ga-click-name="apply-text" data-ga-click-creative="ai-assistant" data-ga-click-page="admin-product_edt" onclick="productSimpleExplAiAssistantHandler.applyText()">
+簡易説明欄に反映
+</button>
+<div class="tone-adjustment-area">
+<div class="tone-adjustment-form">
+<cms3-2-colorme-textbox tag="textarea" id="expl_ai_assitant_tone_adjustment" class="tone-adjustment-form__textbox" webcomponent-mode="" rows="1"></cms3-2-colorme-textbox>
+<input type="hidden" id="hidden_token" name="t" value="591d23212428777d45aee76ad482fd2cd1732f5c241f8d0964a00de371b44aa866cdeb00c6cf3ba128e2ec7f774fbc63ec81b88646b02e67f835cbb4de471e6f">
+<button type="button" class="c-button c-button--sub c-button--block ga-click tone-adjustment-form__button" data-ga-click-name="tone_adjustment" data-ga-click-creative="ai-assistant" data-ga-click-page="admin-product_edt" onclick="productSimpleExplAiAssistantHandler.adjustTone()">
+トーンを変更
+</button>
+</div>
+<p class="tone-adjustment-area__example">
+例: 絵文字をなくしてください、丁寧な文章にしてください、など
+</p>
+</div>
+</div>
+<p class="c-description">
+<button id="expl-ai-assistant-toggle-button" type="button" class="c-text-link js-toggle-box ai-content-toggle" data-box-name="expl-ai-assistant-area">
+カラーミーAIアシスタント（β）
+</button>
+</p>
+<div class="c-description c-toggle-box c-toggle-box-remember ai-content" data-box-name="expl-ai-assistant-area" style="display: none;">
+<h4 class="ai-content__heading">
+<cms3-2-svg-icon icon="sparkles" inline="" aria-label="" aria-hidden=""></cms3-2-svg-icon>カラーミーAIアシスタント（β）
+</h4>
+<p>
+<a href="#product-edt-product-name" class="ai-content__link" tabindex="1">商品名</a>
+と
+<a href="#product-edt-expl" class="ai-content__link">商品説明</a>
+から商品の簡易説明文を生成します。
+</p>
+<div class="ai-content__notice">
+<cms3-2-follow-up-guide type="notice" size="small">
+<a href="#product-edt-product-name" class="ai-content__link" tabindex="1">商品名</a>
+と
+<a href="#product-edt-expl" class="ai-content__link">商品説明</a>
+を入力すると、簡易説明文を生成できるようになります。
+</cms3-2-follow-up-guide>
+</div>
+<div class="c-button-layout c-button-layout--single">
+<a href="#product-simple-expl" class="c-button c-button--sub c-button--block ai-content__button ga-click" data-ga-click-name="generate-text" data-ga-click-creative="ai-assistant" data-ga-click-page="admin-product_edt" onclick="productSimpleExplAiAssistantHandler.generate()">
+簡易説明文を生成
+</a>
+</div>
+</div>
+</div>
+</section>
+
+<script>
+const productSimpleExplAiAssistantHandler = {
+generatedText: '',
+explToneAdjustText: '',
+init: function() {
+const productNameElement = document.querySelector('[name="product_name"]')
+const productExplElement = document.querySelector('[name="expl"]')
+const aiMain = document.querySelector('.js-simple-expl-ai-main')
+const aiAssistant = document.querySelector('.js-product-simple-expl-ai-assistant')
+const explToneAdjustElement = document.getElementById('expl_ai_assitant_tone_adjustment');
+if (explToneAdjustElement) {
+explToneAdjustElement.addEventListener('cmsinput', e => this.explToneAdjustText = e.detail.value) ;
+}
+
+window.addEventListener('agreedAiAssistantTerms-simpleExpl', () => {
+localStorage.setItem('isAgreedToAiAssistantTerms', true)
+aiAssistant.classList.add('product-simple-expl-ai-assistant--is-agreed')
+// uikit_js に依存する処理なので、ここだけjQuery記述を許容する
+uikit_js.toggleBoxHandler.showToggleBox($('.c-toggle-box[data-box-name="expl-ai-assistant-area"]'))
+document.getElementById("expl-ai-assistant-toggle-button").classList.add('c-toggle-box-menu--active')
+aiMain.scrollIntoView({behavior: 'smooth'})
+})
+
+this.toggleStateClass(
+localStorage.getItem('isAgreedToAiAssistantTerms'),
+aiAssistant,
+'product-simple-expl-ai-assistant--is-agreed'
+)
+this.toggleStateClass(
+productNameElement.value && productExplElement.value,
+aiMain,
+'ai-main--has-product-name'
+)
+productNameElement.addEventListener('input',() => {
+this.toggleStateClass(
+productNameElement.value && productExplElement.value,
+aiMain,
+'ai-main--has-product-name'
+)
+})
+
+productExplElement.addEventListener('input', () => {
+this.toggleStateClass(
+productNameElement.value && productExplElement.value,
+aiMain,
+'ai-main--has-product-name'
+)
+})
+},
+openAiAssistantTermsModal: function () {
+window.dispatchEvent(new CustomEvent('openAiAssistantTermsModal-simpleExpl'));
+},
+toggleStateClass: function (condition, targetElement, className) {
+const hasClass = Array.from(targetElement.classList).includes(className)
+
+if(condition && !hasClass) {
+targetElement.classList.add(className)
+} else if(!condition && hasClass) {
+targetElement.classList.remove(className)
+}
+},
+generate: async function () {
+const productNameElement = document.querySelector('[name="product_name"]')
+const productExplElement = document.querySelector('[name="expl"]')
+const aiMain = document.querySelector('.js-simple-expl-ai-main')
+
+this.startWaitingAnimation()
+
+const setGeneratedState = () => this.toggleStateClass(true, aiMain, 'ai-main--is-generated')
+const setDoneState = () => this.toggleStateClass(false, aiMain, 'ai-main--is-generating')
+const setGeneratingState = () => {
+this.toggleStateClass(true, aiMain, 'ai-main--is-generating')
+this.toggleStateClass(false, aiMain, 'ai-main--is-generated')
+}
+
+const handleError = text => {
+alert(text)
+setDoneState()
+}
+
+setGeneratingState()
+
+const data = new FormData()
+data.set('productName', productNameElement.value)
+data.set('description', productExplElement.value)
+
+let response = null
+try {
+response = await fetch(
+'/?mode=generate_product_simple_expl',
+{
+method: 'POST',
+body: data
+}
+)
+} catch (e) {
+handleError('ネットワークエラーが発生したため処理を中断しました。再度お試しください。')
+
+throw e ;
+}
+
+const jsonResponse = await response.json()
+
+if (response.status !== 200) {
+const errorMessage = jsonResponse.title ? `エラーが発生しました。${jsonResponse.title}` : 'エラーが発生したため処理を中断しました。再度お試しください。';
+handleError(errorMessage)                                                                                                                                                                          ;
+return                                                                                                                                                                                             ;
+}
+
+document.querySelector('.ai-generated-expl').innerText = jsonResponse.message
+this.generatedText = jsonResponse.message
+
+setDoneState()
+setGeneratedState()
+},
+applyText: function () {
+const aiMain = document.querySelector('.js-simple-expl-ai-main')
+const explTextArea = document.querySelector('[name="simple_expl"]')
+explTextArea.value = `${this.generatedText}`
+this.toggleStateClass(false, aiMain, 'ai-main--is-generated')
+const event = new Event('input')
+explTextArea.dispatchEvent(event)
+document.getElementById('product-simple-expl').scrollIntoView({behavior: 'smooth'})
+},
+startWaitingAnimation: function () {
+const waitingTextElement = document.querySelector('.ai-expl-waiting-text')
+const splittedText = [...waitingTextElement.innerText]
+waitingTextElement.textContent = ''
+splittedText.forEach((char, i) => {
+setTimeout(() => {
+waitingTextElement.textContent += char                                              ;
+}, 75 * ++i)                                                                        ;
+})                                                                                  ;
+},
+adjustTone: async function () {
+const aiMain = document.querySelector('.js-simple-expl-ai-main')
+
+this.startWaitingAnimation()
+
+const setGeneratedState = () => this.toggleStateClass(true, aiMain, 'ai-main--is-generated')
+const setDoneState = () => this.toggleStateClass(false, aiMain, 'tone-adjustment-area--is-generating')
+const setGeneratingState = () => {
+this.toggleStateClass(true, aiMain, 'tone-adjustment-area--is-generating')
+this.toggleStateClass(false, aiMain, 'ai-main--is-generated')
+}
+
+const handleError = text => {
+alert(text)
+setDoneState()
+setGeneratedState()
+}
+
+setGeneratingState()
+
+const generatedAiDescriptionText = document.querySelector('.ai-generated-expl').innerText
+const token = document.getElementById('hidden_token').value;
+
+const data = new FormData()
+data.set('generatedAiDescription', generatedAiDescriptionText)
+data.set('toneAdjustText', this.explToneAdjustText + '\nまた、出力は100文字程度にしてください')
+data.set('t', token)                                                                                             ;
+
+let response = null
+try {
+response = await fetch(
+'/?mode=adjust_tone_generated_description',
+{
+method: 'POST',
+body: data
+}
+)
+} catch (e) {
+handleError('ネットワークエラーが発生したため処理を中断しました。再度お試しください。')
+
+throw e ;
+}
+
+const jsonResponse = await response.json()
+
+if (response.status !== 200) {
+const errorMessage = jsonResponse.title ? `エラーが発生しました。${jsonResponse.title}` : 'エラーが発生したため処理を中断しました。再度お試しください。';
+handleError(errorMessage)                                                                                                                                                                          ;
+return                                                                                                                                                                                             ;
+}
+
+document.querySelector('.ai-generated-expl').innerText = jsonResponse.message
+this.generatedText = jsonResponse.message
+
+setDoneState()
+setGeneratedState()
+}
+}
+window.addEventListener('DOMContentLoaded', () => {
+productSimpleExplAiAssistantHandler.init()                                                                                                                                                          ;
+})
+</script>
+</div>
+</div>
+<div class="c-form-table__unit explain">
+<div class="c-form-table__heading">
+スマートフォン<br>
+ショップ用説明
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+未設定の場合<br>
+「商品説明」に入力した内容が表示されます。
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<script type="text/javascript">
+// TODO: ここのscript部分、jsを記述している上部に引っ越したほうが良い
+$(function(){
+const $smartphoneExpl = $('textarea[name="smartphone_expl"]');
+const $smartphoneExplLink = $('.product-edt__smartphone-expl-link');
+const handleSpExplLink = () => {
+if($smartphoneExpl.val() !== '') {
+$smartphoneExplLink.show()                                                                                                                                                                          ;
+} else {
+$smartphoneExplLink.hide()                                                                                                                                                                          ;
+}
+}
+handleSpExplLink()                                                                                                                                                                                  ;
+$smartphoneExpl.on('keyup', handleSpExplLink)                                                                                                                                                       ;
+})                                                                                                                                                                                                  ;
+</script>
+<div class="c-textfield c-textfield--small">
+<textarea name="smartphone_expl" rows="8"></textarea>
+</div>
+<p class="product-edt__cap">
+<span class="product-edt__smartphone-expl-link" style="display: none;">
+<a href="./?mode=shop_env">【開店・閉店設定】</a>にて「自動改行する」に設定されております。※HTML可
+</span>
+</p>
+<p class="c-description"><span class="c-text-link js-toggle-box" data-box-name="feature-expl-area">フィーチャーフォン向けショップ用説明を開く</span></p>
+<div class="c-description c-toggle-box" data-box-name="feature-expl-area" style="display: none;">
+<h4>フィーチャーフォン向けショップ用説明</h4>
+<div class="c-alert c-alert--warning u-mar-b-10">※2019年3月に廃止されました。入力は不要です。</div>
+<div class="c-textfield c-textfield--small">
+<textarea name="mobile_expl" rows="5"></textarea>
+</div>
+<p class="product-edt__cap">
+<a href="javascript:jf_DelHtmlTagsCopy('expl', 'mobile_expl');" class="c-button c-button--small">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-copy-file"></use></svg>
+商品説明から転記
+</a>
+&nbsp                                                                                                                                                                                               ;
+※自動改行あり&nbsp                                                                                                                                                                          ;※HTML可（利用出来るタグはキャリア毎に異なります。）
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="u-mar-b-60">
+<div class="c-form-table">
+<div class="c-form-table__content">
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+掲載設定
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+「掲載しない」：<br>
+ショップ画面上にその商品は表示されません。<br>
+「会員のみ掲載する」：<br>
+ログインしている場合のみ商品が表示されます。<br>
+「会員のみ購入可能」：<br>
+ログインしている場合のみ購入できます。<br>
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<select name="disp_flg" id="disp_flg" class="c-flippers-selectbox">
+<option value="0">掲載する</option>
+<option value="1">掲載しない</option>
+<option value="2">会員のみ掲載する</option>
+<option value="3" selected="selected">会員のみ購入可能</option>
+
+</select>
+<p class="c-note">
+商品の閲覧・購入制限は「<a class="gn_txt_11px" href="https://help.shop-pro.jp/hc/ja/articles/14468236623891" target="_blank">限定販売について<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>」(マニュアル)をご確認ください。
+</p>
+</div>
+</div>
+
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+トップページ表示
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+「<a href="./?mode=pickup_edt" target="_blank">おすすめ・売れ筋商品<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>」で設定できます。
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<div class="c-flippers-checkbox c-flippers-checkbox--fit-left">
+<label>
+<input type="checkbox" name="recommend_flg" id="recommend_flg" checked="">
+<span>おすすめ商品</span>
+</label>
+<input type="hidden" name="hd_recommend_flg" id="hd_recommend_flg" value="1">
+
+<label>
+<input type="checkbox" name="seller_flg" id="seller_flg" checked="">
+<span>売れ筋商品</span>
+</label>
+</div>
+<input type="hidden" name="hd_seller_flg" id="hd_seller_flg" value="1">
+</div>
+</div>
+<p class="product-edt__toggle-box js-toggle-box c-toggle-box-menu--active" data-box-name="datetime-unit-weight-order_num">掲載期間（開始および終了日時）、単位、重量（g）、表示順</p>
+<div class="product-edt__toggle-box-content c-toggle-box c-toggle-box-remember" data-box-name="datetime-unit-weight-order_num" style="">
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+掲載期間
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+「掲載設定」で「掲載する」を選択している場合にご利用ください。<br>
+日付、時間のみの指定も可能です。
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<div class="c-textfield product-edt__datetime">
+<div>
+<span>
+開始日付：
+<input type="text" name="start_date" maxlength="10" value="2004/01/01" class="product-edt__start-date u-text-align-right">
+</span>
+<span>
+開始時間：
+<input type="text" name="start_time" maxlength="8" value="00:00:00" class="product-edt__start-time u-text-align-right">
+</span>
+</div>
+<div class="product-edt__inline-cap">
+例： 開始日付）20XX/04/01 開始時間）10:00:00
+</div>
+</div>
+<div class="c-textfield product-edt__datetime">
+<div>
+<span>
+終了日付：
+<input type="text" name="end_date" maxlength="10" value="2100/12/31" class="product-edt__end-date u-text-align-right">
+</span>
+<span>
+終了時間：
+<input type="text" name="end_time" maxlength="8" value="23:59:59" class="product-edt__end-time u-text-align-right">
+</span>
+</div>
+<div class="product-edt__inline-cap">
+例： 終了日付）20XX/04/07 終了時間）23:00:00
+</div>
+</div>
+</div>
+</div>
+
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+単位
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+個・g・枚などを入力してください。
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<div class="c-textfield">
+<input type="text" name="unit" value="セット" class="product-edt__unit">
+</div>
+</div>
+</div>
+
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+重量
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+詳しくは、「<a href="https://help.shop-pro.jp/hc/ja/articles/1500003333562" target="_blank">商品重量に応じて送料を設定する<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>」(マニュアル)をご確認ください
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<div class="c-textfield">
+<input type="text" name="weight" class="js-digitize product-edt__weight" value=""> g
+</div>
+</div>
+</div>
+
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+表示順
+<div class="c-help">
+<span class="c-help__button js-help-button">
+<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-help"></use></svg>
+</span>
+<div class="c-help__contents c-help__contents--top js-help-contents">
+カテゴリー内で有効です。<br>
+未入力の場合は、最優先で表示されます。
+<p class="c-help__close"><a href="javascript:void(0)" class="js-help-close"><svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-close"></use></svg>閉じる</a></p></div>
+</div>
+</div>
+<div class="c-form-table__body">
+<div class="c-textfield">
+<input type="text" name="order_num" class="js-digitize product-edt__order-num" value="20">
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="u-mar-b-10">
+<div class="c-form-table">
+<div class="c-form-table__content">
+<p class="product-edt__toggle-box js-toggle-box c-toggle-box-menu--active" data-box-name="ng_payment-ng_delivery">利用不可決済・配送方法設定</p>
+<div class="product-edt__toggle-box-content c-toggle-box c-toggle-box-remember js-unavailable-payments" data-box-name="ng_payment-ng_delivery" style="">
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+利用不可決済
+</div>
+<div class="c-form-table__body">
+<div class="c-flippers-checkbox c-flippers-checkbox--fit-left c-flippers-checkbox--vertical">
+<label>
+<input type="checkbox" name="ng_payment_id[]" value="1082275" data-payment-name="銀行振込" data-payment-type="1">
+<span>銀行振込</span>
+</label>
+</div>
+<hr class="c-line" style="margin-top: 1em;">
+<div class="trig_show_cont trig_show_cont--transparent tsc_normal tsc_normal clearfix">
+<span>非表示の決済方法</span>
+<a href="javascript:void(0);">表示する ▼</a>
+</div>
+<div class="show_cont" style="display: none;">
+<div class="c-flippers-checkbox c-flippers-checkbox--fit-left c-flippers-checkbox--vertical">
+<label>
+<input type="checkbox" name="ng_payment_id[]" value="1077062" data-payment-name="商品代引き（ヤマト宅急便コレクト）" data-payment-type="0">
+<span>商品代引き（ヤマト宅急便コレクト）</span>
+</label>
+</div>
+</div>
+</div>
+</div>
+<div class="c-form-table__unit">
+<div class="c-form-table__heading">
+利用不可配送方法
+</div>
+<div class="c-form-table__body">
+<div class="c-flippers-checkbox c-flippers-checkbox--fit-left c-flippers-checkbox--vertical">
+<label>
+<input type="checkbox" name="ng_delivery_id[]" value="627591">
+<span>クロネコヤマト</span>
+</label>
+<label>
+<input type="checkbox" name="ng_delivery_id[]" value="634215">
+<span>佐川急便</span>
+</label>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="u-mar-b-10">
+<div class="c-form-table">
+<div class="c-form-table__content">
+<p class="product-edt__toggle-box js-toggle-box c-toggle-box-menu--active" data-box-name="product_seo">タイトル要素・メタ要素&nbsp;設定（SEO設定）</p>
+<div class="product-edt__toggle-box-content c-toggle-box c-toggle-box-remember" data-box-name="product_seo" style="">
+<link rel="stylesheet" href="styles/v1/pages/product_meta_form.css?20210204">
+<div class="c-form-table__unit">
+<div class="c-form-table__heading product-meta-table__heading">
+検索結果表示例
+</div>
+<div class="c-form-table__body">
+<div class="product-meta-preview">
+<div class="u-hidden js-seo-cell" style="display: block;">
+<div class="product-meta-preview__title js-seo-preview" id="seo-preview-title">2026 ブリタニア イギリス 100ポンド 1オンス 新品未使用 地金型金貨 ...</div>
+<div class="product-meta-preview__url">
+https://ybx.jp/?pid=189761559 </div>
+<div class="product-meta-preview__description js-seo-preview" id="seo-preview-description">メタタグのディスクリプションを入力します。タグは使用できません。指定がない場合はﾀｲﾄﾙ要素・ﾒﾀ要素設定の「サイト内容の要約」が適用されます。</div>
+</div>
+</div>
+</div>
+</div>
+<div class="c-form-table__unit">
+<div class="c-form-table__heading product-meta-table__heading">
+タイトル
+</div>
+<div class="c-form-table__body">
+<div class="c-form-layout c-form-layout--input-button c-balloon-area">
+<div class="c-textfield">
+<input type="text" name="meta_title" class="js-seo-textfield js-seo-title js-balloon-input" id="seo-textfield-title" value="2026 ブリタニア イギリス 100ポンド 1オンス 新品未使用 地金型金貨 【3枚】(コインケース・簡易箱付) - Yokohama Bullion X " data-for="seo-preview-title" data-limit-length="40">
+<span class="c-textfield__example js-seo-label">現在79文字（40文字以内推奨）</span>
+<div class="seo-ai-area">
+<div class="js-ai-generated-seo-title seo-ai-hidden c-note u-mar-b-20">
+<p class="generating-area__heading">AIが生成したSEO設定</p>
+<p class="generating-area__text generating-area__text--is-generated"></p>
+<button type="button" class="c-button c-button--small c-button--primary generating-area__button ga-click" onclick="productSeoFormHandler.applySeoTitle()">
+タイトルを置換
+</button>
+</div>
+</div>
+</div>
+<div class="c-balloon c-balloon--top-left c-balloon--fit js-balloon" style="display: none;">
+<p>
+商品ページのタイトルを入力します。<br>検索エンジンの検索結果ページで使用されたり、ブラウザ上部のバーに表示されます。<br><br>未入力の場合「商品名 - サイト名」の形式が適用されます。
+</p>
+</div>
+</div>
+</div>
+</div>
+<div class="c-form-table__unit">
+<div class="c-form-table__heading product-meta-table__heading">
+ページ概要<br>(description)
+</div>
+<div class="c-form-table__body">
+<div class="c-form-layout c-balloon-area">
+<div class="c-textfield">
+<input type="text" name="meta_description" class="js-seo-textfield js-seo-desc js-balloon-input" value="メタタグのディスクリプションを入力します。タグは使用できません。指定がない場合はﾀｲﾄﾙ要素・ﾒﾀ要素設定の「サイト内容の要約」が適用されます。" data-for="seo-preview-description" data-limit-length="80">
+<span class="c-textfield__example js-seo-label">現在72文字（80文字以内推奨）</span>
+<div class="seo-ai-area">
+<div class="js-ai-generated-seo-desc seo-ai-hidden c-note u-mar-b-20">
+<p class="generating-area__heading">AIが生成したSEO設定</p>
+<p class="generating-area__text generating-area__text--is-generated"></p>
+<button type="button" class="c-button c-button--small c-button--primary generating-area__button ga-click" onclick="productSeoFormHandler.applySeoDesc()">
+ページ概要を置換
+</button>
+</div>
+</div>
+</div>
+<div class="c-balloon c-balloon--top-left c-balloon--fit js-balloon" style="display: none;">
+<p>
+商品ページの簡単な説明を入力します。<br>検索エンジンの検索結果ページで、タイトルの下に表示されます。<br><br>未入力の場合<a href="./?mode=design_base" target="_blank">【タイトル要素・メタ要素 設定】</a>「サイト全体の設定」＞「ページ概要(description)」に<br>入力した内容が適用されます。
+</p>
+</div>
+</div>
+</div>
+</div>
+<div class="c-form-table__unit">
+<div class="c-form-table__heading product-meta-table__heading">
+キーワード
+</div>
+<div class="c-form-table__body">
+<div class="c-form-layout c-balloon-area">
+<div class="c-textfield">
+<input type="text" name="meta_keywords" class="js-seo-textfield js-seo-keywords js-balloon-input" value="銀貨,金貨,貴金属">
+<span class="c-textfield__example">カンマ「,」区切りで指定してください。</span>
+<div class="seo-ai-area">
+<div class="js-ai-generated-seo-keywords seo-ai-hidden c-note u-mar-b-20">
+<p class="generating-area__heading">AIが生成したSEO設定</p>
+<p class="generating-area__text generating-area__text--is-generated"></p>
+<button type="button" class="c-button c-button--small c-button--primary generating-area__button ga-click" onclick="productSeoFormHandler.applySeoKeywords()">
+キーワードを置換
+</button>
+</div>
+</div>
+</div>
+<div class="c-balloon c-balloon--top-left c-balloon--fit js-balloon" style="display: none;">
+<p>
+商品ページに関連するキーワードを入力します。<br><br>未入力の場合<a href="./?mode=design_base">【タイトル要素・メタ要素 設定】</a>「サイト全体の設定」＞「キーワード」に入力した内容が適用されます。
+</p>
+</div>
+</div>
+</div>
+</div>
+<div class="product-meta-preview__ai_assistant">
+<link rel="stylesheet" href="styles/v1/pages/product_ai_assistant.css?20230411">
+
+<section class="js-product-seo-ai-assistant product-edt-ai-assistant">
+<div class="js-ai-cta ai-cta">
+<button type="button" class="c-button c-button--sub ai-cta__button" onclick="productSeoAiAssistantHandler.openAiAssistantTermsModal()">
+<cms3-2-svg-icon icon="sparkles" inline="" aria-label="" aria-hidden=""></cms3-2-svg-icon>SEO設定をAIに依頼
+</button>
+<cms3-2-ai-assistant-terms-modal id="productSeo">
+<span slot="terms-text">SEO設定に適した文章をAIが生成します。</span>
+<span slot="terms-note">本機能を使ってSEO設定を生成する際は、あらかじめ利用規約をご確認のうえ、実際の商品情報と相違がないことを十分チェックしてください。</span>
+</cms3-2-ai-assistant-terms-modal>
+</div>
+
+<div class="js-product-seo-ai-main ai-main ai-main--has-product-name">
+<div class="c-note seo-ai-generating-area u-mar-b-20">
+<p class="generating-area__text"><span class="generating-area__waiting-text">現在生成中です。しばらくお待ちください・・・</span></p>
+</div>
+<p class="c-description">
+<button id="seo-ai-assistant-toggle-button" type="button" class="c-text-link js-toggle-box ai-content-toggle" data-box-name="seo-ai-assistant-area">
+カラーミーAIアシスタント（β）
+</button>
+</p>
+<div class="c-description c-toggle-box c-toggle-box-remember ai-content" data-box-name="seo-ai-assistant-area" style="display: none;">
+<h4 class="ai-content__heading">
+<cms3-2-svg-icon icon="sparkles" inline="" aria-label="" aria-hidden=""></cms3-2-svg-icon>カラーミーAIアシスタント（β）
+</h4>
+<p>
+<a href="#product-edt-product-name" class="ai-content__link" tabindex="1">商品名</a>
+と
+<a href="#product-edt-expl" class="ai-content__link">商品説明</a>
+からSEO設定を生成します。
+</p>
+<div class="ai-content__notice">
+<cms3-2-follow-up-guide type="notice" size="small">
+<a href="#product-edt-product-name" class="ai-content__link" tabindex="1">商品名</a>
+と
+<a href="#product-edt-expl" class="ai-content__link">商品説明</a>
+を入力すると、説明文を生成できるようになります。
+</cms3-2-follow-up-guide>
+</div>
+<div class="c-button-layout c-button-layout--single">
+<a class="c-button c-button--sub c-button--block ai-content__button ga-click" data-ga-click-name="generate-text" data-ga-click-creative="ai-assistant" data-ga-click-page="admin-product_edt" onclick="productSeoAiAssistantHandler.generate()">
+SEO設定を生成
+</a>
+</div>
+</div>
+</div>
+</section>
+
+<script>
+const productSeoAiAssistantHandler = {
+generatedSeoTitle: '',
+generatedSeoDesc: '',
+generatedSeoKeywords: [],
+init: function() {
+const aiMain = document.querySelector('.js-product-seo-ai-main')
+const aiAssistant = document.querySelector('.js-product-seo-ai-assistant')
+
+const productNameElement = document.querySelector('[name="product_name"]')
+const productExplElement = document.querySelector('[name="expl"]')
+
+window.addEventListener('agreedAiAssistantTerms-productSeo', () => {
+localStorage.setItem('isAgreedToAiAssistantTerms', true)
+aiAssistant.classList.add('seo-ai-assistant--is-agreed')
+// uikit_js に依存する処理なので、ここだけjQuery記述を許容する
+uikit_js.toggleBoxHandler.showToggleBox($('.c-toggle-box[data-box-name="seo-ai-assistant-area"]'))
+document.getElementById("seo-ai-assistant-toggle-button").classList.add('c-toggle-box-menu--active')
+aiMain.scrollIntoView({behavior: 'smooth'})
+})
+
+this.toggleStateClass(
+localStorage.getItem('isAgreedToAiAssistantTerms'),
+aiAssistant,
+'seo-ai-assistant--is-agreed'
+)
+this.toggleStateClass(
+productNameElement.value && productExplElement.value,
+aiMain,
+'ai-main--has-product-name'
+)
+productNameElement.addEventListener('input', () => {
+this.toggleStateClass(
+productNameElement.value && productExplElement.value,
+aiMain,
+'ai-main--has-product-name'
+)
+})
+
+productExplElement.addEventListener('input', () => {
+this.toggleStateClass(
+productNameElement.value && productExplElement.value,
+aiMain,
+'ai-main--has-product-name'
+)
+})
+},
+openAiAssistantTermsModal: function () {
+window.dispatchEvent(new CustomEvent('openAiAssistantTermsModal-productSeo'))
+},
+toggleStateClass: function (condition, targetElement, className) {
+const hasClass = Array.from(targetElement.classList).includes(className)
+
+if(condition && !hasClass) {
+targetElement.classList.add(className)
+} else if(!condition && hasClass) {
+targetElement.classList.remove(className)
+}
+},
+generate: async function () {
+const aiMain = document.querySelector('.js-product-seo-ai-main')
+const generatingArea = document.querySelector('.js-product-seo-ai-main .generating-area')
+
+const productNameElement = document.querySelector('[name="product_name"]')
+const productExplElement = document.querySelector('[name="expl"]')
+
+const seoTitleAiElement = document.querySelector('.js-ai-generated-seo-title')
+const seoDescAiElement = document.querySelector('.js-ai-generated-seo-desc')
+const seoKeywordsAiElement = document.querySelector('.js-ai-generated-seo-keywords')
+
+this.startWaitingAnimation()
+
+const setGeneratedState = () => {
+this.toggleStateClass(true, aiMain, 'seo-ai-main--is-generated')
+
+this.toggleStateClass(false, seoTitleAiElement, 'seo-ai-hidden');
+this.toggleStateClass(false, seoDescAiElement, 'seo-ai-hidden');
+this.toggleStateClass(false, seoKeywordsAiElement, 'seo-ai-hidden');
+}
+const setDoneState = () => this.toggleStateClass(false, aiMain, 'seo-ai-main--is-generating')
+const setGeneratingState = () => {
+this.toggleStateClass(true, aiMain, 'seo-ai-main--is-generating')
+this.toggleStateClass(false, aiMain, 'seo-ai-main--is-generated')
+}
+
+const handleError = text => {
+alert(text)
+setDoneState()
+}
+
+setGeneratingState()
+
+const data = new FormData()
+data.set('productName', productNameElement.value)
+data.set('productExpl', productExplElement.value)
+data.set('t', document.querySelector('[name="t"]').value)
+
+let response = null
+try {
+response = await fetch(
+'/?mode=generate_product_seo',
+{
+method: 'POST',
+body: data
+}
+)
+} catch (e) {
+handleError('ネットワークエラーが発生したため処理を中断しました。再度お試しください。')
+
+throw e ;
+}
+
+if (response.status !== 200 && response.status !== 400) {
+handleError('エラーが発生したため処理を中断しました。再度お試しください。')
+return
+}
+
+const jsonResponse = await response.json()
+
+if (response.status === 400 && jsonResponse.title) {
+handleError(`エラーが発生しました。${jsonResponse.title}`)
+return
+}
+
+const {title, description, keywords} = jsonResponse.message
+
+this.generatedSeoTitle = title       ;
+this.generatedSeoDesc = description  ;
+this.generatedSeoKeywords = keywords ;
+
+const seoTitleInput = document.querySelector('.js-seo-textfield.js-seo-title')
+const seoDescInput = document.querySelector('.js-seo-textfield.js-seo-desc')
+const seoKeywordsInput = document.querySelector('.js-seo-textfield.js-seo-keywords')
+
+if (!seoTitleInput.value && !seoDescInput.value && !seoKeywordsInput.value) {
+seoTitleInput.value = title
+seoDescInput.value = description
+seoKeywordsInput.value = keywords.join(',')
+
+this.triggerKeyupEvent(seoTitleInput)
+this.triggerKeyupEvent(seoDescInput)
+this.triggerKeyupEvent(seoKeywordsInput)
+} else {
+document.querySelector('.js-ai-generated-seo-title .generating-area__text').innerText = `${title} (${title.length}文字)`            ;
+document.querySelector('.js-ai-generated-seo-desc .generating-area__text').innerText = `${description} (${description.length}文字)` ;
+document.querySelector('.js-ai-generated-seo-keywords .generating-area__text').innerText = keywords.join(',')
+
+setGeneratedState()
+}
+
+setDoneState()
+},
+triggerKeyupEvent: function (element) {
+element.dispatchEvent(new KeyboardEvent('keyup'))
+},
+startWaitingAnimation: function () {
+const waitingTextElement = document.querySelector('.js-product-seo-ai-main .generating-area__waiting-text')
+
+const splittedText = [...waitingTextElement.innerText]
+waitingTextElement.textContent = ''
+splittedText.forEach((char, i) => {
+setTimeout(() => {
+waitingTextElement.textContent += char                                                                                                                                                                                                                                         ;
+}, 75 * ++i)                                                                                                                                                                                                                                                                   ;
+})                                                                                                                                                                                                                                                                             ;
+}
+}
+window.addEventListener('DOMContentLoaded', () => {
+productSeoAiAssistantHandler.init()                                                                                                                                                                                                                                            ;
+})
+</script>
+</div>
+<div class="product-meta-preview__note">
+<a target="_blank" href="https://help.shop-pro.jp/hc/ja/articles/1500004025742">各ページにおける検索エンジン最適化(SEO)の方法(マニュアル)<svg class="c-icon" role="img" aria-hidden="true"><use xlink:href="#cms-icon-external-link"></use></svg></a>
+</div>
+<script type="text/javascript">
+const productSeoFormHandler = {
+applySeoTitle: function () {
+const seoTitleAiElement = document.querySelector('.js-ai-generated-seo-title')
+const seoTitleInput = document.querySelector('.js-seo-textfield.js-seo-title')
+
+seoTitleInput.value = productSeoAiAssistantHandler.generatedSeoTitle
+
+this.triggerKeyupEvent(seoTitleInput)
+this.toggleStateClass(true, seoTitleAiElement, 'seo-ai-hidden')
+},
+applySeoDesc: function () {
+const seoDescAiElement = document.querySelector('.js-ai-generated-seo-desc')
+const seoDescInput = document.querySelector('.js-seo-textfield.js-seo-desc')
+
+seoDescInput.value = productSeoAiAssistantHandler.generatedSeoDesc
+
+this.triggerKeyupEvent(seoDescInput)
+this.toggleStateClass(true, seoDescAiElement, 'seo-ai-hidden')
+},
+applySeoKeywords: function () {
+const seoKeywordsAiElement = document.querySelector('.js-ai-generated-seo-keywords')
+const seoKeywordsInput = document.querySelector('.js-seo-textfield.js-seo-keywords')
+
+seoKeywordsInput.value = productSeoAiAssistantHandler.generatedSeoKeywords.join(',')
+
+this.triggerKeyupEvent(seoKeywordsInput)                                 ;
+this.toggleStateClass(true, seoKeywordsAiElement, 'seo-ai-hidden')
+},
+toggleStateClass: function (condition, targetElement, className) {
+const hasClass = Array.from(targetElement.classList).includes(className)
+
+if(condition && !hasClass) {
+targetElement.classList.add(className)
+} else if(!condition && hasClass) {
+targetElement.classList.remove(className)
+}
+},
+triggerKeyupEvent: function (element) {
+element.dispatchEvent(new KeyboardEvent('keyup'))
+}
+}
+
+$(function() {
+var $textfield = $('.js-seo-textfield'),
+$title = $('.js-seo-title'),
+$desc = $('.js-seo-desc'),
+$cell = $('.js-seo-cell');
+
+function toggleSeoPreview() {
+var isFilled = true           ;
+
+$textfield.each(function() {
+if ($title.val() === '' && $desc.val() === '') {
+isFilled = false                                 ;
+}
+})                                               ;
+
+if (isFilled) {
+$cell.show()    ;
+} else {
+$cell.hide()    ;
+}
+}
+
+function updateSeoPreview($inputText) {
+var value = $inputText.val(),
+limitLength = $inputText.data('limit-length');
+
+if (limitLength < value.length) {
+value = value.substr(0, limitLength) + '...';
+}
+
+$('#' + $inputText.data('for')).text(value);
+toggleSeoPreview()                           ;
+}
+
+function updateCharCounter($inputText) {
+var currentCount = $inputText.val().length,
+limitLength = $inputText.data('limit-length'),
+$label = $inputText.nextAll('.js-seo-label');
+
+$label.html('現在' + currentCount + '文字（' + limitLength + '文字以内推奨）');
+}
+
+$textfield.on('keyup', function() {
+updateSeoPreview($(this))           ;
+updateCharCounter($(this))          ;
+}).trigger('keyup');
+})                                  ;
+</script>
+</div>
+</div>
+</div>
+</div>
