@@ -110,6 +110,85 @@ class ColorMeClient:
             logger.error(f"商品取得エラー (ID: {product_id}): {e}")
             return None
 
+    def get_categories(self) -> list[dict]:
+        """
+        カテゴリー一覧を取得する
+
+        Returns:
+            list: カテゴリー情報のリスト
+            [
+                {
+                    "id_big": 大カテゴリーID,
+                    "id_small": 小カテゴリーID,
+                    "name_big": 大カテゴリー名,
+                    "name_small": 小カテゴリー名
+                },
+                ...
+            ]
+        """
+        if not self.access_token:
+            logger.error("カラーミーアクセストークンが設定されていません")
+            return []
+
+        try:
+            response = requests.get(
+                f"{self.API_BASE}/categories.json",
+                headers=self._headers(),
+                timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            categories = []
+            for cat in data.get("categories", []):
+                categories.append({
+                    "id_big": cat.get("id_big", 0),
+                    "id_small": cat.get("id_small", 0),
+                    "name_big": cat.get("name_big", ""),
+                    "name_small": cat.get("name_small", "")
+                })
+
+            logger.info(f"カテゴリー取得完了: {len(categories)}件")
+            return categories
+
+        except requests.RequestException as e:
+            logger.error(f"カテゴリー取得エラー: {e}")
+            return []
+
+    def get_groups(self) -> list[dict]:
+        """
+        グループ一覧を取得する
+
+        Returns:
+            list: グループ情報のリスト
+        """
+        if not self.access_token:
+            logger.error("カラーミーアクセストークンが設定されていません")
+            return []
+
+        try:
+            response = requests.get(
+                f"{self.API_BASE}/groups.json",
+                headers=self._headers(),
+                timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            groups = []
+            for grp in data.get("groups", []):
+                groups.append({
+                    "id": grp.get("id", 0),
+                    "name": grp.get("name", "")
+                })
+
+            logger.info(f"グループ取得完了: {len(groups)}件")
+            return groups
+
+        except requests.RequestException as e:
+            logger.error(f"グループ取得エラー: {e}")
+            return []
+
     def get_current_prices(self, product_ids: list[int]) -> dict[int, int]:
         """
         複数商品の現在価格を取得する

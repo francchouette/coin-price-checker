@@ -1474,3 +1474,145 @@ class SpreadsheetClient:
         except Exception as e:
             logger.error(f"同期ステータス更新エラー: {e}")
             return False
+
+    def add_colorme_product_row(
+        self,
+        product_data: dict,
+        timestamp: str
+    ) -> bool:
+        """
+        カラーミー商品管理シートに新規行を追加する
+
+        Args:
+            product_data: 商品データ
+                - name: 商品名 (B列)
+                - source_url: 取得元URL (D列)
+                - source_price: 取得元価格 (M列)
+                - currency: 取得通貨 (N列)
+                - in_stock: 在庫状況 (AB列)
+                - model_number: 型番 (AD列)
+                - category_id_big: 大カテゴリーID (AE列)
+                - category_id_small: 小カテゴリーID (AF列)
+                - group_ids: グループID (AG列)
+                - description: 商品説明 (AP列)
+                - simple_description: 簡易説明 (AQ列)
+                - image_urls: 画像URLリスト (AR〜BA列)
+            timestamp: 更新日時
+
+        Returns:
+            bool: 成功時True
+        """
+        if not self._spreadsheet:
+            return False
+
+        try:
+            sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME)
+
+            # 新規行のデータを作成（BC列まで = 55列）
+            row = [""] * 55
+
+            # A列: カラーミー商品ID（新規なので空）
+            row[0] = ""
+            # B列: 商品名
+            row[1] = product_data.get("name", "")
+            # C列: カラーミー商品URL（空）
+            row[2] = ""
+            # D列: 取得元URL
+            row[3] = product_data.get("source_url", "")
+            # E列: 枚数（デフォルト1）
+            row[4] = "1"
+            # F列: マージン率（デフォルト1.1）
+            row[5] = "1.1"
+            # G列: 固定マージン価格（空）
+            row[6] = ""
+            # H列: 価格更新（デフォルトOFF）
+            row[7] = "FALSE"
+            # I列: 在庫連動（デフォルトOFF）
+            row[8] = "FALSE"
+            # J列: 在庫数量（デフォルト1）
+            row[9] = "1"
+            # K列: 表示連動（デフォルト: 変更しない）
+            row[10] = "変更しない"
+            # L列: 現在価格（空）
+            row[11] = ""
+            # M列: 取得元価格
+            row[12] = str(product_data.get("source_price", ""))
+            # N列: 取得通貨
+            row[13] = product_data.get("currency", "USD")
+            # O列: 為替種類（デフォルト: クレカ）
+            row[14] = "クレカ"
+            # P列: 為替レート（空、自動計算）
+            row[15] = ""
+            # Q列: 本体計算価格（空、自動計算）
+            row[16] = ""
+            # R列: 送料（空、手入力）
+            row[17] = ""
+            # S列: 諸経費（空、手入力）
+            row[18] = ""
+            # T列: 販売価格（空、手入力）
+            row[19] = ""
+            # U〜X列: 各種計算（空）
+            row[20] = ""
+            row[21] = ""
+            row[22] = ""
+            row[23] = ""
+            # Y列: 最終更新
+            row[24] = timestamp
+            # Z列: 外部-前回価格
+            row[25] = ""
+            # AA列: 外部-変動率
+            row[26] = ""
+            # AB列: 外部-在庫状況
+            row[27] = "○" if product_data.get("in_stock") else "×"
+            # AC列: 同期モード（新規登録）
+            row[28] = "新規登録"
+            # AD列: 型番
+            row[29] = product_data.get("model_number", "")
+            # AE列: カテゴリーID（大）
+            row[30] = str(product_data.get("category_id_big", ""))
+            # AF列: カテゴリーID（小）
+            row[31] = str(product_data.get("category_id_small", ""))
+            # AG列: グループID
+            group_ids = product_data.get("group_ids", [])
+            row[32] = ",".join(str(g) for g in group_ids) if group_ids else ""
+            # AH列: 定価（空、手入力）
+            row[33] = ""
+            # AI列: 会員価格（空）
+            row[34] = ""
+            # AJ列: 個別送料（R列を参照する数式）
+            row[35] = "=R:R"  # R列の値を参照
+            # AK列: 在庫管理（デフォルト: する）
+            row[36] = "する"
+            # AL列: 売切れ表示（デフォルト: 表示する）
+            row[37] = "表示する"
+            # AM列: 適正在庫数（デフォルト1）
+            row[38] = "1"
+            # AN列: 最小購入数（デフォルト1）
+            row[39] = "1"
+            # AO列: 最大購入数（デフォルト99）
+            row[40] = "99"
+            # AP列: 商品説明
+            row[41] = product_data.get("description", "")
+            # AQ列: 簡易説明
+            row[42] = product_data.get("simple_description", "")
+            # AR〜BA列: 画像URL1〜10
+            image_urls = product_data.get("image_urls", [])
+            for i in range(10):
+                if i < len(image_urls):
+                    row[43 + i] = image_urls[i]
+                else:
+                    row[43 + i] = ""
+            # BB列: 同期ステータス（空）
+            row[53] = ""
+            # BC列: 同期日時（空）
+            row[54] = ""
+
+            # 行を追加
+            sheet.append_row(row, value_input_option='USER_ENTERED')
+            logger.info(f"カラーミー商品管理シートに新規行を追加: {product_data.get('name', '')}")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"新規行追加エラー: {e}")
+            return False

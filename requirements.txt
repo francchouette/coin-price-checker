@@ -14,6 +14,9 @@ pandas==2.2.3
 # HTTP requests (for notifications)
 requests==2.32.3
 
+# AI text generation
+anthropic==0.39.0
+
 # Environment variables
 python-dotenv==1.0.1
 
