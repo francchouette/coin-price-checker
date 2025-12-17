@@ -217,7 +217,8 @@ class ColorMeClient:
                 "display_state": "showing"
             }
             if parent_id > 0:
-                group_data["parent_id"] = parent_id
+                # カラーミーAPIでは parent_group_id を使用
+                group_data["parent_group_id"] = parent_id
 
             logger.info(f"グループ作成リクエスト: {group_data}")
             response = requests.post(
@@ -230,12 +231,12 @@ class ColorMeClient:
             result = response.json()
             group_result = result.get("group", {})
             new_id = group_result.get("id", 0)
-            returned_parent_id = group_result.get("parent_id")
-            logger.info(f"グループ新規作成成功: {name} → ID: {new_id}, 親ID: {returned_parent_id}")
+            returned_parent_id = group_result.get("parent_group_id")
+            logger.info(f"グループ新規作成成功: {name} → ID: {new_id}, 親グループID: {returned_parent_id}")
 
             # 親IDが正しく設定されていない場合は警告
             if parent_id > 0 and returned_parent_id != parent_id:
-                logger.warning(f"  親ID不一致！リクエスト: {parent_id}, レスポンス: {returned_parent_id}")
+                logger.warning(f"  親グループID不一致！リクエスト: {parent_id}, レスポンス: {returned_parent_id}")
 
             return new_id, ""
 
