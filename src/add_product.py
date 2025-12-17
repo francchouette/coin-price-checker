@@ -1330,6 +1330,13 @@ def update_row_with_product_info(
                 'values': [[str(product_id)]]
             })
 
+            # C列: カラーミー商品URL（商品IDから自動生成）
+            colorme_url = f"https://ybx.jp/?pid={product_id}"
+            updates.append({
+                'range': f'C{row_num}',
+                'values': [[colorme_url]]
+            })
+
         # B列: 商品名（日本語商品名があればそちらを使用）
         product_name = japanese_name if japanese_name else product_info.get("name", "")
         updates.append({
