@@ -377,18 +377,32 @@ class ProductScraper:
 
             # 画像URL
             try:
-                # BullionStarの商品画像は /files/ パス配下（/img/ はアイコン類）
-                img_elems = page.query_selector_all("img[src*='static.bullionstar.com/files/']")
-                for img in img_elems[:10]:
-                    src = img.get_attribute("src")
-                    if src and "/files/" in src:
-                        # サムネイル（73_73_、100_100_）ではなく大きい画像を取得
-                        # SVGファイルは除外
-                        if not any(small in src for small in ["73_73_", "100_100_", ".svg"]):
-                            if src not in result["image_urls"]:
-                                result["image_urls"].append(src)
-            except Exception:
-                pass
+                # BullionStarの商品画像はzoomWindowのbackground-imageに格納
+                # まずzoomWindowから高解像度画像を取得
+                zoom_windows = page.query_selector_all(".zoomWindow")
+                for zw in zoom_windows:
+                    style = zw.get_attribute("style") or ""
+                    # background-image: url("...") からURLを抽出
+                    bg_match = re.search(r'background-image:\s*url\(["\']?([^"\']+)["\']?\)', style)
+                    if bg_match:
+                        img_url = bg_match.group(1)
+                        if img_url and "/files/" in img_url and img_url not in result["image_urls"]:
+                            result["image_urls"].append(img_url)
+
+                # zoomWindowがない場合、商品画像ギャラリーから取得
+                if not result["image_urls"]:
+                    # 商品ページの画像ギャラリー（サムネイル除く）
+                    gallery_imgs = page.query_selector_all(".product-gallery img, .product-image img, [data-zoom-image]")
+                    for img in gallery_imgs[:10]:
+                        # data-zoom-imageがあればそれを優先（高解像度）
+                        src = img.get_attribute("data-zoom-image") or img.get_attribute("src")
+                        if src and "/files/" in src:
+                            # 小さいサムネイルを除外
+                            if not any(small in src for small in ["73_73_", "100_100_", "125_125_"]):
+                                if src not in result["image_urls"]:
+                                    result["image_urls"].append(src)
+            except Exception as e:
+                logger.warning(f"画像取得エラー: {e}")
 
             # SKU
             try:
