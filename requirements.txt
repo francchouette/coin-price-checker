@@ -15,7 +15,7 @@ pandas==2.2.3
 requests==2.32.3
 
 # AI text generation
-anthropic==0.39.0
+anthropic>=0.75.0
 
 # Environment variables
 python-dotenv==1.0.1
