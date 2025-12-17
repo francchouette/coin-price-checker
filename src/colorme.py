@@ -508,12 +508,12 @@ class ColorMeClient:
         image_fields = {k: v for k, v in data.items() if 'image' in k.lower() or 'img' in k.lower()}
         if image_fields:
             logger.debug(f"[画像フィールド] 商品ID {product_id}: {image_fields}")
-        # 追加画像
+        # 追加画像（APIレスポンスは {src: URL, position: N, mobile: bool} の形式）
         other_images = data.get("images") or []
         if isinstance(other_images, list):
             for img in other_images:
                 if isinstance(img, dict):
-                    url = img.get("url") or img.get("image_url") or ""
+                    url = img.get("src") or img.get("url") or img.get("image_url") or ""
                     if url and url not in image_urls:
                         image_urls.append(url)
                 elif isinstance(img, str) and img and img not in image_urls:
