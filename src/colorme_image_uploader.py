@@ -285,6 +285,82 @@ class ColorMeImageUploader:
             logger.error(f"    → 画像準備エラー: {e}")
             return None
 
+    async def _wait_for_plupload_complete(self, max_wait: float = 30.0) -> bool:
+        """
+        pluploadのアップロード完了を待機
+
+        pluploadはファイル選択後に非同期でサーバーにアップロードするため、
+        アップロード完了を待ってから保存する必要がある。
+
+        Args:
+            max_wait: 最大待機時間（秒）
+
+        Returns:
+            bool: アップロード完了時True
+        """
+        start_time = asyncio.get_event_loop().time()
+
+        while (asyncio.get_event_loop().time() - start_time) < max_wait:
+            try:
+                # 方法1: pluploadのアップロード中表示を確認
+                # アップロード中のプログレスバーやスピナーが消えるのを待つ
+                uploading_indicators = await self._page.query_selector_all(
+                    '.plupload_progress, .uploading, [class*="upload"][class*="progress"], '
+                    '.plupload_file_status:not(.plupload_done)'
+                )
+
+                # プログレス表示が消えたらアップロード完了
+                if not uploading_indicators:
+                    # 追加確認: 画像プレビューが表示されているか
+                    preview_images = await self._page.query_selector_all(
+                        '.plupload_file_thumb img, .uploaded-image, '
+                        'img[src*="shop-pro.jp"], .image-preview img'
+                    )
+                    if preview_images:
+                        logger.info(f"  → アップロード完了確認（プレビュー画像: {len(preview_images)}枚）")
+                        return True
+
+                # 方法2: ネットワークが静かになるのを待つ
+                await self._page.wait_for_load_state("networkidle", timeout=5000)
+
+                # 方法3: JavaScriptでpluploadの状態を確認
+                try:
+                    plupload_state = await self._page.evaluate("""
+                        () => {
+                            // グローバルのpluploadインスタンスを探す
+                            if (typeof uploader !== 'undefined' && uploader.files) {
+                                const pending = uploader.files.filter(f =>
+                                    f.status !== plupload.DONE && f.status !== plupload.FAILED
+                                ).length;
+                                return { pending: pending, total: uploader.files.length };
+                            }
+                            // 他の命名パターン
+                            if (typeof imageUploader !== 'undefined' && imageUploader.files) {
+                                const pending = imageUploader.files.filter(f =>
+                                    f.status !== plupload.DONE && f.status !== plupload.FAILED
+                                ).length;
+                                return { pending: pending, total: imageUploader.files.length };
+                            }
+                            return null;
+                        }
+                    """)
+                    if plupload_state and plupload_state.get('pending', 0) == 0:
+                        logger.info(f"  → pluploadアップロード完了（{plupload_state.get('total', 0)}ファイル）")
+                        return True
+                except Exception:
+                    pass  # JavaScriptエラーは無視
+
+                await asyncio.sleep(2)
+
+            except Exception as e:
+                logger.debug(f"  plupload状態確認エラー: {e}")
+                await asyncio.sleep(2)
+
+        # タイムアウト時も一応進む（ネットワーク静止を最終確認）
+        logger.warning(f"  plupload完了待機タイムアウト（{max_wait}秒）")
+        await self._page.wait_for_load_state("networkidle", timeout=10000)
+        return False
+
     async def _extract_image_urls_from_page(self, product_id: int) -> list[str]:
         """
         商品編集ページから画像URLを直接抽出
@@ -521,10 +597,12 @@ class ColorMeImageUploader:
                         file_paths = [str(p) for p in temp_paths]
                         await image_inputs[0].set_input_files(file_paths)
 
-                    # 全画像のアップロード完了待機
-                    await asyncio.sleep(wait_after_upload)
+                    # pluploadの非同期アップロード完了を待機
+                    logger.info("  pluploadアップロード完了待機中...")
+                    await self._wait_for_plupload_complete(wait_after_upload * 3)
 
                     # 保存ボタン実行（JavaScript経由）
+                    logger.info("  保存ボタン実行中...")
                     await self._page.evaluate("jf_Submit('UPD')")
 
                     # 保存完了待機（サーバー処理時間を考慮して長めに）
