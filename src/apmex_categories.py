@@ -481,6 +481,8 @@ def save_categories_to_spreadsheet(categories: list[ApmexCategory], refresh: boo
     """
     カテゴリーをスプレッドシートに保存（親子関係を保持）
 
+    URLを一意キーとして使用（同じ名前でも異なる階層のカテゴリーを区別）
+
     Args:
         categories: APMEXカテゴリーリスト
         refresh: Trueの場合、既存データの親カテゴリーも更新
@@ -512,18 +514,20 @@ def save_categories_to_spreadsheet(categories: list[ApmexCategory], refresh: boo
         # 既存データを取得
         existing_data = sheet.get_all_values()
 
-        # カテゴリー名 → 新しい親カテゴリー名のマッピング
-        new_parent_map = {cat.name: cat.parent_name or "" for cat in categories}
+        # URL → 新しい親カテゴリー名のマッピング（URLで一意に識別）
+        new_parent_map = {cat.url: (cat.name, cat.parent_name or "") for cat in categories}
 
         # 既存データの親カテゴリーを更新（refreshモード）
         if refresh and len(existing_data) > 1:
             updates = []
             for i, row in enumerate(existing_data[1:], start=2):  # ヘッダーをスキップ
-                if len(row) >= 1:
+                if len(row) >= 3:
                     name = row[0].strip()
                     old_parent = row[1].strip() if len(row) > 1 else ""
-                    if name in new_parent_map:
-                        new_parent = new_parent_map[name]
+                    url = row[2].strip() if len(row) > 2 else ""
+
+                    if url in new_parent_map:
+                        _, new_parent = new_parent_map[url]
                         if old_parent != new_parent:
                             updates.append({
                                 'range': f'B{i}',
@@ -537,20 +541,20 @@ def save_categories_to_spreadsheet(categories: list[ApmexCategory], refresh: boo
             else:
                 logger.info("親カテゴリーの更新はありませんでした")
 
-        # 既存キーを収集（名前のみで判定）
-        existing_names = set()
+        # 既存URLを収集（URLで一意性を判定）
+        existing_urls = set()
         for row in existing_data[1:]:  # ヘッダーをスキップ
-            if len(row) >= 1 and row[0].strip():
-                existing_names.add(row[0].strip())
+            if len(row) >= 3 and row[2].strip():
+                existing_urls.add(row[2].strip())
 
         # カテゴリーを親子順にソート（親カテゴリーを先に登録するため）
         # 親カテゴリーがないもの（トップレベル）を先に
         sorted_categories = sorted(categories, key=lambda c: (c.parent_name or "", c.name))
 
-        # 新規カテゴリーのみ追加
+        # 新規カテゴリーのみ追加（URLで判定）
         new_rows = []
         for cat in sorted_categories:
-            if cat.name not in existing_names:
+            if cat.url not in existing_urls:
                 new_rows.append([
                     cat.name,               # A: カテゴリー名
                     cat.parent_name or "",  # B: 親カテゴリー
