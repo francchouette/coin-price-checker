@@ -224,98 +224,64 @@ class BullionstarProductScraper:
             total_count = await self._page.evaluate("() => window.productTotal || 0")
             logger.info(f"    商品総数: {total_count}件")
 
-            # 全商品が読み込まれるまでスクロール
-            prev_count = 0
-            no_change_count = 0
-            max_no_change = 8  # 変化がない回数の上限を増加
-            max_scroll_attempts = 100  # 最大スクロール回数を増加
+            # 仮想スクロール対応: スクロールしながらリアルタイムで商品URLを収集
+            seen_urls = set()
+            no_new_count = 0
+            max_no_new = 10  # 新規商品が見つからない回数の上限
+            max_scroll_attempts = 200  # 最大スクロール回数
+            scroll_step = 800  # スクロールのステップ（ピクセル）
 
-            for _ in range(max_scroll_attempts):
-                # 現在の商品リンクを取得
-                product_links = await self._page.query_selector_all('a[href*="/buy/product/"]')
-                current_count = len(product_links)
+            for scroll_num in range(max_scroll_attempts):
+                # 現在表示されている商品リンクを取得して収集
+                current_links = await self._page.evaluate('''() => {
+                    const links = document.querySelectorAll('a[href*="/buy/product/"]');
+                    return Array.from(links).map(a => a.href);
+                }''')
+
+                new_found = 0
+                for href in current_links:
+                    if href and href not in seen_urls:
+                        seen_urls.add(href)
+                        new_found += 1
 
                 # 目標数に達したら終了
-                if total_count > 0 and current_count >= total_count:
-                    logger.info(f"    全商品読み込み完了: {current_count}/{total_count}")
+                if total_count > 0 and len(seen_urls) >= total_count:
+                    logger.info(f"    全商品収集完了: {len(seen_urls)}/{total_count}")
                     break
 
-                if current_count == prev_count:
-                    no_change_count += 1
-                    if no_change_count >= max_no_change:
-                        logger.info(f"    読み込み終了: {current_count}件 (変化なし{max_no_change}回)")
+                if new_found == 0:
+                    no_new_count += 1
+                    if no_new_count >= max_no_new:
+                        logger.info(f"    収集終了: {len(seen_urls)}件 (新規なし{max_no_new}回)")
                         break
                 else:
-                    no_change_count = 0
-                    prev_count = current_count
+                    no_new_count = 0
 
-                # ページ下部までスクロール
-                await self._page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                await self._page.wait_for_timeout(1500)  # 待機時間を増加
+                # 段階的にスクロール
+                await self._page.evaluate(f"window.scrollBy(0, {scroll_step})")
+                await self._page.wait_for_timeout(300)  # 短い待機
 
-                # "Load More" ボタンがあればクリック
-                load_more = await self._page.query_selector('button:has-text("Load More"), a:has-text("Load More"), .load-more')
-                if load_more:
+                # 10回ごとにネットワーク待機
+                if scroll_num % 10 == 9:
                     try:
-                        await load_more.click()
-                        await self._page.wait_for_timeout(3000)  # クリック後の待機を増加
+                        await self._page.wait_for_load_state("networkidle", timeout=3000)
                     except:
                         pass
 
-                # ネットワークが落ち着くまで待機
+            logger.info(f"    収集したURL: {len(seen_urls)}件")
+
+            # 収集したURLから商品データを作成
+            for product_url in seen_urls:
                 try:
-                    await self._page.wait_for_load_state("networkidle", timeout=5000)
-                except:
-                    pass
-
-            # 商品リンクを取得してパース
-            product_links = await self._page.query_selector_all('a[href*="/buy/product/"]')
-            seen_urls = set()
-
-            for link in product_links:
-                try:
-                    href = await link.get_attribute('href')
-                    if not href or '/buy/product/' not in href:
-                        continue
-
-                    # URLを正規化
-                    if href.startswith('/'):
-                        product_url = f"{base_url}{href}"
-                    elif href.startswith('http'):
-                        product_url = href
+                    # URLから商品名を抽出 (例: /buy/product/gold-bar-1oz -> Gold Bar 1oz)
+                    url_parts = product_url.split('/buy/product/')
+                    if len(url_parts) > 1:
+                        name = url_parts[1].split('?')[0].replace('-', ' ').title()
                     else:
-                        continue
-
-                    # 重複チェック
-                    if product_url in seen_urls:
-                        continue
-                    seen_urls.add(product_url)
-
-                    # 商品名を取得（親要素から）
-                    name = await link.inner_text()
-                    name = re.sub(r'<[^>]+>', '', name).strip()
-                    name = re.sub(r'\s+', ' ', name).strip()
-
-                    if not name or len(name) < 3:
-                        # 親要素から名前を探す
-                        parent = await link.evaluate_handle("el => el.closest('.product-price-update, [class*=\"product\"]')")
-                        if parent:
-                            name_elem = await parent.query_selector('.name, [class*="title"], h2, h3')
-                            if name_elem:
-                                name = await name_elem.inner_text()
-                                name = re.sub(r'\s+', ' ', name).strip()
-
-                    # 名前が取得できない場合はURLから生成
-                    if not name or len(name) < 3:
-                        # URLから商品名を抽出 (例: /buy/product/gold-bar-1oz -> gold-bar-1oz)
-                        url_parts = href.split('/buy/product/')
-                        if len(url_parts) > 1:
-                            name = url_parts[1].split('?')[0].replace('-', ' ').title()
-                        else:
-                            name = "Unknown Product"
+                        name = "Unknown Product"
 
                     products.append(BullionstarProduct(
-                        name=name[:200],  # 長すぎる名前を切り詰め
+                        name=name[:200],
                         url=product_url,
                         top_category=top_category,
                         parent_category=parent_category,
@@ -325,7 +291,7 @@ class BullionstarProductScraper:
                     ))
 
                 except Exception as e:
-                    logger.debug(f"商品リンク処理エラー: {e}")
+                    logger.debug(f"商品データ作成エラー: {e}")
                     continue
 
             logger.info(f"    取得した商品: {len(products)}件")
