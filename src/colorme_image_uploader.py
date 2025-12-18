@@ -583,16 +583,50 @@ class ColorMeImageUploader:
                         for i, temp_path in enumerate(temp_paths):
                             logger.info(f"  [{i+1}/{len(temp_paths)}] アップロード中...")
                             await image_inputs[i].set_input_files(str(temp_path))
-                            await asyncio.sleep(2)
+                            # changeイベントを発火してpluploadをトリガー
+                            await image_inputs[i].dispatch_event("change")
+                            await asyncio.sleep(3)
                     else:
                         # 入力フィールドが1つの場合は複数ファイルを一度にセット
                         logger.info(f"  複数ファイルを一括アップロード中 ({len(temp_paths)}枚)...")
                         file_paths = [str(p) for p in temp_paths]
                         await image_inputs[0].set_input_files(file_paths)
+                        # changeイベントを発火してpluploadをトリガー
+                        await image_inputs[0].dispatch_event("change")
+
+                    # pluploadのアップロード開始を明示的にトリガー
+                    await asyncio.sleep(2)
+                    try:
+                        await self._page.evaluate("""
+                            () => {
+                                // pluploadインスタンスを探してアップロード開始
+                                if (typeof uploader !== 'undefined' && uploader.start) {
+                                    uploader.start();
+                                    return 'started uploader';
+                                }
+                                if (typeof imageUploader !== 'undefined' && imageUploader.start) {
+                                    imageUploader.start();
+                                    return 'started imageUploader';
+                                }
+                                // 全てのpluploadインスタンスを探す
+                                if (typeof plupload !== 'undefined') {
+                                    for (var key in window) {
+                                        if (window[key] && window[key].start && window[key].files) {
+                                            window[key].start();
+                                            return 'started ' + key;
+                                        }
+                                    }
+                                }
+                                return 'no uploader found';
+                            }
+                        """)
+                        logger.info("  pluploadアップロード開始トリガー実行")
+                    except Exception as e:
+                        logger.debug(f"  plupload開始トリガーエラー（無視）: {e}")
 
                     # pluploadの非同期アップロード完了を待機
                     logger.info("  pluploadアップロード完了待機中...")
-                    await self._wait_for_plupload_complete(wait_after_upload * 3)
+                    await self._wait_for_plupload_complete(wait_after_upload * 4)
 
                     # 保存ボタン実行（JavaScript経由）
                     logger.info("  保存ボタン実行中...")
