@@ -1,31 +1,45 @@
-name: Fetch APMEX Categories
+name: APMEX Categories
 
 on:
   workflow_dispatch:
     inputs:
+      command:
+        description: 'コマンド: fetch=カテゴリー取得→シート保存, register=シート→カラーミー登録'
+        required: true
+        default: 'fetch'
+        type: choice
+        options:
+          - fetch
+          - register
       parent_group_id:
-        description: '親グループID（APMEX用の親グループ、0でルート）'
+        description: '親グループID（register時のみ、0でルート）'
         required: false
         default: '0'
       dry_run:
-        description: 'ドライラン（プレビューのみ）'
-        required: false
-        default: true
-        type: boolean
-      fetch_only:
-        description: 'カテゴリー取得のみ（カラーミー登録しない）'
+        description: 'ドライラン（register時のみ、プレビューのみ）'
         required: false
         default: false
         type: boolean
 
 jobs:
-  fetch-categories:
+  apmex-categories:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/613320899872/locations/global/workloadIdentityPools/github-actions-pool/providers/github'
+          service_account: 'spreadsheet-access@coin-price-tracker-479614.iam.gserviceaccount.com'
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -39,29 +53,31 @@ jobs:
           pip install -r requirements.txt
 
       - name: Install Playwright browsers
+        if: inputs.command == 'fetch'
         run: |
           python -m playwright install chromium
           python -m playwright install-deps chromium
 
-      - name: Fetch APMEX categories (fetch only)
-        if: inputs.fetch_only == true
+      - name: Fetch APMEX categories
+        if: inputs.command == 'fetch'
         env:
           BRIGHTDATA_BROWSER_WS: ${{ secrets.BRIGHTDATA_BROWSER_WS }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
         run: |
-          python -m src.apmex_categories --fetch-only -v
+          python -m src.apmex_categories fetch -v
 
-      - name: Fetch and register categories (dry run)
-        if: inputs.fetch_only == false && inputs.dry_run == true
+      - name: Register categories (dry run)
+        if: inputs.command == 'register' && inputs.dry_run == true
         env:
-          BRIGHTDATA_BROWSER_WS: ${{ secrets.BRIGHTDATA_BROWSER_WS }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
         run: |
-          python -m src.apmex_categories --dry-run --parent-group-id ${{ inputs.parent_group_id }} -v
+          python -m src.apmex_categories register --dry-run --parent-group-id ${{ inputs.parent_group_id }} -v
 
-      - name: Fetch and register categories
-        if: inputs.fetch_only == false && inputs.dry_run == false
+      - name: Register categories
+        if: inputs.command == 'register' && inputs.dry_run == false
         env:
-          BRIGHTDATA_BROWSER_WS: ${{ secrets.BRIGHTDATA_BROWSER_WS }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
         run: |
-          python -m src.apmex_categories --parent-group-id ${{ inputs.parent_group_id }} -v
+          python -m src.apmex_categories register --parent-group-id ${{ inputs.parent_group_id }} -v

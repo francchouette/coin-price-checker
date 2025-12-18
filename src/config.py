@@ -154,6 +154,19 @@ class Config:
     SHEET_MASTER_BRITANNIA: str = "商品マスタ_Britannia"
     SHEET_MASTER_APMEX: str = "商品マスタ_APMEX"
 
+    # APMEXカテゴリーシート名
+    SHEET_APMEX_CATEGORIES: str = "APMEXカテゴリー"
+
+    # APMEXカテゴリーシートのヘッダー
+    APMEX_CATEGORY_HEADERS: list[str] = [
+        "カテゴリー名",      # A列
+        "APMEX URL",         # B列
+        "登録",              # C列 (TRUE/FALSE)
+        "カラーミーグループID",  # D列
+        "登録日時",          # E列
+        "ステータス",        # F列
+    ]
+
     # Bright Data Proxy設定（レガシー）
     BRIGHTDATA_HOST: str = os.getenv("BRIGHTDATA_HOST", "")
     BRIGHTDATA_USERNAME: str = os.getenv("BRIGHTDATA_USERNAME", "")
