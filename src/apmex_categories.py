@@ -30,6 +30,21 @@ from src.spreadsheet import SpreadsheetClient
 
 logger = logging.getLogger(__name__)
 
+# 最上位カテゴリー（親を持たないルートカテゴリー）
+ROOT_CATEGORIES = {
+    "Best Sellers",
+    "Gold",
+    "Silver",
+    "Platinum",
+    "Deals",
+    "Rare Coins",
+    "Currency & Other",
+    "Holiday",
+    "Sell to Us",
+    "IRA",
+    "Resources",
+}
+
 
 @dataclass
 class ApmexCategory:
@@ -160,6 +175,9 @@ class ApmexCategoryScraper:
         例: data-label="Gold|United States Mint|American Eagles"
         → 大カテゴリー: Gold, 親: United States Mint, 名前: American Eagles
 
+        最上位カテゴリー（ROOT_CATEGORIES）は親を持たない。
+        それ以外は適切な親カテゴリーを設定する。
+
         Args:
             soup: BeautifulSoupオブジェクト
 
@@ -186,16 +204,23 @@ class ApmexCategoryScraper:
                 # 例: "Gold|United States Mint|American Eagles"
                 parts = [p.strip() for p in data_label.split('|') if p.strip()]
 
-                if len(parts) >= 2:
-                    # 最後が名前、その前が親カテゴリー
-                    # parts[0] = 大カテゴリー（Gold, Silver等）
-                    # parts[1:-1] = 中間カテゴリー
-                    # parts[-1] = このカテゴリー名
+                # 親カテゴリー名を決定
+                parent_name = None
 
-                    # 親カテゴリー名を決定
-                    if len(parts) == 2:
-                        # "Gold|Best Sellers" → 親なし（トップレベル）
+                if len(parts) >= 1:
+                    # 最上位カテゴリー（ROOT_CATEGORIES）かどうかをチェック
+                    if text in ROOT_CATEGORIES:
+                        # このカテゴリー自体が最上位 → 親なし
                         parent_name = None
+                    elif len(parts) == 1:
+                        # パーツが1つで最上位でない場合
+                        parent_name = None
+                    elif len(parts) == 2:
+                        # "Gold|Best Sellers" → 親は "Gold"（最上位カテゴリー）
+                        if parts[0] in ROOT_CATEGORIES:
+                            parent_name = parts[0]
+                        else:
+                            parent_name = None
                     else:
                         # "Gold|United States Mint|American Eagles" → 親は "United States Mint"
                         parent_name = parts[-2]
@@ -204,13 +229,6 @@ class ApmexCategoryScraper:
                         name=text,
                         url=href if href.startswith('http') else f"{self.APMEX_URL}{href}",
                         parent_name=parent_name
-                    ))
-                elif len(parts) == 1:
-                    # トップレベルカテゴリー
-                    categories.append(ApmexCategory(
-                        name=text,
-                        url=href if href.startswith('http') else f"{self.APMEX_URL}{href}",
-                        parent_name=None
                     ))
 
         # data-labelがない場合のフォールバック
@@ -343,6 +361,9 @@ def parse_categories_from_html_file(file_path: str) -> list[ApmexCategory]:
     """
     ローカルHTMLファイルからカテゴリーを解析
 
+    最上位カテゴリー（ROOT_CATEGORIES）は親を持たない。
+    それ以外は適切な親カテゴリーを設定する。
+
     Args:
         file_path: HTMLファイルのパス
 
@@ -376,22 +397,31 @@ def parse_categories_from_html_file(file_path: str) -> list[ApmexCategory]:
                 # data-labelから階層を解析
                 parts = [p.strip() for p in data_label.split('|') if p.strip()]
 
-                if len(parts) >= 2:
-                    if len(parts) == 2:
+                # 親カテゴリー名を決定
+                parent_name = None
+
+                if len(parts) >= 1:
+                    # 最上位カテゴリー（ROOT_CATEGORIES）かどうかをチェック
+                    if text in ROOT_CATEGORIES:
+                        # このカテゴリー自体が最上位 → 親なし
                         parent_name = None
+                    elif len(parts) == 1:
+                        # パーツが1つで最上位でない場合
+                        parent_name = None
+                    elif len(parts) == 2:
+                        # "Gold|Best Sellers" → 親は "Gold"（最上位カテゴリー）
+                        if parts[0] in ROOT_CATEGORIES:
+                            parent_name = parts[0]
+                        else:
+                            parent_name = None
                     else:
+                        # "Gold|United States Mint|American Eagles" → 親は "United States Mint"
                         parent_name = parts[-2]
 
                     categories.append(ApmexCategory(
                         name=text,
                         url=f"https://www.apmex.com{href}" if not href.startswith('http') else href,
                         parent_name=parent_name
-                    ))
-                elif len(parts) == 1:
-                    categories.append(ApmexCategory(
-                        name=text,
-                        url=f"https://www.apmex.com{href}" if not href.startswith('http') else href,
-                        parent_name=None
                     ))
 
         # 重複を除去（URLで判定）
@@ -447,12 +477,13 @@ async def fetch_apmex_categories(html_file: str = None) -> list[ApmexCategory]:
         await scraper.close()
 
 
-def save_categories_to_spreadsheet(categories: list[ApmexCategory]) -> bool:
+def save_categories_to_spreadsheet(categories: list[ApmexCategory], refresh: bool = False) -> bool:
     """
     カテゴリーをスプレッドシートに保存（親子関係を保持）
 
     Args:
         categories: APMEXカテゴリーリスト
+        refresh: Trueの場合、既存データの親カテゴリーも更新
 
     Returns:
         bool: 成功時True
@@ -478,14 +509,39 @@ def save_categories_to_spreadsheet(categories: list[ApmexCategory]) -> bool:
             sheet.update('A1:H1', [Config.APMEX_CATEGORY_HEADERS])
             logger.info(f"シート '{Config.SHEET_APMEX_CATEGORIES}' を作成しました")
 
-        # 既存データを取得（カテゴリー名+親カテゴリー名でチェック）
+        # 既存データを取得
         existing_data = sheet.get_all_values()
-        existing_keys = set()
+
+        # カテゴリー名 → 新しい親カテゴリー名のマッピング
+        new_parent_map = {cat.name: cat.parent_name or "" for cat in categories}
+
+        # 既存データの親カテゴリーを更新（refreshモード）
+        if refresh and len(existing_data) > 1:
+            updates = []
+            for i, row in enumerate(existing_data[1:], start=2):  # ヘッダーをスキップ
+                if len(row) >= 1:
+                    name = row[0].strip()
+                    old_parent = row[1].strip() if len(row) > 1 else ""
+                    if name in new_parent_map:
+                        new_parent = new_parent_map[name]
+                        if old_parent != new_parent:
+                            updates.append({
+                                'range': f'B{i}',
+                                'values': [[new_parent]]
+                            })
+                            logger.info(f"親更新: {name}: '{old_parent}' → '{new_parent}'")
+
+            if updates:
+                sheet.batch_update(updates, value_input_option='RAW')
+                logger.info(f"親カテゴリーを {len(updates)} 件更新しました")
+            else:
+                logger.info("親カテゴリーの更新はありませんでした")
+
+        # 既存キーを収集（名前のみで判定）
+        existing_names = set()
         for row in existing_data[1:]:  # ヘッダーをスキップ
-            if len(row) >= 2 and row[0].strip():
-                # 名前と親カテゴリーの組み合わせで一意性を判断
-                key = (row[0].strip(), row[1].strip() if len(row) > 1 else "")
-                existing_keys.add(key)
+            if len(row) >= 1 and row[0].strip():
+                existing_names.add(row[0].strip())
 
         # カテゴリーを親子順にソート（親カテゴリーを先に登録するため）
         # 親カテゴリーがないもの（トップレベル）を先に
@@ -494,8 +550,7 @@ def save_categories_to_spreadsheet(categories: list[ApmexCategory]) -> bool:
         # 新規カテゴリーのみ追加
         new_rows = []
         for cat in sorted_categories:
-            key = (cat.name, cat.parent_name or "")
-            if key not in existing_keys:
+            if cat.name not in existing_names:
                 new_rows.append([
                     cat.name,               # A: カテゴリー名
                     cat.parent_name or "",  # B: 親カテゴリー
@@ -508,13 +563,11 @@ def save_categories_to_spreadsheet(categories: list[ApmexCategory]) -> bool:
                 ])
                 parent_info = f" (親: {cat.parent_name})" if cat.parent_name else " (トップレベル)"
                 logger.info(f"新規追加: {cat.name}{parent_info}")
-            else:
-                logger.info(f"既存のためスキップ: {cat.name}")
 
         if new_rows:
             sheet.append_rows(new_rows, value_input_option='USER_ENTERED')
             logger.info(f"スプレッドシートに {len(new_rows)} 件追加しました")
-        else:
+        elif not refresh:
             logger.info("追加するカテゴリーはありませんでした")
 
         return True
@@ -734,6 +787,11 @@ async def main():
         type=str,
         help="ローカルHTMLファイルからカテゴリーを読み込む（Bright Data不要）"
     )
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="既存データの親カテゴリーを更新する（fetchコマンド用）"
+    )
 
     args = parser.parse_args()
 
@@ -768,9 +826,11 @@ async def main():
         # スプレッドシートに保存
         logger.info("\n" + "=" * 50)
         logger.info("スプレッドシートに保存")
+        if args.refresh:
+            logger.info("（既存データの親カテゴリーを更新）")
         logger.info("=" * 50)
 
-        if save_categories_to_spreadsheet(categories):
+        if save_categories_to_spreadsheet(categories, refresh=args.refresh):
             logger.info("✅ スプレッドシートへの保存完了")
             logger.info("スプレッドシートで「登録」列をTRUEにして、registerコマンドを実行してください")
         else:
