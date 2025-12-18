@@ -48,7 +48,16 @@ class BullionstarProduct:
     top_category: str      # 最上位カテゴリ (Gold, Silver, Platinum等)
     parent_category: str   # 親カテゴリ (Gold Bars, Gold Coins等)
     child_category: str    # 子カテゴリ (詳細分類)
+    location: str          # ロケーション (Singapore, USA, New Zealand)
     fetched_at: str        # 取得日時
+
+
+# ロケーション定義
+LOCATIONS = {
+    1: "Singapore",
+    2: "USA",
+    3: "New Zealand",
+}
 
 
 # カテゴリー構造定義
@@ -91,9 +100,6 @@ class BullionstarProductScraper:
     MIN_WAIT = 1.0
     MAX_WAIT = 2.0
 
-    # ロケーションID (1=シンガポール)
-    LOCATION_ID = 1
-
     def __init__(self):
         self._session = requests.Session()
         self._session.headers.update({
@@ -113,42 +119,52 @@ class BullionstarProductScraper:
 
     def get_all_products(self) -> list[BullionstarProduct]:
         """
-        全カテゴリの商品ページ一覧を取得
+        全ロケーション・全カテゴリの商品ページ一覧を取得
 
         Returns:
             list[BullionstarProduct]: 商品リスト
         """
         all_products = []
-        seen_urls = set()
+        seen_keys = set()  # (url, location) の組み合わせで重複チェック
         timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
 
-        for top_category, subcategories in CATEGORY_STRUCTURE.items():
-            logger.info(f"\n=== 最上位カテゴリ: {top_category} ===")
+        for location_id, location_name in LOCATIONS.items():
+            logger.info(f"\n{'='*60}")
+            logger.info(f"ロケーション: {location_name} (ID={location_id})")
+            logger.info(f"{'='*60}")
 
-            for parent_category, category_name in subcategories.items():
-                logger.info(f"  親カテゴリ: {parent_category}")
+            for top_category, subcategories in CATEGORY_STRUCTURE.items():
+                logger.info(f"\n=== 最上位カテゴリ: {top_category} ===")
 
-                products = self._fetch_category_products(
-                    category_name=category_name,
-                    top_category=top_category,
-                    parent_category=parent_category,
-                    timestamp=timestamp
-                )
+                for parent_category, category_name in subcategories.items():
+                    logger.info(f"  親カテゴリ: {parent_category}")
 
-                # 重複を除外して追加
-                for product in products:
-                    if product.url not in seen_urls:
-                        seen_urls.add(product.url)
-                        all_products.append(product)
+                    products = self._fetch_category_products(
+                        location_id=location_id,
+                        location_name=location_name,
+                        category_name=category_name,
+                        top_category=top_category,
+                        parent_category=parent_category,
+                        timestamp=timestamp
+                    )
 
-                logger.info(f"    → {len(products)}件取得（累計: {len(all_products)}件）")
-                self._wait()
+                    # 重複を除外して追加（同じURLでも異なるロケーションは別商品）
+                    for product in products:
+                        key = (product.url, product.location)
+                        if key not in seen_keys:
+                            seen_keys.add(key)
+                            all_products.append(product)
+
+                    logger.info(f"    → {len(products)}件取得（累計: {len(all_products)}件）")
+                    self._wait()
 
         logger.info(f"\n商品ページ取得完了: {len(all_products)}件")
         return all_products
 
     def _fetch_category_products(
         self,
+        location_id: int,
+        location_name: str,
         category_name: str,
         top_category: str,
         parent_category: str,
@@ -158,6 +174,8 @@ class BullionstarProductScraper:
         カテゴリーの商品一覧をAPIから取得（全ページ）
 
         Args:
+            location_id: ロケーションID (1=Singapore, 2=USA, 3=New Zealand)
+            location_name: ロケーション名
             category_name: APIカテゴリー名 (gold-bars 等)
             top_category: 最上位カテゴリ名
             parent_category: 親カテゴリ名
@@ -174,7 +192,7 @@ class BullionstarProductScraper:
                 logger.info(f"    ページ{page_num}を取得中...")
 
                 params = {
-                    "locationId": self.LOCATION_ID,
+                    "locationId": location_id,
                     "name": category_name,
                     "page": page_num,
                     "sortType": "popular",
@@ -206,6 +224,7 @@ class BullionstarProductScraper:
                             prod=prod,
                             top_category=top_category,
                             parent_category=parent_category,
+                            location_name=location_name,
                             timestamp=timestamp
                         )
                         if product:
@@ -241,6 +260,7 @@ class BullionstarProductScraper:
         prod: dict,
         top_category: str,
         parent_category: str,
+        location_name: str,
         timestamp: str
     ) -> Optional[BullionstarProduct]:
         """
@@ -250,6 +270,7 @@ class BullionstarProductScraper:
             prod: 商品データ辞書
             top_category: 最上位カテゴリ
             parent_category: 親カテゴリ
+            location_name: ロケーション名
             timestamp: 取得日時
 
         Returns:
@@ -275,6 +296,7 @@ class BullionstarProductScraper:
                 top_category=top_category,
                 parent_category=parent_category,
                 child_category=child_category,
+                location=location_name,
                 fetched_at=timestamp
             )
 
@@ -316,7 +338,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
             )
             # ヘッダーを追加
             headers = Config.BULLIONSTAR_PRODUCT_HEADERS
-            sheet.update('A1:F1', [headers])
+            sheet.update('A1:G1', [headers])
             logger.info(f"シート '{sheet_name}' を作成しました")
 
         # 既存データの確認（ヘッダー行があるかチェック）
@@ -324,7 +346,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
         if not existing_data:
             # ヘッダーを追加
             headers = Config.BULLIONSTAR_PRODUCT_HEADERS
-            sheet.update('A1:F1', [headers])
+            sheet.update('A1:G1', [headers])
             logger.info("ヘッダー行を追加")
 
         # 商品データを行形式に変換
@@ -336,7 +358,8 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 product.top_category,   # C: 最上位カテゴリ
                 product.parent_category, # D: 親カテゴリ
                 product.child_category, # E: 子カテゴリ
-                product.fetched_at,     # F: 取得日
+                product.location,       # F: ロケーション
+                product.fetched_at,     # G: 取得日
             ])
 
         if new_rows:
