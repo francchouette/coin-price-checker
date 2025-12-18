@@ -14,6 +14,7 @@ AC列の同期モードに応じて処理を行う:
     python -m src.add_product
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -26,6 +27,7 @@ from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 
 from .colorme import ColorMeClient, ColorMeProduct
+from .colorme_image_uploader import ColorMeImageUploader
 from .config import Config
 from .exchange_rate import ExchangeRateClient, WiseRateClient
 from .spreadsheet import SpreadsheetClient
@@ -2062,15 +2064,25 @@ def fill_incomplete_rows() -> bool:
                         else:
                             logger.warning(f"  → 商品説明の更新失敗: {update_error}")
 
-                    # 画像をアップロード
+                    # 画像をアップロード（Playwrightベース）
                     image_urls = product_info.get("image_urls", [])[:10]
                     if image_urls:
-                        logger.info(f"  画像アップロード中... ({len(image_urls)}枚)")
-                        success, img_error = colorme_client.upload_product_images(new_product_id, image_urls)
-                        if success:
-                            logger.info("  → 画像アップロード成功")
-                        else:
-                            logger.warning(f"  → 画像アップロード一部失敗: {img_error}")
+                        logger.info(f"  画像アップロード中（Playwright）... ({len(image_urls)}枚)")
+                        try:
+                            async def upload_images():
+                                async with ColorMeImageUploader(headless=True) as uploader:
+                                    return await uploader.upload_product_images(
+                                        product_id=new_product_id,
+                                        image_urls=image_urls
+                                    )
+                            upload_result = asyncio.run(upload_images())
+                            if upload_result.success:
+                                logger.info(f"  → 画像アップロード成功: {len(upload_result.uploaded_urls)}枚")
+                                colorme_image_urls = upload_result.uploaded_urls
+                            else:
+                                logger.warning(f"  → 画像アップロード失敗: {upload_result.error_message}")
+                        except Exception as e:
+                            logger.warning(f"  → 画像アップロードエラー: {e}")
                 else:
                     logger.error(f"  → 商品登録失敗: {error}")
 
