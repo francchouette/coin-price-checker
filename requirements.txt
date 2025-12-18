@@ -23,5 +23,8 @@ anthropic>=0.75.0
 # Environment variables
 python-dotenv==1.0.1
 
+# Async utilities
+nest-asyncio==1.6.0
+
 # Testing
 pytest==8.3.3

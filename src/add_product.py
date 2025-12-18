@@ -24,7 +24,11 @@ from datetime import datetime
 from typing import Optional
 from urllib.parse import urlparse
 
+import nest_asyncio
 from playwright.sync_api import sync_playwright
+
+# ネストされたイベントループを許可
+nest_asyncio.apply()
 
 from .colorme import ColorMeClient, ColorMeProduct
 from .colorme_image_uploader import ColorMeImageUploader
