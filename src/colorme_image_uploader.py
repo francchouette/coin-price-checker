@@ -379,44 +379,37 @@ class ColorMeImageUploader:
                 await self._page.goto(edit_url, wait_until="networkidle")
                 await asyncio.sleep(2)
 
-            # 画像要素を検索（shop-pro.jpのURLを持つimg要素）
             urls = []
 
-            # 方法1: img要素のsrc属性から取得
+            # 商品画像URLのパターン（imgXX.shop-pro.jp/PA01517/852/product/...）
+            # アイコンや共通画像は除外（/img/new/icons, /img/common など）
+            import re
+            product_image_pattern = re.compile(
+                r'https?://img\d+\.shop-pro\.jp/PA\d+/\d+/product/\d+\.(jpg|jpeg|png|gif|webp)',
+                re.IGNORECASE
+            )
+
+            # img要素のsrc属性から商品画像のみ取得
             img_elements = await self._page.query_selector_all('img[src*="shop-pro.jp"]')
             for img in img_elements:
                 src = await img.get_attribute("src")
-                if src and "img" in src and src not in urls:
-                    # サムネイルURLを元のサイズURLに変換
-                    # 例: /50_50/ → 削除して元のURLに
-                    if "/50_50/" in src or "/100_100/" in src or "/200_200/" in src:
-                        original_src = src.replace("/50_50/", "/").replace("/100_100/", "/").replace("/200_200/", "/")
-                        if original_src not in urls:
-                            urls.append(original_src)
-                    elif src not in urls:
-                        urls.append(src)
+                if not src:
+                    continue
 
-            # 方法2: data-src属性から取得（遅延読み込みの場合）
-            lazy_imgs = await self._page.query_selector_all('[data-src*="shop-pro.jp"]')
-            for img in lazy_imgs:
-                src = await img.get_attribute("data-src")
-                if src and "img" in src and src not in urls:
-                    urls.append(src)
+                # サムネイルサイズを除去して元URLに
+                original_src = src
+                for size in ["/50_50/", "/100_100/", "/200_200/", "/300_300/", "/400_400/"]:
+                    if size in original_src:
+                        original_src = original_src.replace(size, "/")
+                        break
 
-            # 方法3: 背景画像スタイルから取得
-            style_elements = await self._page.query_selector_all('[style*="shop-pro.jp"]')
-            for elem in style_elements:
-                style = await elem.get_attribute("style")
-                if style:
-                    import re
-                    matches = re.findall(r'url\(["\']?(https?://[^"\')\s]+shop-pro\.jp[^"\')\s]*)["\']?\)', style)
-                    for match in matches:
-                        if match not in urls:
-                            urls.append(match)
+                # 商品画像パターンにマッチするもののみ追加
+                if product_image_pattern.match(original_src) and original_src not in urls:
+                    urls.append(original_src)
 
             logger.info(f"  ページから画像URL取得: {len(urls)}枚")
             for i, url in enumerate(urls[:5]):
-                logger.debug(f"    {i+1}: {url[:60]}...")
+                logger.debug(f"    {i+1}: {url[:80]}...")
 
             return urls
 
