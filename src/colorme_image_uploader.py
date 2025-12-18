@@ -311,21 +311,30 @@ class ColorMeImageUploader:
             )
             response.raise_for_status()
 
-            product = response.json().get("product", {})
+            data = response.json()
+            product = data.get("product", {})
             urls = []
 
             # メイン画像
             main_image = product.get("image_url", "")
             if main_image:
                 urls.append(main_image)
+                logger.debug(f"    メイン画像: {main_image}")
 
             # 追加画像
-            for img in product.get("images", []):
+            images = product.get("images", [])
+            logger.debug(f"    追加画像数: {len(images)}")
+            for img in images:
                 src = img.get("src", "")
                 if src and src not in urls:
                     urls.append(src)
+                    logger.debug(f"    追加画像: {src}")
 
             logger.info(f"  画像URL取得: {len(urls)}枚")
+            if not urls:
+                # URLがない場合はAPIレスポンスの一部をログに出力
+                logger.warning(f"    image_url: {product.get('image_url', '(なし)')}")
+                logger.warning(f"    images: {product.get('images', [])}")
             return urls
 
         except Exception as e:
@@ -455,14 +464,22 @@ class ColorMeImageUploader:
                     # 保存ボタン実行（JavaScript経由）
                     await self._page.evaluate("jf_Submit('UPD')")
 
-                    # 保存完了待機
-                    await asyncio.sleep(3)
+                    # 保存完了待機（サーバー処理時間を考慮して長めに）
+                    await asyncio.sleep(5)
                     await self._page.wait_for_load_state("networkidle")
+                    await asyncio.sleep(5)  # 追加の待機（画像処理完了待ち）
 
                 logger.info(f"  → 商品ID {product_id}: {uploaded_count}枚アップロード成功")
 
-                # APIから実際の画像URLを取得
-                uploaded_urls = await self._fetch_uploaded_image_urls(product_id)
+                # APIから実際の画像URLを取得（リトライあり）
+                uploaded_urls = []
+                for fetch_attempt in range(3):
+                    await asyncio.sleep(3)  # API呼び出し前に待機
+                    uploaded_urls = await self._fetch_uploaded_image_urls(product_id)
+                    if uploaded_urls:
+                        break
+                    logger.info(f"  画像URL取得リトライ中... ({fetch_attempt + 1}/3)")
+                    await asyncio.sleep(5)
 
                 return ImageUploadResult(
                     product_id=product_id,
