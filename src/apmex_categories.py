@@ -156,6 +156,10 @@ class ApmexCategoryScraper:
         """
         ナビゲーションメニューからカテゴリーを解析（親子関係を保持）
 
+        APMEXのメニューは data-label 属性に階層情報が含まれている:
+        例: data-label="Gold|United States Mint|American Eagles"
+        → 大カテゴリー: Gold, 親: United States Mint, 名前: American Eagles
+
         Args:
             soup: BeautifulSoupオブジェクト
 
@@ -164,93 +168,98 @@ class ApmexCategoryScraper:
         """
         categories = []
 
-        # APMEXのメガメニュー構造を探索
-        # 親カテゴリー → 子カテゴリーの構造を解析
+        # data-label属性を持つカテゴリーリンクを取得
+        links = soup.select('a[data-label][href*="/category/"]')
 
-        # メガメニューのセクションを探す
-        mega_menu_selectors = [
-            '.mega-menu',
-            '[class*="mega-menu"]',
-            '.nav-dropdown',
-            '[class*="dropdown-menu"]',
-            '.submenu',
-        ]
+        if links:
+            logger.info(f"data-label属性付きリンク: {len(links)} 件検出")
 
-        for menu_selector in mega_menu_selectors:
-            menu_sections = soup.select(menu_selector)
-            if menu_sections:
-                logger.info(f"メニューセクション '{menu_selector}' で {len(menu_sections)} 件検出")
+            for link in links:
+                href = link.get('href', '')
+                text = link.get_text(strip=True)
+                data_label = link.get('data-label', '')
 
-                for section in menu_sections:
-                    # セクション内のヘッダー（親カテゴリー）を探す
-                    header_selectors = ['h2', 'h3', 'h4', '.menu-header', '.category-header', 'strong']
-                    parent_name = None
+                if not href or not text or '/category/' not in href:
+                    continue
 
-                    for header_sel in header_selectors:
-                        header = section.select_one(header_sel)
-                        if header:
-                            parent_text = header.get_text(strip=True)
-                            if parent_text and len(parent_text) < 50:  # 長すぎるテキストを除外
-                                parent_name = parent_text
-                                break
+                # data-labelから階層を解析
+                # 例: "Gold|United States Mint|American Eagles"
+                parts = [p.strip() for p in data_label.split('|') if p.strip()]
 
-                    # セクション内のリンクを取得
-                    links = section.select('a[href*="/category/"]')
-                    for link in links:
-                        href = link.get('href', '')
-                        text = link.get_text(strip=True)
+                if len(parts) >= 2:
+                    # 最後が名前、その前が親カテゴリー
+                    # parts[0] = 大カテゴリー（Gold, Silver等）
+                    # parts[1:-1] = 中間カテゴリー
+                    # parts[-1] = このカテゴリー名
 
-                        if href and text and '/category/' in href:
-                            # 親カテゴリー自体のリンクかどうかを判定
-                            is_parent = parent_name and text == parent_name
+                    # 親カテゴリー名を決定
+                    if len(parts) == 2:
+                        # "Gold|Best Sellers" → 親なし（トップレベル）
+                        parent_name = None
+                    else:
+                        # "Gold|United States Mint|American Eagles" → 親は "United States Mint"
+                        parent_name = parts[-2]
 
-                            categories.append(ApmexCategory(
-                                name=text,
-                                url=href if href.startswith('http') else f"{self.APMEX_URL}{href}",
-                                parent_name=None if is_parent else parent_name
-                            ))
+                    categories.append(ApmexCategory(
+                        name=text,
+                        url=href if href.startswith('http') else f"{self.APMEX_URL}{href}",
+                        parent_name=parent_name
+                    ))
+                elif len(parts) == 1:
+                    # トップレベルカテゴリー
+                    categories.append(ApmexCategory(
+                        name=text,
+                        url=href if href.startswith('http') else f"{self.APMEX_URL}{href}",
+                        parent_name=None
+                    ))
 
-                if categories:
-                    break
-
-        # メガメニューで見つからない場合、フラットなナビゲーションを試行
+        # data-labelがない場合のフォールバック
         if not categories:
-            nav_selectors = [
-                'nav[class*="main"] ul li a',
-                '.navigation ul li a',
-                'header nav ul li a',
-            ]
+            logger.info("data-label属性なし、フォールバック解析を試行")
 
-            for selector in nav_selectors:
-                nav_links = soup.select(selector)
-                if nav_links:
-                    logger.info(f"セレクタ '{selector}' で {len(nav_links)} 件のリンクを検出")
-                    for link in nav_links:
-                        href = link.get('href', '')
-                        text = link.get_text(strip=True)
+            # dropdown-header クラスで親カテゴリーを識別
+            all_links = soup.select('a[href*="/category/"]')
+            current_parent = None
 
-                        if href and text and '/category/' in href:
-                            categories.append(ApmexCategory(
-                                name=text,
-                                url=href if href.startswith('http') else f"{self.APMEX_URL}{href}"
-                            ))
+            for link in all_links:
+                href = link.get('href', '')
+                text = link.get_text(strip=True)
 
-                    if categories:
-                        break
+                if not href or not text:
+                    continue
 
-        # 重複を除去（名前とURLの組み合わせで）
-        seen = set()
+                # 親要素のクラスをチェック
+                parent_li = link.find_parent('li')
+                is_header = parent_li and 'dropdown-header' in parent_li.get('class', [])
+
+                if is_header:
+                    # これは親カテゴリー
+                    current_parent = text
+                    categories.append(ApmexCategory(
+                        name=text,
+                        url=href if href.startswith('http') else f"{self.APMEX_URL}{href}",
+                        parent_name=None  # 親カテゴリー自体は親なし
+                    ))
+                else:
+                    # 子カテゴリー
+                    categories.append(ApmexCategory(
+                        name=text,
+                        url=href if href.startswith('http') else f"{self.APMEX_URL}{href}",
+                        parent_name=current_parent
+                    ))
+
+        # 重複を除去（URLで判定）
+        seen_urls = set()
         unique_categories = []
         for cat in categories:
-            key = (cat.name, cat.url)
-            if key not in seen:
-                seen.add(key)
+            if cat.url not in seen_urls:
+                seen_urls.add(cat.url)
                 unique_categories.append(cat)
 
         # 親カテゴリーの情報をログ出力
         parents = set(cat.parent_name for cat in unique_categories if cat.parent_name)
         if parents:
-            logger.info(f"検出した親カテゴリー: {', '.join(parents)}")
+            logger.info(f"検出した親カテゴリー ({len(parents)}件): {', '.join(list(parents)[:10])}...")
 
         return unique_categories
 
@@ -330,16 +339,99 @@ class ApmexCategoryScraper:
             return []
 
 
-async def fetch_apmex_categories() -> list[ApmexCategory]:
+def parse_categories_from_html_file(file_path: str) -> list[ApmexCategory]:
     """
-    APMEXからカテゴリー一覧を取得
+    ローカルHTMLファイルからカテゴリーを解析
+
+    Args:
+        file_path: HTMLファイルのパス
 
     Returns:
         list[ApmexCategory]: カテゴリーリスト
     """
+    from pathlib import Path
+
+    logger.info(f"HTMLファイルを読み込み中: {file_path}")
+
+    try:
+        html_content = Path(file_path).read_text(encoding='utf-8')
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        categories = []
+
+        # data-label属性を持つカテゴリーリンクを取得
+        links = soup.select('a[data-label][href*="/category/"]')
+
+        if links:
+            logger.info(f"data-label属性付きリンク: {len(links)} 件検出")
+
+            for link in links:
+                href = link.get('href', '')
+                text = link.get_text(strip=True)
+                data_label = link.get('data-label', '')
+
+                if not href or not text or '/category/' not in href:
+                    continue
+
+                # data-labelから階層を解析
+                parts = [p.strip() for p in data_label.split('|') if p.strip()]
+
+                if len(parts) >= 2:
+                    if len(parts) == 2:
+                        parent_name = None
+                    else:
+                        parent_name = parts[-2]
+
+                    categories.append(ApmexCategory(
+                        name=text,
+                        url=f"https://www.apmex.com{href}" if not href.startswith('http') else href,
+                        parent_name=parent_name
+                    ))
+                elif len(parts) == 1:
+                    categories.append(ApmexCategory(
+                        name=text,
+                        url=f"https://www.apmex.com{href}" if not href.startswith('http') else href,
+                        parent_name=None
+                    ))
+
+        # 重複を除去（URLで判定）
+        seen_urls = set()
+        unique_categories = []
+        for cat in categories:
+            if cat.url not in seen_urls:
+                seen_urls.add(cat.url)
+                unique_categories.append(cat)
+
+        parents = set(cat.parent_name for cat in unique_categories if cat.parent_name)
+        logger.info(f"カテゴリー総数: {len(unique_categories)} 件")
+        logger.info(f"親カテゴリー数: {len(parents)} 件")
+
+        return unique_categories
+
+    except Exception as e:
+        logger.error(f"HTMLファイル解析エラー: {e}")
+        return []
+
+
+async def fetch_apmex_categories(html_file: str = None) -> list[ApmexCategory]:
+    """
+    APMEXからカテゴリー一覧を取得
+
+    Args:
+        html_file: ローカルHTMLファイルのパス（指定時はBright Dataを使用しない）
+
+    Returns:
+        list[ApmexCategory]: カテゴリーリスト
+    """
+    # ローカルHTMLファイルが指定されている場合
+    if html_file:
+        return parse_categories_from_html_file(html_file)
+
+    # Bright Data経由で取得
     if not Config.is_brightdata_browser_enabled():
         logger.error("Bright Data Browser APIが有効ではありません")
         logger.error("BRIGHTDATA_BROWSER_WS環境変数を設定してください")
+        logger.error("または --html-file オプションでローカルHTMLファイルを指定してください")
         return []
 
     scraper = ApmexCategoryScraper(
@@ -637,6 +729,11 @@ async def main():
         action="store_true",
         help="詳細ログ出力"
     )
+    parser.add_argument(
+        "--html-file",
+        type=str,
+        help="ローカルHTMLファイルからカテゴリーを読み込む（Bright Data不要）"
+    )
 
     args = parser.parse_args()
 
@@ -654,7 +751,10 @@ async def main():
         logger.info("APMEXカテゴリー取得開始")
         logger.info("=" * 50)
 
-        categories = await fetch_apmex_categories()
+        if args.html_file:
+            logger.info(f"ローカルHTMLファイルを使用: {args.html_file}")
+
+        categories = await fetch_apmex_categories(html_file=args.html_file)
 
         if not categories:
             logger.error("カテゴリーを取得できませんでした")
