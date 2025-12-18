@@ -226,34 +226,47 @@ class BullionstarProductScraper:
 
             # 全商品が読み込まれるまでスクロール
             prev_count = 0
-            scroll_attempts = 0
-            max_scroll_attempts = 50
+            no_change_count = 0
+            max_no_change = 8  # 変化がない回数の上限を増加
+            max_scroll_attempts = 100  # 最大スクロール回数を増加
 
-            while scroll_attempts < max_scroll_attempts:
+            for _ in range(max_scroll_attempts):
                 # 現在の商品リンクを取得
                 product_links = await self._page.query_selector_all('a[href*="/buy/product/"]')
                 current_count = len(product_links)
 
+                # 目標数に達したら終了
+                if total_count > 0 and current_count >= total_count:
+                    logger.info(f"    全商品読み込み完了: {current_count}/{total_count}")
+                    break
+
                 if current_count == prev_count:
-                    scroll_attempts += 1
-                    if scroll_attempts >= 3:
+                    no_change_count += 1
+                    if no_change_count >= max_no_change:
+                        logger.info(f"    読み込み終了: {current_count}件 (変化なし{max_no_change}回)")
                         break
                 else:
-                    scroll_attempts = 0
+                    no_change_count = 0
                     prev_count = current_count
 
                 # ページ下部までスクロール
                 await self._page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                await self._page.wait_for_timeout(1000)
+                await self._page.wait_for_timeout(1500)  # 待機時間を増加
 
                 # "Load More" ボタンがあればクリック
                 load_more = await self._page.query_selector('button:has-text("Load More"), a:has-text("Load More"), .load-more')
                 if load_more:
                     try:
                         await load_more.click()
-                        await self._page.wait_for_timeout(2000)
+                        await self._page.wait_for_timeout(3000)  # クリック後の待機を増加
                     except:
                         pass
+
+                # ネットワークが落ち着くまで待機
+                try:
+                    await self._page.wait_for_load_state("networkidle", timeout=5000)
+                except:
+                    pass
 
             # 商品リンクを取得してパース
             product_links = await self._page.query_selector_all('a[href*="/buy/product/"]')
@@ -292,8 +305,14 @@ class BullionstarProductScraper:
                                 name = await name_elem.inner_text()
                                 name = re.sub(r'\s+', ' ', name).strip()
 
+                    # 名前が取得できない場合はURLから生成
                     if not name or len(name) < 3:
-                        continue
+                        # URLから商品名を抽出 (例: /buy/product/gold-bar-1oz -> gold-bar-1oz)
+                        url_parts = href.split('/buy/product/')
+                        if len(url_parts) > 1:
+                            name = url_parts[1].split('?')[0].replace('-', ' ').title()
+                        else:
+                            name = "Unknown Product"
 
                     products.append(BullionstarProduct(
                         name=name[:200],  # 長すぎる名前を切り詰め
