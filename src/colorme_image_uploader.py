@@ -285,6 +285,69 @@ class ColorMeImageUploader:
             logger.error(f"    → 画像準備エラー: {e}")
             return None
 
+    async def _extract_image_urls_from_page(self, product_id: int) -> list[str]:
+        """
+        商品編集ページから画像URLを直接抽出
+
+        Args:
+            product_id: 商品ID
+
+        Returns:
+            list[str]: 画像URLリスト
+        """
+        try:
+            # 商品編集ページに移動（保存後のリダイレクト先の場合もある）
+            edit_url = f"{self.ADMIN_URL}?mode=product_edt&type=UPD&product_id={product_id}"
+            current_url = self._page.url
+            if "product_id=" not in current_url or str(product_id) not in current_url:
+                await self._page.goto(edit_url, wait_until="networkidle")
+                await asyncio.sleep(2)
+
+            # 画像要素を検索（shop-pro.jpのURLを持つimg要素）
+            urls = []
+
+            # 方法1: img要素のsrc属性から取得
+            img_elements = await self._page.query_selector_all('img[src*="shop-pro.jp"]')
+            for img in img_elements:
+                src = await img.get_attribute("src")
+                if src and "img" in src and src not in urls:
+                    # サムネイルURLを元のサイズURLに変換
+                    # 例: /50_50/ → 削除して元のURLに
+                    if "/50_50/" in src or "/100_100/" in src or "/200_200/" in src:
+                        original_src = src.replace("/50_50/", "/").replace("/100_100/", "/").replace("/200_200/", "/")
+                        if original_src not in urls:
+                            urls.append(original_src)
+                    elif src not in urls:
+                        urls.append(src)
+
+            # 方法2: data-src属性から取得（遅延読み込みの場合）
+            lazy_imgs = await self._page.query_selector_all('[data-src*="shop-pro.jp"]')
+            for img in lazy_imgs:
+                src = await img.get_attribute("data-src")
+                if src and "img" in src and src not in urls:
+                    urls.append(src)
+
+            # 方法3: 背景画像スタイルから取得
+            style_elements = await self._page.query_selector_all('[style*="shop-pro.jp"]')
+            for elem in style_elements:
+                style = await elem.get_attribute("style")
+                if style:
+                    import re
+                    matches = re.findall(r'url\(["\']?(https?://[^"\')\s]+shop-pro\.jp[^"\')\s]*)["\']?\)', style)
+                    for match in matches:
+                        if match not in urls:
+                            urls.append(match)
+
+            logger.info(f"  ページから画像URL取得: {len(urls)}枚")
+            for i, url in enumerate(urls[:5]):
+                logger.debug(f"    {i+1}: {url[:60]}...")
+
+            return urls
+
+        except Exception as e:
+            logger.warning(f"  ページから画像URL取得エラー: {e}")
+            return []
+
     async def _fetch_uploaded_image_urls(self, product_id: int) -> list[str]:
         """
         カラーミーAPIから商品の画像URLを取得
@@ -471,15 +534,19 @@ class ColorMeImageUploader:
 
                 logger.info(f"  → 商品ID {product_id}: {uploaded_count}枚アップロード成功")
 
-                # APIから実際の画像URLを取得（リトライあり）
-                uploaded_urls = []
-                for fetch_attempt in range(3):
-                    await asyncio.sleep(3)  # API呼び出し前に待機
-                    uploaded_urls = await self._fetch_uploaded_image_urls(product_id)
-                    if uploaded_urls:
-                        break
-                    logger.info(f"  画像URL取得リトライ中... ({fetch_attempt + 1}/3)")
-                    await asyncio.sleep(5)
+                # ページから直接画像URLを取得
+                uploaded_urls = await self._extract_image_urls_from_page(product_id)
+
+                # ページから取得できなかった場合はAPIで取得
+                if not uploaded_urls:
+                    logger.info("  ページから画像URL取得できず、APIで取得中...")
+                    for fetch_attempt in range(3):
+                        await asyncio.sleep(3)
+                        uploaded_urls = await self._fetch_uploaded_image_urls(product_id)
+                        if uploaded_urls:
+                            break
+                        logger.info(f"  画像URL取得リトライ中... ({fetch_attempt + 1}/3)")
+                        await asyncio.sleep(5)
 
                 return ImageUploadResult(
                     product_id=product_id,
