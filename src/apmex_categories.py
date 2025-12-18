@@ -111,10 +111,26 @@ class ApmexCategoryScraper:
         categories = []
 
         try:
-            # APMEXのメインページにアクセス
+            # APMEXのメインページにアクセス（リトライ付き）
             logger.info(f"APMEXにアクセス中: {self.APMEX_URL}")
-            await self._page.goto(self.APMEX_URL, wait_until="networkidle", timeout=60000)
-            await asyncio.sleep(5)
+
+            for attempt in range(3):
+                try:
+                    # domcontentloadedで待機（networkidleより早い）
+                    await self._page.goto(
+                        self.APMEX_URL,
+                        wait_until="domcontentloaded",
+                        timeout=90000
+                    )
+                    # ページ読み込み後に追加で待機
+                    await asyncio.sleep(10)
+                    break
+                except Exception as e:
+                    logger.warning(f"ページアクセス試行 {attempt + 1}/3 失敗: {e}")
+                    if attempt < 2:
+                        await asyncio.sleep(5)
+                    else:
+                        raise
 
             # ナビゲーションメニューを取得
             html = await self._page.content()
@@ -200,8 +216,22 @@ class ApmexCategoryScraper:
             # カテゴリー一覧ページにアクセス
             browse_url = f"{self.APMEX_URL}/category/all-products"
             logger.info(f"ブラウズページにアクセス: {browse_url}")
-            await self._page.goto(browse_url, wait_until="networkidle", timeout=60000)
-            await asyncio.sleep(5)
+
+            for attempt in range(3):
+                try:
+                    await self._page.goto(
+                        browse_url,
+                        wait_until="domcontentloaded",
+                        timeout=90000
+                    )
+                    await asyncio.sleep(10)
+                    break
+                except Exception as e:
+                    logger.warning(f"ブラウズページ試行 {attempt + 1}/3 失敗: {e}")
+                    if attempt < 2:
+                        await asyncio.sleep(5)
+                    else:
+                        raise
 
             html = await self._page.content()
             soup = BeautifulSoup(html, 'html.parser')
