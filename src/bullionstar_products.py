@@ -18,6 +18,7 @@ BullionstarのAPIを使用して全ページネーションを正しく処理す
 """
 
 import logging
+import re
 import sys
 import time
 import random
@@ -255,13 +256,15 @@ class BullionstarProductScraper:
             BullionstarProduct: 商品データ（パース失敗時はNone）
         """
         try:
-            url_name = prod.get("urlName", "")
+            # APIレスポンスは url が直接含まれている
+            url = prod.get("url", "")
             title = prod.get("title", "")
 
-            if not url_name or not title:
+            if not url or not title:
                 return None
 
-            url = f"{self.BASE_URL}/buy/product/{url_name}"
+            # HTMLタグを除去（タイトルにspanタグが含まれる場合がある）
+            title = re.sub(r'<[^>]+>', '', title).strip()
 
             # 子カテゴリーはAPIデータから取得（あれば）
             child_category = prod.get("subCategory", "") or ""
