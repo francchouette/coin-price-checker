@@ -67,12 +67,14 @@ class ColorMeClient:
 
     API_BASE = "https://api.shop-pro.jp/v1"
 
-    def __init__(self, access_token: Optional[str] = None):
+    def __init__(self, access_token: Optional[str] = None, dry_run: bool = False):
         """
         Args:
             access_token: アクセストークン（省略時は環境変数から取得）
+            dry_run: ドライランモード（Trueの場合は実際に更新しない）
         """
         self.access_token = access_token or Config.COLORME_ACCESS_TOKEN
+        self.dry_run = dry_run
 
     def _headers(self) -> dict:
         """APIリクエスト用ヘッダーを返す"""
@@ -357,6 +359,11 @@ class ColorMeClient:
             return False
 
         if not updates:
+            return True
+
+        # ドライランモードの場合は実際の更新をスキップ
+        if self.dry_run:
+            logger.info(f"[ドライラン] 商品更新スキップ: 商品ID {product_id} → {updates}")
             return True
 
         try:
