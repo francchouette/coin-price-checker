@@ -147,31 +147,34 @@ class BullionstarProductFetcher:
                 data = response.json()
 
                 result = data.get("result", {})
+                pagination = data.get("pagination", {})
 
                 # 初回のみ総数を取得
                 if total_count is None:
-                    total_count = result.get("totalCount", 0)
+                    total_count = pagination.get("totalCount", 0)
                     logger.info(f"  商品総数: {total_count}件")
 
                 # 商品グループを処理
-                product_groups = result.get("productGroups", [])
+                product_groups = result.get("groups", [])
                 if not product_groups:
                     break
 
                 page_count = 0
                 for group in product_groups:
-                    group_name = group.get("name", "")
+                    group_name = group.get("title", "")  # titleフィールドにグループ名がある
                     group_products = group.get("products", [])
 
                     for prod in group_products:
                         prod_url = prod.get("url", "")
-                        prod_name = prod.get("name", "")
+                        prod_name = prod.get("title", "")  # titleフィールドに商品名がある
 
                         if not prod_url:
                             continue
 
-                        # URLを完全なURLに変換
-                        if prod_url.startswith("/"):
+                        # URLがすでに完全なURLの場合はそのまま使用
+                        if prod_url.startswith("http"):
+                            full_url = prod_url
+                        elif prod_url.startswith("/"):
                             full_url = f"{base_url}{prod_url}"
                         else:
                             full_url = f"{base_url}/buy/product/{prod_url}"
