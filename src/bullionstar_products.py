@@ -130,15 +130,14 @@ class BullionstarProductFetcher:
         特定ロケーションの全商品をAPIから取得（ページネーション対応）
         """
         products = []
-        offset = 0
+        page = 1
         total_count = None
 
         while True:
             api_url = f"{base_url}{self.API_PATH}"
             params = {
                 "locationId": location_id,
-                "offset": offset,
-                "limit": self.PAGE_SIZE,
+                "page": page,
             }
 
             try:
@@ -161,12 +160,12 @@ class BullionstarProductFetcher:
 
                 page_count = 0
                 for group in product_groups:
-                    group_name = group.get("title", "")  # titleフィールドにグループ名がある
+                    group_name = group.get("title", "")
                     group_products = group.get("products", [])
 
                     for prod in group_products:
                         prod_url = prod.get("url", "")
-                        prod_name = prod.get("title", "")  # titleフィールドに商品名がある
+                        prod_name = prod.get("title", "")
 
                         if not prod_url:
                             continue
@@ -195,13 +194,14 @@ class BullionstarProductFetcher:
                         ))
                         page_count += 1
 
-                logger.info(f"  ページ {offset // self.PAGE_SIZE + 1}: {page_count}件取得")
+                logger.info(f"  ページ {page}: {page_count}件取得（累計: {len(products)}件）")
 
-                # 次のページへ
-                offset += self.PAGE_SIZE
-                if offset >= total_count:
+                # 次のページがあるか確認
+                next_page = pagination.get("nextPage")
+                if not next_page or len(products) >= total_count:
                     break
 
+                page += 1
                 self._wait()
 
             except requests.RequestException as e:
