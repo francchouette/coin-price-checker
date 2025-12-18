@@ -159,12 +159,14 @@ class Config:
 
     # APMEXカテゴリーシートのヘッダー
     APMEX_CATEGORY_HEADERS: list[str] = [
-        "カテゴリー名",      # A列
-        "APMEX URL",         # B列
-        "登録",              # C列 (TRUE/FALSE)
-        "カラーミーグループID",  # D列
-        "登録日時",          # E列
-        "ステータス",        # F列
+        "カテゴリー名",        # A列
+        "親カテゴリー",        # B列 (階層構造用)
+        "APMEX URL",           # C列
+        "登録",                # D列 (TRUE/FALSE)
+        "カラーミーグループID",  # E列
+        "親グループID",        # F列 (親カテゴリーのグループID)
+        "登録日時",            # G列
+        "ステータス",          # H列
     ]
 
     # Bright Data Proxy設定（レガシー）

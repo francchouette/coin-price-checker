@@ -154,52 +154,103 @@ class ApmexCategoryScraper:
 
     def _parse_navigation(self, soup: BeautifulSoup) -> list[ApmexCategory]:
         """
-        ナビゲーションメニューからカテゴリーを解析
+        ナビゲーションメニューからカテゴリーを解析（親子関係を保持）
 
         Args:
             soup: BeautifulSoupオブジェクト
 
         Returns:
-            list[ApmexCategory]: カテゴリーリスト
+            list[ApmexCategory]: カテゴリーリスト（親子関係付き）
         """
         categories = []
 
-        # APMEXのナビゲーション構造を探索
-        # 複数のセレクタを試行
-        nav_selectors = [
-            'nav[class*="main"] ul li a',
-            '.navigation ul li a',
-            '.nav-menu ul li a',
-            'header nav ul li a',
-            '[class*="mega-menu"] a',
-            '.category-nav a',
+        # APMEXのメガメニュー構造を探索
+        # 親カテゴリー → 子カテゴリーの構造を解析
+
+        # メガメニューのセクションを探す
+        mega_menu_selectors = [
+            '.mega-menu',
+            '[class*="mega-menu"]',
+            '.nav-dropdown',
+            '[class*="dropdown-menu"]',
+            '.submenu',
         ]
 
-        for selector in nav_selectors:
-            nav_links = soup.select(selector)
-            if nav_links:
-                logger.info(f"セレクタ '{selector}' で {len(nav_links)} 件のリンクを検出")
-                for link in nav_links:
-                    href = link.get('href', '')
-                    text = link.get_text(strip=True)
+        for menu_selector in mega_menu_selectors:
+            menu_sections = soup.select(menu_selector)
+            if menu_sections:
+                logger.info(f"メニューセクション '{menu_selector}' で {len(menu_sections)} 件検出")
 
-                    # カテゴリーページへのリンクをフィルタ
-                    if href and text and '/category/' in href:
-                        categories.append(ApmexCategory(
-                            name=text,
-                            url=href if href.startswith('http') else f"{self.APMEX_URL}{href}"
-                        ))
+                for section in menu_sections:
+                    # セクション内のヘッダー（親カテゴリー）を探す
+                    header_selectors = ['h2', 'h3', 'h4', '.menu-header', '.category-header', 'strong']
+                    parent_name = None
+
+                    for header_sel in header_selectors:
+                        header = section.select_one(header_sel)
+                        if header:
+                            parent_text = header.get_text(strip=True)
+                            if parent_text and len(parent_text) < 50:  # 長すぎるテキストを除外
+                                parent_name = parent_text
+                                break
+
+                    # セクション内のリンクを取得
+                    links = section.select('a[href*="/category/"]')
+                    for link in links:
+                        href = link.get('href', '')
+                        text = link.get_text(strip=True)
+
+                        if href and text and '/category/' in href:
+                            # 親カテゴリー自体のリンクかどうかを判定
+                            is_parent = parent_name and text == parent_name
+
+                            categories.append(ApmexCategory(
+                                name=text,
+                                url=href if href.startswith('http') else f"{self.APMEX_URL}{href}",
+                                parent_name=None if is_parent else parent_name
+                            ))
 
                 if categories:
                     break
 
-        # 重複を除去
+        # メガメニューで見つからない場合、フラットなナビゲーションを試行
+        if not categories:
+            nav_selectors = [
+                'nav[class*="main"] ul li a',
+                '.navigation ul li a',
+                'header nav ul li a',
+            ]
+
+            for selector in nav_selectors:
+                nav_links = soup.select(selector)
+                if nav_links:
+                    logger.info(f"セレクタ '{selector}' で {len(nav_links)} 件のリンクを検出")
+                    for link in nav_links:
+                        href = link.get('href', '')
+                        text = link.get_text(strip=True)
+
+                        if href and text and '/category/' in href:
+                            categories.append(ApmexCategory(
+                                name=text,
+                                url=href if href.startswith('http') else f"{self.APMEX_URL}{href}"
+                            ))
+
+                    if categories:
+                        break
+
+        # 重複を除去（名前とURLの組み合わせで）
         seen = set()
         unique_categories = []
         for cat in categories:
-            if cat.name not in seen:
-                seen.add(cat.name)
+            key = (cat.name, cat.url)
+            if key not in seen:
+                seen.add(key)
                 unique_categories.append(cat)
+
+        # 親カテゴリーの情報をログ出力
+        parents = set(cat.parent_name for cat in unique_categories if cat.parent_name)
+        if parents:
+            logger.info(f"検出した親カテゴリー: {', '.join(parents)}")
 
         return unique_categories
 
@@ -306,7 +357,7 @@ async def fetch_apmex_categories() -> list[ApmexCategory]:
 
 def save_categories_to_spreadsheet(categories: list[ApmexCategory]) -> bool:
     """
-    カテゴリーをスプレッドシートに保存
+    カテゴリーをスプレッドシートに保存（親子関係を保持）
 
     Args:
         categories: APMEXカテゴリーリスト
@@ -328,33 +379,43 @@ def save_categories_to_spreadsheet(categories: list[ApmexCategory]) -> bool:
             # シートがなければ作成
             sheet = client._spreadsheet.add_worksheet(
                 title=Config.SHEET_APMEX_CATEGORIES,
-                rows=100,
+                rows=200,
                 cols=10
             )
             # ヘッダーを追加
-            sheet.update('A1:F1', [Config.APMEX_CATEGORY_HEADERS])
+            sheet.update('A1:H1', [Config.APMEX_CATEGORY_HEADERS])
             logger.info(f"シート '{Config.SHEET_APMEX_CATEGORIES}' を作成しました")
 
-        # 既存データを取得（カテゴリー名でチェック）
+        # 既存データを取得（カテゴリー名+親カテゴリー名でチェック）
         existing_data = sheet.get_all_values()
-        existing_names = set()
+        existing_keys = set()
         for row in existing_data[1:]:  # ヘッダーをスキップ
-            if len(row) >= 1 and row[0].strip():
-                existing_names.add(row[0].strip())
+            if len(row) >= 2 and row[0].strip():
+                # 名前と親カテゴリーの組み合わせで一意性を判断
+                key = (row[0].strip(), row[1].strip() if len(row) > 1 else "")
+                existing_keys.add(key)
+
+        # カテゴリーを親子順にソート（親カテゴリーを先に登録するため）
+        # 親カテゴリーがないもの（トップレベル）を先に
+        sorted_categories = sorted(categories, key=lambda c: (c.parent_name or "", c.name))
 
         # 新規カテゴリーのみ追加
         new_rows = []
-        for cat in categories:
-            if cat.name not in existing_names:
+        for cat in sorted_categories:
+            key = (cat.name, cat.parent_name or "")
+            if key not in existing_keys:
                 new_rows.append([
-                    cat.name,           # A: カテゴリー名
-                    cat.url,            # B: APMEX URL
-                    "FALSE",            # C: 登録（デフォルトFALSE）
-                    "",                 # D: カラーミーグループID
-                    "",                 # E: 登録日時
-                    "",                 # F: ステータス
+                    cat.name,               # A: カテゴリー名
+                    cat.parent_name or "",  # B: 親カテゴリー
+                    cat.url,                # C: APMEX URL
+                    "FALSE",                # D: 登録（デフォルトFALSE）
+                    "",                     # E: カラーミーグループID
+                    "",                     # F: 親グループID
+                    "",                     # G: 登録日時
+                    "",                     # H: ステータス
                 ])
-                logger.info(f"新規追加: {cat.name}")
+                parent_info = f" (親: {cat.parent_name})" if cat.parent_name else " (トップレベル)"
+                logger.info(f"新規追加: {cat.name}{parent_info}")
             else:
                 logger.info(f"既存のためスキップ: {cat.name}")
 
@@ -371,91 +432,135 @@ def save_categories_to_spreadsheet(categories: list[ApmexCategory]) -> bool:
         return False
 
 
-def get_categories_to_register() -> list[ApmexCategory]:
+def get_categories_to_register() -> tuple[list[ApmexCategory], dict[str, int]]:
     """
     スプレッドシートから登録対象カテゴリーを取得
 
-    C列（登録）がTRUEで、D列（グループID）が空のものを取得
+    D列（登録）がTRUEで、E列（グループID）が空のものを取得
+    親カテゴリーのグループIDも取得
 
     Returns:
-        list[ApmexCategory]: 登録対象カテゴリーリスト
+        tuple[list[ApmexCategory], dict[str, int]]:
+            - 登録対象カテゴリーリスト
+            - 既存カテゴリー名 → グループIDのマッピング
     """
     client = SpreadsheetClient()
     if not client.connect():
         logger.error("スプレッドシートへの接続に失敗しました")
-        return []
+        return [], {}
 
     try:
         sheet = client._spreadsheet.worksheet(Config.SHEET_APMEX_CATEGORIES)
         all_data = sheet.get_all_values()
 
         categories = []
-        for i, row in enumerate(all_data[1:], start=2):  # ヘッダーをスキップ
-            if len(row) >= 4:
+        existing_group_ids = {}  # カテゴリー名 → グループID
+
+        # 1パス目: 既存のグループIDを収集
+        for row in all_data[1:]:  # ヘッダーをスキップ
+            if len(row) >= 5:
                 name = row[0].strip()
-                url = row[1].strip() if len(row) > 1 else ""
-                register = row[2].strip().upper() == "TRUE" if len(row) > 2 else False
-                group_id = row[3].strip() if len(row) > 3 else ""
+                group_id_str = row[4].strip() if len(row) > 4 else ""
+                if name and group_id_str:
+                    try:
+                        existing_group_ids[name] = int(group_id_str)
+                    except ValueError:
+                        pass
+
+        # 2パス目: 登録対象を収集
+        for i, row in enumerate(all_data[1:], start=2):  # ヘッダーをスキップ
+            if len(row) >= 5:
+                name = row[0].strip()
+                parent_name = row[1].strip() if len(row) > 1 else ""
+                url = row[2].strip() if len(row) > 2 else ""
+                register = row[3].strip().upper() == "TRUE" if len(row) > 3 else False
+                group_id = row[4].strip() if len(row) > 4 else ""
 
                 # 登録フラグがTRUEで、グループIDが空のもの
                 if name and register and not group_id:
                     categories.append(ApmexCategory(
                         name=name,
                         url=url,
+                        parent_name=parent_name if parent_name else None,
                         register=True
                     ))
 
-        logger.info(f"登録対象カテゴリー: {len(categories)} 件")
-        return categories
+        # 親カテゴリーを先に登録するようにソート
+        # 親がないもの → 親があるもの の順
+        sorted_categories = sorted(categories, key=lambda c: (1 if c.parent_name else 0, c.name))
+
+        logger.info(f"登録対象カテゴリー: {len(sorted_categories)} 件")
+        if existing_group_ids:
+            logger.info(f"既存グループID: {len(existing_group_ids)} 件")
+
+        return sorted_categories, existing_group_ids
 
     except Exception as e:
         logger.error(f"スプレッドシート読み込みエラー: {e}")
-        return []
+        return [], {}
 
 
 def register_categories_to_colorme(
     categories: list[ApmexCategory],
-    parent_group_id: int = 0,
+    existing_group_ids: dict[str, int],
+    root_parent_group_id: int = 0,
     dry_run: bool = False
-) -> dict[str, int]:
+) -> dict[str, tuple[int, int]]:
     """
-    カテゴリーをカラーミーグループとして登録
+    カテゴリーをカラーミーグループとして登録（親子関係を維持）
 
     Args:
         categories: APMEXカテゴリーリスト
-        parent_group_id: 親グループID（APMEX用の親グループ）
+        existing_group_ids: 既存カテゴリー名 → グループIDのマッピング
+        root_parent_group_id: ルート親グループID（APMEX用の親グループ）
         dry_run: Trueの場合は登録せずにプレビューのみ
 
     Returns:
-        dict[str, int]: カテゴリー名 → グループIDのマッピング
+        dict[str, tuple[int, int]]: カテゴリー名 → (グループID, 親グループID)のマッピング
     """
     client = ColorMeClient()
-    registered = {}
+    registered = {}  # カテゴリー名 → (グループID, 親グループID)
 
-    logger.info(f"カラーミーにグループを登録中... (親グループID: {parent_group_id})")
+    # 登録中に作成したグループIDも追跡
+    created_group_ids = dict(existing_group_ids)
+
+    logger.info(f"カラーミーにグループを登録中... (ルート親グループID: {root_parent_group_id})")
 
     for cat in categories:
-        if dry_run:
-            logger.info(f"[ドライラン] グループ作成: {cat.name}")
-            registered[cat.name] = 0
+        # 親グループIDを決定
+        if cat.parent_name and cat.parent_name in created_group_ids:
+            # 親カテゴリーが既に登録されている場合
+            parent_id = created_group_ids[cat.parent_name]
+            logger.info(f"  親カテゴリー '{cat.parent_name}' のグループID: {parent_id}")
         else:
-            group_id, error = client.create_group(cat.name, parent_group_id)
+            # トップレベルカテゴリー or 親がまだ登録されていない
+            parent_id = root_parent_group_id
+
+        if dry_run:
+            parent_info = f" (親ID: {parent_id})" if parent_id > 0 else ""
+            logger.info(f"[ドライラン] グループ作成: {cat.name}{parent_info}")
+            registered[cat.name] = (0, parent_id)
+        else:
+            group_id, error = client.create_group(cat.name, parent_id)
             if group_id > 0:
-                logger.info(f"グループ作成成功: {cat.name} → ID: {group_id}")
-                registered[cat.name] = group_id
+                parent_info = f" (親ID: {parent_id})" if parent_id > 0 else ""
+                logger.info(f"グループ作成成功: {cat.name} → ID: {group_id}{parent_info}")
+                registered[cat.name] = (group_id, parent_id)
+                # 作成したグループIDを追跡（後続の子カテゴリー用）
+                created_group_ids[cat.name] = group_id
             else:
                 logger.error(f"グループ作成失敗: {cat.name} - {error}")
-                registered[cat.name] = -1  # エラーを示す
+                registered[cat.name] = (-1, parent_id)  # エラーを示す
 
     return registered
 
 
-def update_spreadsheet_after_register(results: dict[str, int]) -> bool:
+def update_spreadsheet_after_register(results: dict[str, tuple[int, int]]) -> bool:
     """
     カラーミー登録後にスプレッドシートを更新
 
     Args:
-        results: カテゴリー名 → グループIDのマッピング
+        results: カテゴリー名 → (グループID, 親グループID)のマッピング
 
     Returns:
         bool: 成功時True
@@ -476,17 +581,18 @@ def update_spreadsheet_after_register(results: dict[str, int]) -> bool:
             if len(row) >= 1:
                 name = row[0].strip()
                 if name in results:
-                    group_id = results[name]
+                    group_id, parent_group_id = results[name]
                     if group_id > 0:
-                        # 成功
+                        # 成功: E列(グループID), F列(親グループID), G列(登録日時), H列(ステータス)
+                        parent_id_str = str(parent_group_id) if parent_group_id > 0 else ""
                         updates.append({
-                            'range': f'D{i}:F{i}',
-                            'values': [[str(group_id), timestamp, "成功"]]
+                            'range': f'E{i}:H{i}',
+                            'values': [[str(group_id), parent_id_str, timestamp, "成功"]]
                         })
                     elif group_id == -1:
-                        # エラー
+                        # エラー: G列(登録日時), H列(ステータス)
                         updates.append({
-                            'range': f'E{i}:F{i}',
+                            'range': f'G{i}:H{i}',
                             'values': [[timestamp, "エラー"]]
                         })
 
@@ -577,7 +683,7 @@ async def main():
         logger.info("カラーミーグループ登録")
         logger.info("=" * 50)
 
-        categories = get_categories_to_register()
+        categories, existing_group_ids = get_categories_to_register()
 
         if not categories:
             logger.info("登録対象のカテゴリーがありません")
@@ -586,7 +692,8 @@ async def main():
 
         logger.info(f"\n登録対象カテゴリー ({len(categories)}件):")
         for i, cat in enumerate(categories, 1):
-            logger.info(f"  {i}. {cat.name}")
+            parent_info = f" → 親: {cat.parent_name}" if cat.parent_name else " (トップレベル)"
+            logger.info(f"  {i}. {cat.name}{parent_info}")
 
         if args.dry_run:
             logger.info("\n[ドライラン] 実際には登録しません")
@@ -594,7 +701,8 @@ async def main():
         # カラーミーに登録
         results = register_categories_to_colorme(
             categories,
-            parent_group_id=args.parent_group_id,
+            existing_group_ids=existing_group_ids,
+            root_parent_group_id=args.parent_group_id,
             dry_run=args.dry_run
         )
 
@@ -602,7 +710,7 @@ async def main():
         if not args.dry_run and results:
             update_spreadsheet_after_register(results)
 
-        success_count = sum(1 for v in results.values() if v > 0)
+        success_count = sum(1 for v in results.values() if v[0] > 0)
         logger.info(f"\n登録完了: {success_count}/{len(categories)}件")
 
     return 0
