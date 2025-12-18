@@ -13,20 +13,19 @@ Bullionstarの全商品ページURLとカテゴリー情報を取得し、
 - 取得日
 
 次回実行時は上書きせず、新しいデータを下に追加する。
+
+BullionstarのAPIを使用して全ページネーションを正しく処理する。
 """
 
-import asyncio
 import logging
 import sys
 import time
 import random
+import requests
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
-
-from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright, Browser, Page
 
 # プロジェクトルートをパスに追加
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -52,106 +51,66 @@ class BullionstarProduct:
 
 
 # カテゴリー構造定義
-# 最上位カテゴリー → 親カテゴリー（サブカテゴリー）
+# 最上位カテゴリー → 親カテゴリー → APIカテゴリー名
 CATEGORY_STRUCTURE = {
     "Gold": {
-        "Gold Bars": "/buy/gold-bars",
-        "Gold Coins": "/buy/gold-coins",
-        "Numismatics Gold": "/buy/numismatics-collectibles-gold-coins",
-        "Gold Jewellery": "/buy/gold-jewellery",
+        "Gold Bars": "gold-bars",
+        "Gold Coins": "gold-coins",
+        "Numismatics Gold": "numismatics-collectibles-gold-coins",
+        "Gold Jewellery": "gold-jewellery",
     },
     "Silver": {
-        "Silver Bars": "/buy/silver-bars",
-        "Silver Coins": "/buy/silver-coins-rounds-wafers",
-        "Numismatics Silver": "/buy/numismatics-collectibles-silver-coins",
+        "Silver Bars": "silver-bars",
+        "Silver Coins": "silver-coins-rounds-wafers",
+        "Numismatics Silver": "numismatics-collectibles-silver-coins",
     },
     "Platinum": {
-        "Platinum Bars": "/buy/platinum-bars",
-        "Platinum Coins": "/buy/platinum-coins",
+        "Platinum Bars": "platinum-bars",
+        "Platinum Coins": "platinum-coins",
     },
     "Copper": {
-        "Copper Products": "/buy/copper",
+        "Copper Products": "copper",
     },
     "Jewellery": {
-        "Jewellery": "/buy/jewellery",
+        "Jewellery": "jewellery",
     },
     "Supplies": {
-        "Coin Supplies": "/buy/supplies",
-    },
-    "Bullion Savings Program": {
-        "BSP Products": "/buy/bullion-savings-program",
-    },
-    "Auctions": {
-        "Auction Items": "/auctions/",
+        "Coin Supplies": "supplies",
     },
 }
 
 
 class BullionstarProductScraper:
-    """Bullionstar商品ページスクレイパー"""
+    """Bullionstar商品ページスクレイパー（API版）"""
 
     BASE_URL = "https://www.bullionstar.com"
+    API_URL = "https://www.bullionstar.com/product/filter/desktop"
 
     # 待機時間設定
-    MIN_WAIT = 2.0
-    MAX_WAIT = 4.0
-    PAGE_LOAD_WAIT = 3000  # ミリ秒
+    MIN_WAIT = 1.0
+    MAX_WAIT = 2.0
+
+    # ロケーションID (1=シンガポール)
+    LOCATION_ID = 1
 
     def __init__(self):
-        self._playwright = None
-        self._browser: Optional[Browser] = None
-        self._page: Optional[Page] = None
-
-    async def start(self):
-        """ブラウザを起動"""
-        logger.info("Bullionstar Scraper: ブラウザを起動中...")
-
-        self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-            ]
-        )
-
-        context = await self._browser.new_context(
-            user_agent=(
+        self._session = requests.Session()
+        self._session.headers.update({
+            "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/131.0.0.0 Safari/537.36"
             ),
-            viewport={"width": 1920, "height": 1080},
-            locale="en-US",
-        )
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
+        })
 
-        await context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-        """)
-
-        self._page = await context.new_page()
-        logger.info("Bullionstar Scraper: ブラウザ起動完了")
-
-    async def stop(self):
-        """ブラウザを終了"""
-        logger.info("Bullionstar Scraper: ブラウザを終了中...")
-
-        if self._page:
-            await self._page.close()
-        if self._browser:
-            await self._browser.close()
-        if self._playwright:
-            await self._playwright.stop()
-
-        logger.info("Bullionstar Scraper: ブラウザ終了完了")
-
-    async def _wait(self):
+    def _wait(self):
         """ランダムな待機"""
         wait_time = random.uniform(self.MIN_WAIT, self.MAX_WAIT)
-        await asyncio.sleep(wait_time)
+        time.sleep(wait_time)
 
-    async def get_all_products(self) -> list[BullionstarProduct]:
+    def get_all_products(self) -> list[BullionstarProduct]:
         """
         全カテゴリの商品ページ一覧を取得
 
@@ -165,11 +124,11 @@ class BullionstarProductScraper:
         for top_category, subcategories in CATEGORY_STRUCTURE.items():
             logger.info(f"\n=== 最上位カテゴリ: {top_category} ===")
 
-            for parent_category, url_path in subcategories.items():
+            for parent_category, category_name in subcategories.items():
                 logger.info(f"  親カテゴリ: {parent_category}")
 
-                products = await self._scrape_category_page(
-                    url_path=url_path,
+                products = self._fetch_category_products(
+                    category_name=category_name,
                     top_category=top_category,
                     parent_category=parent_category,
                     timestamp=timestamp
@@ -182,23 +141,23 @@ class BullionstarProductScraper:
                         all_products.append(product)
 
                 logger.info(f"    → {len(products)}件取得（累計: {len(all_products)}件）")
-                await self._wait()
+                self._wait()
 
         logger.info(f"\n商品ページ取得完了: {len(all_products)}件")
         return all_products
 
-    async def _scrape_category_page(
+    def _fetch_category_products(
         self,
-        url_path: str,
+        category_name: str,
         top_category: str,
         parent_category: str,
         timestamp: str
     ) -> list[BullionstarProduct]:
         """
-        カテゴリーページから商品一覧を取得（ページネーション対応）
+        カテゴリーの商品一覧をAPIから取得（全ページ）
 
         Args:
-            url_path: カテゴリーパス (/buy/gold-bars 等)
+            category_name: APIカテゴリー名 (gold-bars 等)
             top_category: 最上位カテゴリ名
             parent_category: 親カテゴリ名
             timestamp: 取得日時
@@ -210,45 +169,46 @@ class BullionstarProductScraper:
         page_num = 1
 
         while True:
-            # URLを構築（Bullionstarはクエリパラメータでページング）
-            url = f"{self.BASE_URL}{url_path}"
-            if page_num > 1:
-                url = f"{url}?page={page_num}"
-
             try:
-                logger.info(f"    ページ{page_num}を取得中: {url}")
+                logger.info(f"    ページ{page_num}を取得中...")
 
-                await self._page.goto(url, wait_until="networkidle", timeout=60000)
-                await self._page.wait_for_timeout(self.PAGE_LOAD_WAIT)
+                params = {
+                    "locationId": self.LOCATION_ID,
+                    "name": category_name,
+                    "page": page_num,
+                    "sortType": "popular",
+                    "sortDirection": "desc",
+                }
 
-                # HTMLを解析
-                html = await self._page.content()
-                soup = BeautifulSoup(html, 'html.parser')
+                response = self._session.get(self.API_URL, params=params, timeout=30)
+                response.raise_for_status()
 
-                # 商品アイテムを取得
-                # Bullionstarの商品一覧は product-item クラスを使用
-                items = soup.select('.product-item, .product-card, [class*="product"]')
+                data = response.json()
 
-                if not items:
-                    # 代替セレクタを試す
-                    items = soup.select('a[href*="/buy/product/"]')
+                if not data.get("success"):
+                    logger.warning(f"    API応答エラー: {data}")
+                    break
 
-                if not items:
+                result = data.get("result", {})
+                groups = result.get("groups", [])
+
+                if not groups:
                     logger.info(f"    ページ{page_num}: 商品なし - 終了")
                     break
 
                 page_products = []
 
-                for item in items:
-                    product = self._parse_product_item(
-                        item=item,
-                        soup=soup,
-                        top_category=top_category,
-                        parent_category=parent_category,
-                        timestamp=timestamp
-                    )
-                    if product:
-                        page_products.append(product)
+                for group in groups:
+                    group_products = group.get("products", [])
+                    for prod in group_products:
+                        product = self._parse_api_product(
+                            prod=prod,
+                            top_category=top_category,
+                            parent_category=parent_category,
+                            timestamp=timestamp
+                        )
+                        if product:
+                            page_products.append(product)
 
                 if not page_products:
                     logger.info(f"    ページ{page_num}: パース可能な商品なし - 終了")
@@ -258,41 +218,35 @@ class BullionstarProductScraper:
                 logger.info(f"    ページ{page_num}: {len(page_products)}件取得")
 
                 # 次ページがあるかチェック
-                next_link = soup.select_one(f'a[href*="page={page_num + 1}"]')
-                if not next_link:
-                    # 別のページネーションパターンをチェック
-                    pagination = soup.select('.pagination a, .pager a, [class*="next"]')
-                    has_next = any(
-                        f'page={page_num + 1}' in (a.get('href', '') or '')
-                        for a in pagination
-                    )
-                    if not has_next:
-                        logger.info(f"    最終ページ: {page_num}")
-                        break
+                next_page = result.get("nextPage")
+                if not next_page:
+                    logger.info(f"    最終ページ: {page_num}")
+                    break
 
                 page_num += 1
-                await self._wait()
+                self._wait()
 
+            except requests.RequestException as e:
+                logger.error(f"    API取得エラー: {e}")
+                break
             except Exception as e:
-                logger.error(f"    カテゴリ取得エラー: {url} - {e}")
+                logger.error(f"    カテゴリ取得エラー: {e}")
                 break
 
         return products
 
-    def _parse_product_item(
+    def _parse_api_product(
         self,
-        item,
-        soup: BeautifulSoup,
+        prod: dict,
         top_category: str,
         parent_category: str,
         timestamp: str
     ) -> Optional[BullionstarProduct]:
         """
-        商品アイテムをパース
+        API応答の商品データをパース
 
         Args:
-            item: 商品要素
-            soup: BeautifulSoupオブジェクト
+            prod: 商品データ辞書
             top_category: 最上位カテゴリ
             parent_category: 親カテゴリ
             timestamp: 取得日時
@@ -301,44 +255,19 @@ class BullionstarProductScraper:
             BullionstarProduct: 商品データ（パース失敗時はNone）
         """
         try:
-            # URLを取得
-            link = item if item.name == 'a' else item.select_one('a[href*="/buy/product/"]')
-            if not link:
-                link = item.select_one('a[href]')
-            if not link:
+            url_name = prod.get("urlName", "")
+            title = prod.get("title", "")
+
+            if not url_name or not title:
                 return None
 
-            href = link.get('href', '')
-            if not href or '/buy/product/' not in href:
-                # 商品ページ以外のリンクはスキップ
-                return None
+            url = f"{self.BASE_URL}/buy/product/{url_name}"
 
-            url = href if href.startswith('http') else f"{self.BASE_URL}{href}"
-
-            # 商品名を取得
-            name_elem = item.select_one('.product-title, .product-name, h2, h3, [class*="title"]')
-            if not name_elem:
-                name_elem = link
-            name = name_elem.get_text(strip=True) if name_elem else ""
-
-            if not name:
-                return None
-
-            # 子カテゴリー（サブサブカテゴリー）を検出
-            # URLパスから推測
-            child_category = ""
-            url_parts = href.split('/')
-            # /buy/product/product-name の形式
-            # 追加のカテゴリー情報があればそれを使用
-
-            # パンくずリストから子カテゴリーを取得（ページ内にあれば）
-            breadcrumb = soup.select('.breadcrumb a, [class*="breadcrumb"] a')
-            if len(breadcrumb) >= 3:
-                # 最後から2番目がサブカテゴリーの場合
-                child_category = breadcrumb[-2].get_text(strip=True) if len(breadcrumb) > 2 else ""
+            # 子カテゴリーはAPIデータから取得（あれば）
+            child_category = prod.get("subCategory", "") or ""
 
             return BullionstarProduct(
-                name=name,
+                name=title,
                 url=url,
                 top_category=top_category,
                 parent_category=parent_category,
@@ -421,7 +350,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
         return False
 
 
-async def fetch_bullionstar_products() -> list[BullionstarProduct]:
+def fetch_bullionstar_products() -> list[BullionstarProduct]:
     """
     Bullionstarから商品ページ一覧を取得
 
@@ -429,16 +358,10 @@ async def fetch_bullionstar_products() -> list[BullionstarProduct]:
         list[BullionstarProduct]: 商品リスト
     """
     scraper = BullionstarProductScraper()
-
-    try:
-        await scraper.start()
-        products = await scraper.get_all_products()
-        return products
-    finally:
-        await scraper.stop()
+    return scraper.get_all_products()
 
 
-async def main():
+def main():
     """メイン処理"""
     import argparse
 
@@ -458,7 +381,7 @@ async def main():
     parser.add_argument(
         "--category",
         type=str,
-        help="特定のカテゴリのみ取得（Gold, Silver, Platinum, Copper）"
+        help="特定のカテゴリのみ取得（Gold, Silver, Platinum, Copper, Jewellery, Supplies）"
     )
 
     args = parser.parse_args()
@@ -486,8 +409,8 @@ async def main():
         sys.exit(1)
 
     # 特定カテゴリのみの場合、CATEGORY_STRUCTUREをフィルタリング
+    global CATEGORY_STRUCTURE
     if args.category:
-        global CATEGORY_STRUCTURE
         if args.category in CATEGORY_STRUCTURE:
             CATEGORY_STRUCTURE = {args.category: CATEGORY_STRUCTURE[args.category]}
             logger.info(f"カテゴリを {args.category} に限定")
@@ -497,7 +420,7 @@ async def main():
             sys.exit(1)
 
     # 商品ページ一覧を取得
-    products = await fetch_bullionstar_products()
+    products = fetch_bullionstar_products()
 
     if not products:
         logger.warning("商品を取得できませんでした")
@@ -541,4 +464,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+    sys.exit(main())
