@@ -2018,7 +2018,7 @@ def fill_incomplete_rows() -> bool:
             if sync_mode == "新規登録" and colorme_client:
                 logger.info("  カラーミーへ新規商品登録中...")
 
-                # 先にM列（取得元価格）を更新してT列の計算式を更新させる
+                # 先にM/N/P/Q列を更新してT列の計算式を更新させる
                 try:
                     sheet = sheet_client._spreadsheet.worksheet(Config.SHEET_COLORME)
                     price_updates = []
@@ -2039,8 +2039,14 @@ def fill_incomplete_rows() -> bool:
                             'range': f'P{row_num}',
                             'values': [[str(round(exchange_rate, 4))]]
                         })
+                    # Q列: 外部-本体計算価格（T列の計算式で使用）
+                    if calculated_price is not None:
+                        price_updates.append({
+                            'range': f'Q{row_num}',
+                            'values': [[str(int(calculated_price))]]
+                        })
                     sheet.batch_update(price_updates, value_input_option='RAW')
-                    logger.info("  M/N/P列を先行更新（T列計算式用）")
+                    logger.info("  M/N/P/Q列を先行更新（T列計算式用）")
 
                     # スプレッドシートの再計算を待機
                     import time
