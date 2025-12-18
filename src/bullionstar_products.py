@@ -72,6 +72,18 @@ CATEGORY_STRUCTURE = {
     "Copper": {
         "Copper Products": "/buy/copper",
     },
+    "Jewellery": {
+        "Jewellery": "/buy/jewellery",
+    },
+    "Supplies": {
+        "Coin Supplies": "/buy/supplies",
+    },
+    "Bullion Savings Program": {
+        "BSP Products": "/buy/bullion-savings-program",
+    },
+    "Auctions": {
+        "Auction Items": "/auctions/",
+    },
 }
 
 

@@ -17,6 +17,10 @@ on:
           - Silver
           - Platinum
           - Copper
+          - Jewellery
+          - Supplies
+          - Bullion Savings Program
+          - Auctions
       dry_run:
         description: 'ドライラン（スプレッドシートに保存しない）'
         required: false
