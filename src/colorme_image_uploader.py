@@ -534,19 +534,43 @@ class ColorMeImageUploader:
                 # 商品編集ページに移動
                 edit_url = f"{self.ADMIN_URL}?mode=product_edt&type=UPD&product_id={product_id}"
                 await self._page.goto(edit_url, wait_until="networkidle")
-                await asyncio.sleep(2)
+                await asyncio.sleep(5)  # ページ読み込み待機を延長
 
                 # 画像ファイル入力を全て探す（plupload）
                 file_inputs = await self._page.query_selector_all('input[type="file"]')
+                logger.info(f"  ファイル入力フィールド検出: {len(file_inputs)}個")
 
                 # 画像用の入力フィールドをフィルタ
                 image_inputs = []
                 for fi in file_inputs:
                     accept = await fi.get_attribute("accept")
-                    if accept and "image/jpeg" in accept and "video" not in accept:
-                        image_inputs.append(fi)
+                    input_id = await fi.get_attribute("id")
+                    input_name = await fi.get_attribute("name")
+                    logger.debug(f"    input: id={input_id}, name={input_name}, accept={accept}")
+                    # 画像を受け付けるinput（video以外）
+                    if accept:
+                        if ("image" in accept or "jpeg" in accept or "png" in accept) and "video" not in accept:
+                            image_inputs.append(fi)
+
+                # 見つからない場合、代替セレクタを試す
+                if not image_inputs:
+                    logger.info("  代替セレクタで画像入力を検索中...")
+                    # plupload用のコンテナを探す
+                    plupload_inputs = await self._page.query_selector_all('.plupload input[type="file"], .moxie-shim input[type="file"]')
+                    if plupload_inputs:
+                        image_inputs = plupload_inputs
+                        logger.info(f"  pluploadセレクタで検出: {len(image_inputs)}個")
 
                 if not image_inputs:
+                    # デバッグ用にページのHTMLの一部をログ出力
+                    try:
+                        page_content = await self._page.content()
+                        if 'input type="file"' in page_content:
+                            logger.warning("  ページにはfile inputが存在しますが、セレクタで検出できませんでした")
+                        else:
+                            logger.warning("  ページにfile inputが存在しません")
+                    except:
+                        pass
                     return ImageUploadResult(
                         product_id=product_id,
                         success=False,
