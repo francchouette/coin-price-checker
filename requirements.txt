@@ -11,6 +11,9 @@ google-auth-oauthlib==1.2.1
 # Data processing
 pandas==2.2.3
 
+# Image processing (WebP→JPEG conversion for ColorMe API)
+Pillow==11.0.0
+
 # HTTP requests (for notifications)
 requests==2.32.3
 

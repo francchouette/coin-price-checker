@@ -1616,3 +1616,138 @@ class SpreadsheetClient:
         except Exception as e:
             logger.error(f"新規行追加エラー: {e}")
             return False
+
+    def update_product_image_urls(
+        self,
+        product_id: int,
+        image_urls: list[str]
+    ) -> bool:
+        """
+        商品の画像URLを更新する（AR〜BA列）
+
+        画像アップロード成功後に、カラーミーの画像URLで
+        スプレッドシートを更新する。
+
+        Args:
+            product_id: 商品ID
+            image_urls: 画像URLリスト（最大10枚）
+
+        Returns:
+            bool: 成功時True
+        """
+        if not self._spreadsheet:
+            logger.error("スプレッドシートに接続されていません")
+            return False
+
+        try:
+            sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME)
+            all_data = sheet.get_all_values()
+
+            # 商品IDで行を検索
+            row_num = None
+            for i, row in enumerate(all_data[1:], start=2):
+                if len(row) >= 1 and row[0].strip():
+                    try:
+                        if int(row[0].strip()) == product_id:
+                            row_num = i
+                            break
+                    except ValueError:
+                        continue
+
+            if not row_num:
+                logger.warning(f"商品ID {product_id} が見つかりません")
+                return False
+
+            # AR〜BA列（index 43〜52、10列分）を更新
+            # AR列 = 44番目の列 = 列番号でいうとAR
+            image_values = []
+            for i in range(10):
+                if i < len(image_urls):
+                    image_values.append(image_urls[i] or "")
+                else:
+                    image_values.append("")
+
+            # AR〜BA列を更新
+            sheet.update(
+                f'AR{row_num}:BA{row_num}',
+                [image_values],
+                value_input_option='RAW'
+            )
+
+            logger.info(f"商品ID {product_id} の画像URL更新: {len(image_urls)}枚")
+            return True
+
+        except Exception as e:
+            logger.error(f"画像URL更新エラー: {e}")
+            return False
+
+    def update_product_image_urls_batch(
+        self,
+        updates: list[tuple[int, list[str]]]
+    ) -> int:
+        """
+        複数商品の画像URLを一括更新する
+
+        Args:
+            updates: (商品ID, 画像URLリスト)のリスト
+
+        Returns:
+            int: 更新成功件数
+        """
+        if not self._spreadsheet:
+            logger.error("スプレッドシートに接続されていません")
+            return 0
+
+        if not updates:
+            return 0
+
+        try:
+            sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME)
+            all_data = sheet.get_all_values()
+
+            # 商品ID -> 行番号のマッピング
+            id_to_row = {}
+            for i, row in enumerate(all_data[1:], start=2):
+                if len(row) >= 1 and row[0].strip():
+                    try:
+                        id_to_row[int(row[0].strip())] = i
+                    except ValueError:
+                        continue
+
+            # 更新データを準備
+            batch_updates = []
+            success_count = 0
+
+            for product_id, image_urls in updates:
+                row_num = id_to_row.get(product_id)
+                if not row_num:
+                    continue
+
+                # 画像URLを10列分に整形
+                image_values = []
+                for i in range(10):
+                    if i < len(image_urls):
+                        image_values.append(image_urls[i] or "")
+                    else:
+                        image_values.append("")
+
+                batch_updates.append({
+                    'range': f'AR{row_num}:BA{row_num}',
+                    'values': [image_values]
+                })
+                success_count += 1
+
+            if batch_updates:
+                # 50件ずつバッチ更新
+                batch_size = 50
+                for i in range(0, len(batch_updates), batch_size):
+                    batch = batch_updates[i:i + batch_size]
+                    sheet.batch_update(batch, value_input_option='RAW')
+
+                logger.info(f"画像URL一括更新完了: {success_count}件")
+
+            return success_count
+
+        except Exception as e:
+            logger.error(f"画像URL一括更新エラー: {e}")
+            return 0

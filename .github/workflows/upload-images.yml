@@ -1,0 +1,104 @@
+name: Upload Product Images
+
+on:
+  # 手動実行
+  workflow_dispatch:
+    inputs:
+      max_products:
+        description: '1回の実行で処理する最大件数'
+        required: false
+        default: '100'
+      reset_progress:
+        description: '進捗をリセットして最初から実行'
+        required: false
+        default: 'false'
+        type: boolean
+
+  # スケジュール実行（毎日深夜3時）- 必要に応じてコメント解除
+  # schedule:
+  #   - cron: '0 18 * * *'  # UTC 18:00 = JST 3:00
+
+jobs:
+  upload-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180  # 3時間（大量画像処理用）
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/613320899872/locations/global/workloadIdentityPools/github-actions-pool/providers/github'
+          service_account: 'spreadsheet-access@coin-price-tracker-479614.iam.gserviceaccount.com'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: |
+          python -m playwright install chromium
+          python -m playwright install-deps chromium
+
+      # 進捗ファイルをキャッシュから復元
+      - name: Restore progress cache
+        if: inputs.reset_progress != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: data/image_upload_progress.json
+          key: image-upload-progress-${{ github.run_id }}
+          restore-keys: |
+            image-upload-progress-
+
+      # 進捗リセット時はファイル削除
+      - name: Reset progress if requested
+        if: inputs.reset_progress == 'true'
+        run: |
+          rm -f data/image_upload_progress.json
+          echo "Progress reset requested - starting from scratch"
+
+      - name: Create data directory
+        run: mkdir -p data
+
+      - name: Upload product images
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
+          COLORME_LOGIN_ID: ${{ secrets.COLORME_LOGIN_ID }}
+          COLORME_PASSWORD: ${{ secrets.COLORME_PASSWORD }}
+          MAX_PRODUCTS: ${{ inputs.max_products || '100' }}
+        run: |
+          python -m src.upload_images --max-per-run $MAX_PRODUCTS
+
+      # 進捗ファイルをキャッシュに保存
+      - name: Save progress cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: data/image_upload_progress.json
+          key: image-upload-progress-${{ github.run_id }}
+
+      # 進捗状況を出力
+      - name: Show progress status
+        if: always()
+        run: |
+          if [ -f data/image_upload_progress.json ]; then
+            echo "=== Progress Status ==="
+            cat data/image_upload_progress.json | python -m json.tool
+          else
+            echo "No progress file found"
+          fi

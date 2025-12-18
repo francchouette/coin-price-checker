@@ -881,6 +881,204 @@ class ColorMeClient:
             logger.error(f"商品新規登録エラー: {product.name} - {error_msg}")
             return 0, error_msg
 
+    def _download_and_convert_image(self, image_url: str) -> tuple[bytes, str]:
+        """
+        画像をダウンロードし、必要に応じてJPEGに変換する
+
+        カラーミーショップはjpg, jpeg, gif, pngのみサポート。
+        WebPなど未対応形式はJPEGに変換する。
+
+        Args:
+            image_url: 画像のURL
+
+        Returns:
+            tuple[bytes, str]: (画像バイナリ, MIMEタイプ)
+        """
+        from io import BytesIO
+
+        # 画像をダウンロード
+        img_response = requests.get(image_url, timeout=60)
+        img_response.raise_for_status()
+        image_data = img_response.content
+
+        # Content-Typeを確認
+        content_type = img_response.headers.get("Content-Type", "").lower()
+        url_lower = image_url.lower()
+
+        # WebP形式の検出（Content-TypeまたはURL拡張子）
+        is_webp = "webp" in content_type or url_lower.endswith(".webp")
+
+        # サポートされている形式かチェック
+        supported_types = ["image/jpeg", "image/jpg", "image/png", "image/gif"]
+        is_supported = any(st in content_type for st in supported_types)
+
+        if is_webp or not is_supported:
+            # PILを使ってJPEGに変換
+            try:
+                from PIL import Image
+
+                logger.info(f"  画像形式変換中: {content_type or 'unknown'} → JPEG")
+
+                # 画像を読み込み
+                img = Image.open(BytesIO(image_data))
+
+                # RGBA（透過）の場合は白背景でRGBに変換
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    if img.mode == 'P':
+                        img = img.convert('RGBA')
+                    background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                    img = background
+                elif img.mode != 'RGB':
+                    img = img.convert('RGB')
+
+                # JPEGとして保存
+                output = BytesIO()
+                img.save(output, format='JPEG', quality=90)
+                image_data = output.getvalue()
+                content_type = "image/jpeg"
+
+                logger.info(f"  変換完了: {len(image_data):,} bytes")
+
+            except ImportError:
+                logger.warning("Pillowがインストールされていません。画像変換をスキップします。")
+                # 変換できない場合はそのまま返す（エラーになる可能性あり）
+            except Exception as e:
+                logger.error(f"  画像変換エラー: {e}")
+                raise
+
+        return image_data, content_type
+
+    def _image_to_base64_data_uri(self, image_data: bytes, content_type: str) -> str:
+        """
+        画像バイナリをBase64 Data URI形式に変換する
+
+        Args:
+            image_data: 画像バイナリ
+            content_type: MIMEタイプ
+
+        Returns:
+            str: Data URI形式の文字列 (例: "data:image/jpeg;base64,/9j/4AAQ...")
+        """
+        import base64
+
+        # MIMEタイプを正規化
+        if "jpeg" in content_type or "jpg" in content_type:
+            mime_type = "image/jpeg"
+        elif "png" in content_type:
+            mime_type = "image/png"
+        elif "gif" in content_type:
+            mime_type = "image/gif"
+        else:
+            mime_type = "image/jpeg"  # デフォルト
+
+        # Base64エンコード
+        b64_data = base64.b64encode(image_data).decode('utf-8')
+
+        return f"data:{mime_type};base64,{b64_data}"
+
+    def upload_product_images(
+        self,
+        product_id: int,
+        image_urls: list[str],
+        initial_delay: float = 3.0,
+        max_retries: int = 3
+    ) -> tuple[bool, str]:
+        """
+        商品画像をBase64形式でアップロードする
+
+        カラーミーショップAPIでは、商品更新API（PUT）のimages配列に
+        Base64 Data URI形式で画像を指定することで画像を登録できる。
+
+        Args:
+            product_id: 商品ID
+            image_urls: 画像URLリスト（最大50枚、1枚目がメイン画像）
+            initial_delay: 最初の画像アップロード前の待機時間（秒）
+            max_retries: エラー時のリトライ回数
+
+        Returns:
+            tuple[bool, str]: (成功したか, エラーメッセージ)
+        """
+        import time
+
+        if not self.access_token:
+            return False, "アクセストークンが設定されていません"
+
+        if not image_urls:
+            return True, ""
+
+        # 商品登録直後は少し待機
+        if initial_delay > 0:
+            logger.info(f"画像アップロード前に{initial_delay}秒待機...")
+            time.sleep(initial_delay)
+
+        # 画像をダウンロードしてBase64に変換
+        images_data = []
+        errors = []
+
+        for i, url in enumerate(image_urls[:50]):  # 最大50枚（レギュラープラン以上）
+            if not url:
+                continue
+
+            logger.info(f"  画像 {i+1}/{len(image_urls)}: {url[:80]}...")
+
+            try:
+                # 画像をダウンロードして変換
+                image_data, content_type = self._download_and_convert_image(url)
+
+                # サイズチェック（5MB制限）
+                if len(image_data) > 5 * 1024 * 1024:
+                    errors.append(f"画像{i+1}: サイズが5MBを超えています ({len(image_data):,} bytes)")
+                    continue
+
+                # Base64 Data URIに変換
+                data_uri = self._image_to_base64_data_uri(image_data, content_type)
+
+                images_data.append({"src": data_uri})
+                logger.info(f"    → 変換成功 ({len(image_data):,} bytes)")
+
+            except Exception as e:
+                error_msg = str(e)
+                errors.append(f"画像{i+1}: {error_msg}")
+                logger.error(f"    → エラー: {error_msg}")
+
+        if not images_data:
+            if errors:
+                return False, "; ".join(errors)
+            return True, ""
+
+        # 商品更新APIで画像を登録
+        logger.info(f"カラーミーAPIに{len(images_data)}枚の画像を登録中...")
+
+        for retry in range(max_retries):
+            try:
+                response = requests.put(
+                    f"{self.API_BASE}/products/{product_id}.json",
+                    headers=self._headers(),
+                    json={"product": {"images": images_data}},
+                    timeout=120  # 大きな画像データのため長めのタイムアウト
+                )
+                response.raise_for_status()
+
+                logger.info(f"画像登録成功: 商品ID {product_id} ({len(images_data)}枚)")
+
+                if errors:
+                    # 一部成功の場合
+                    return True, f"一部エラー: {'; '.join(errors)}"
+                return True, ""
+
+            except requests.RequestException as e:
+                error_msg = str(e)
+                if retry < max_retries - 1:
+                    wait_time = 5 * (retry + 1)
+                    logger.warning(f"    リトライ {retry + 1}/{max_retries}: {wait_time}秒待機")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"画像登録失敗: 商品ID {product_id} - {error_msg}")
+                    return False, error_msg
+
+        return False, "リトライ上限に達しました"
+
     def upload_product_image(
         self,
         product_id: int,
@@ -888,114 +1086,17 @@ class ColorMeClient:
         is_main: bool = True
     ) -> tuple[bool, str]:
         """
-        商品画像をアップロードする
+        単一の商品画像をアップロードする（後方互換性のため残す）
 
         Args:
             product_id: 商品ID
             image_url: 画像のURL
-            is_main: メイン画像かどうか
+            is_main: メイン画像かどうか（現在は使用されない）
 
         Returns:
             tuple[bool, str]: (成功したか, エラーメッセージ)
         """
-        if not self.access_token:
-            return False, "アクセストークンが設定されていません"
-
         if not image_url:
             return True, ""
 
-        try:
-            # 画像をダウンロード
-            img_response = requests.get(image_url, timeout=30)
-            img_response.raise_for_status()
-            image_data = img_response.content
-
-            # Content-Typeから拡張子を推測
-            content_type = img_response.headers.get("Content-Type", "image/jpeg")
-            if "png" in content_type:
-                ext = "png"
-            elif "gif" in content_type:
-                ext = "gif"
-            else:
-                ext = "jpg"
-
-            # マルチパート形式でアップロード
-            files = {
-                "product_image[image]": (f"image.{ext}", image_data, content_type)
-            }
-
-            if is_main:
-                endpoint = f"{self.API_BASE}/products/{product_id}/images.json"
-            else:
-                endpoint = f"{self.API_BASE}/products/{product_id}/images.json"
-
-            response = requests.post(
-                endpoint,
-                headers={"Authorization": f"Bearer {self.access_token}"},
-                files=files,
-                timeout=60
-            )
-            response.raise_for_status()
-            logger.info(f"画像アップロード成功: 商品ID {product_id}")
-            return True, ""
-
-        except requests.RequestException as e:
-            error_msg = str(e)
-            logger.error(f"画像アップロードエラー (ID: {product_id}): {error_msg}")
-            return False, error_msg
-
-    def upload_product_images(
-        self,
-        product_id: int,
-        image_urls: list[str],
-        initial_delay: float = 10.0,
-        max_retries: int = 5
-    ) -> tuple[bool, str]:
-        """
-        商品の全画像をアップロードする
-
-        Args:
-            product_id: 商品ID
-            image_urls: 画像URLリスト（最大10枚、1枚目がメイン画像）
-            initial_delay: 最初の画像アップロード前の待機時間（秒）
-            max_retries: 404エラー時のリトライ回数
-
-        Returns:
-            tuple[bool, str]: (成功したか, エラーメッセージ)
-        """
-        import time
-
-        # 商品登録直後はAPIが認識するまで待機（カラーミーAPIは登録反映に時間がかかる）
-        if initial_delay > 0:
-            logger.info(f"画像アップロード前に{initial_delay}秒待機（API反映待ち）...")
-            time.sleep(initial_delay)
-
-        errors = []
-
-        for i, url in enumerate(image_urls[:10]):
-            if url:
-                is_main = (i == 0)  # 1枚目がメイン画像
-
-                # リトライ処理（404エラー対策）
-                success = False
-                error = ""
-                for retry in range(max_retries):
-                    success, error = self.upload_product_image(product_id, url, is_main=is_main)
-                    if success:
-                        break
-                    if "404" in error:
-                        # 404の場合はリトライ（APIが商品を認識するまで待機）
-                        wait_time = 5 + (retry * 5)  # 5秒, 10秒, 15秒, 20秒, 25秒
-                        logger.info(f"  404エラー、{wait_time}秒後にリトライ ({retry + 1}/{max_retries})")
-                        time.sleep(wait_time)
-                    else:
-                        # 404以外のエラーはリトライしない
-                        break
-
-                if not success:
-                    errors.append(f"画像{i+1}: {error}")
-
-        if errors:
-            return False, "; ".join(errors)
-
-        return True, ""
+        return self.upload_product_images(product_id, [image_url])
