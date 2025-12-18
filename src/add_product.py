@@ -2018,6 +2018,46 @@ def fill_incomplete_rows() -> bool:
             if sync_mode == "新規登録" and colorme_client:
                 logger.info("  カラーミーへ新規商品登録中...")
 
+                # 先にM列（取得元価格）を更新してT列の計算式を更新させる
+                try:
+                    sheet = sheet_client._spreadsheet.worksheet(Config.SHEET_COLORME)
+                    price_updates = []
+                    # M列: 取得元価格
+                    price_updates.append({
+                        'range': f'M{row_num}',
+                        'values': [[str(product_info.get("price", ""))]]
+                    })
+                    # N列: 取得通貨
+                    if not existing_currency:
+                        price_updates.append({
+                            'range': f'N{row_num}',
+                            'values': [[product_info.get("currency", "USD")]]
+                        })
+                    # P列: 為替レート
+                    if exchange_rate is not None:
+                        price_updates.append({
+                            'range': f'P{row_num}',
+                            'values': [[str(round(exchange_rate, 4))]]
+                        })
+                    sheet.batch_update(price_updates, value_input_option='RAW')
+                    logger.info("  M/N/P列を先行更新（T列計算式用）")
+
+                    # スプレッドシートの再計算を待機
+                    import time
+                    time.sleep(2)
+
+                    # T列を再読み込み
+                    updated_row = sheet.row_values(row_num)
+                    if len(updated_row) > 19 and updated_row[19].strip():
+                        try:
+                            new_selling_price = int(float(updated_row[19].strip().replace(',', '')))
+                            logger.info(f"  T列再読み込み: {new_selling_price}円")
+                            row_info["selling_price"] = new_selling_price
+                        except ValueError:
+                            logger.warning(f"  T列の値が数値ではありません: {updated_row[19]}")
+                except Exception as e:
+                    logger.warning(f"  価格先行更新エラー: {e}")
+
                 # T列の販売価格を使用（設定されていない場合はcalculated_priceをフォールバック）
                 selling_price = row_info.get("selling_price", 0)
                 if selling_price > 0:
