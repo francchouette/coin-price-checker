@@ -169,6 +169,19 @@ class Config:
         "ステータス",          # H列
     ]
 
+    # ブリオンスター商品ページ一覧シート名
+    SHEET_BULLIONSTAR_PRODUCTS: str = "ブリオンスター商品ページ一覧"
+
+    # ブリオンスター商品ページ一覧シートのヘッダー
+    BULLIONSTAR_PRODUCT_HEADERS: list[str] = [
+        "商品名",          # A列
+        "URL",             # B列
+        "最上位カテゴリ",   # C列
+        "親カテゴリ",       # D列
+        "子カテゴリ",       # E列
+        "取得日",          # F列
+    ]
+
     # Bright Data Proxy設定（レガシー）
     BRIGHTDATA_HOST: str = os.getenv("BRIGHTDATA_HOST", "")
     BRIGHTDATA_USERNAME: str = os.getenv("BRIGHTDATA_USERNAME", "")

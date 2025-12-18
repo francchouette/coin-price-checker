@@ -266,7 +266,7 @@ def sync_colorme_to_sheet(sheet_client: SpreadsheetClient):
     """
     logger.info("カラーミー商品一覧をシートに同期中...")
 
-    colorme_client = ColorMeClient(dry_run=True)
+    colorme_client = ColorMeClient()
     api_products = colorme_client.get_all_products()
 
     if not api_products:
