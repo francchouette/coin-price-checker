@@ -25,6 +25,39 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def adjust_formula_row(formula: str, old_row: int, new_row: int) -> str:
+    """
+    数式内の行番号を調整する
+
+    Args:
+        formula: 元の数式（例: "=L2*Q2"）
+        old_row: 元の行番号
+        new_row: 新しい行番号
+
+    Returns:
+        str: 行番号を調整した数式
+    """
+    if not formula or not formula.startswith("="):
+        return formula
+
+    import re
+    # セル参照のパターン（例: A2, $A2, A$2, $A$2）
+    # 行番号が固定されていない参照のみ置換
+    def replace_row(match):
+        col = match.group(1)  # 列部分（$A, A, $AB, ABなど）
+        row = match.group(2)  # 行番号部分
+        if row.startswith("$"):
+            # 行番号が固定されている場合は変更しない
+            return match.group(0)
+        if int(row) == old_row:
+            return f"{col}{new_row}"
+        return match.group(0)
+
+    # パターン: 列名（$付きまたは無し） + 行番号（$付きまたは無し）
+    pattern = r'(\$?[A-Z]+)(\$?\d+)'
+    return re.sub(pattern, replace_row, formula)
+
+
 def fetch_exchange_rates(currencies: list[str], exchange_types: dict[str, str]) -> dict[str, float]:
     """
     通貨リストから為替レートを取得する
@@ -155,25 +188,36 @@ def main():
     try:
         sheet = client._spreadsheet.worksheet(Config.SHEET_COLORME_V2)
 
-        # 既存データを取得（仕入れ先情報を保持するため）
+        # 既存データを取得（仕入れ先情報と数式を保持するため）
+        # 値として取得（商品IDのマッピング用）
         existing = sheet.get_all_values()
-        existing_data = {}  # 商品ID -> 既存行データのマッピング
+        # 数式として取得（数式を保持するため）
+        existing_formulas = sheet.get(f'A1:CB{len(existing) + 1}', value_render_option='FORMULA')
+
+        existing_data = {}  # 商品ID -> 既存行データのマッピング（数式含む）
+        existing_row_map = {}  # 商品ID -> 行番号のマッピング
         if len(existing) > 1:
-            for row in existing[1:]:  # ヘッダーをスキップ
+            for row_idx, row in enumerate(existing[1:], start=1):  # ヘッダーをスキップ
                 if len(row) > 2 and row[2]:  # C列: カラーミー商品ID
                     try:
                         pid = int(row[2])
-                        existing_data[pid] = row
+                        # 数式データを使用（存在すれば）
+                        if existing_formulas and row_idx < len(existing_formulas):
+                            existing_data[pid] = existing_formulas[row_idx]
+                        else:
+                            existing_data[pid] = row
+                        existing_row_map[pid] = row_idx
                     except ValueError:
                         pass
-            logger.info(f"既存データを取得: {len(existing_data)}件")
+            logger.info(f"既存データを取得: {len(existing_data)}件（数式を保持）")
 
             # 既存データをクリア（2行目以降）
             sheet.batch_clear([f'A2:CB{len(existing) + 1}'])
 
         # 既存データからO列（取引通貨）とP列（為替種類）を収集
+        # ※数式の場合は値を取得するためexistingから取得
         currency_exchange_types = {}  # 通貨 -> 為替種類
-        for pid, row in existing_data.items():
+        for row_idx, row in enumerate(existing[1:], start=1):  # ヘッダーをスキップ
             if len(row) > 15:
                 currency = row[14].strip().upper() if len(row) > 14 and row[14] else ""
                 exchange_type = row[15].strip() if len(row) > 15 and row[15] else "クレカ"
@@ -253,6 +297,10 @@ def main():
             # 既存データがあれば仕入れ先情報を保持
             existing_row = existing_data.get(product_id, [])
 
+            # 行番号の計算（数式調整用）
+            old_row_num = existing_row_map.get(product_id, 0) + 1  # 1-indexed（ヘッダー含む）
+            new_row_num = len(rows) + 2  # 現在書き込む行番号（ヘッダー+1）
+
             # A-B: 操作項目
             row[0] = "変更なし"  # A: 同期モード
             row[1] = display_state  # B: 掲載設定（日本語）
@@ -306,24 +354,39 @@ def main():
                     row[13] = existing_row[13] if len(existing_row) > 13 else ""
                     row[14] = existing_row[14] if len(existing_row) > 14 else ""
 
-            # P-AB: 価格計算（既存データを保持）
+            # P-AB: 価格計算（既存データを保持、数式は行番号を調整）
             for i in range(15, 28):
                 if len(existing_row) > i:
-                    row[i] = existing_row[i]
+                    cell_value = existing_row[i]
+                    # 数式の場合は行番号を調整
+                    if isinstance(cell_value, str) and cell_value.startswith("="):
+                        row[i] = adjust_formula_row(cell_value, old_row_num, new_row_num)
+                    else:
+                        row[i] = cell_value
 
-            # Q列（為替レート）を自動更新
-            currency = row[14].strip().upper() if row[14] else ""
-            exchange_type = row[15].strip() if row[15] else "クレカ"
-            if currency and currency != "JPY":
-                rate_key = f"{currency}_{exchange_type}"
-                if rate_key in exchange_rates:
-                    row[16] = str(round(exchange_rates[rate_key], 4))  # Q: 為替レート
+            # Q列（為替レート）を自動更新（数式でない場合のみ）
+            if not (row[16] and isinstance(row[16], str) and row[16].startswith("=")):
+                currency = row[14].strip().upper() if row[14] else ""
+                exchange_type = row[15].strip() if row[15] else "クレカ"
+                if currency and currency != "JPY":
+                    rate_key = f"{currency}_{exchange_type}"
+                    if rate_key in exchange_rates:
+                        row[16] = str(round(exchange_rates[rate_key], 4))  # Q: 為替レート
 
             # AC-AH: カラーミー価格情報
             row[28] = str(product.get("sales_price") or product.get("price") or 0)  # AC: 販売価格
             row[29] = str(product.get("price") or 0)  # AD: 定価
             row[30] = str(product.get("members_price") or 0)  # AE: 会員価格
             row[31] = str(product.get("cost") or 0)  # AF: 原価
+
+            # AG-AH: 消費税計算（数式を保持）
+            for i in range(32, 34):
+                if len(existing_row) > i:
+                    cell_value = existing_row[i]
+                    if isinstance(cell_value, str) and cell_value.startswith("="):
+                        row[i] = adjust_formula_row(cell_value, old_row_num, new_row_num)
+                    else:
+                        row[i] = cell_value
 
             # AI-AL: カテゴリー・グループ
             row[34] = str(category_id_big) if category_id_big else ""  # AI: 大カテゴリーID
