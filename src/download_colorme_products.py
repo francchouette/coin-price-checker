@@ -15,6 +15,7 @@ from .colorme import ColorMeClient
 from .config import Config
 from .scraper import ScraperManager, ScrapeTarget, detect_shop_from_url
 from .shops import ScrapedData
+from .exchange_rate import ExchangeRateClient, WiseRateClient
 
 # ロギング設定
 logging.basicConfig(
@@ -22,6 +23,51 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def fetch_exchange_rates(currencies: list[str], exchange_types: dict[str, str]) -> dict[str, float]:
+    """
+    通貨リストから為替レートを取得する
+
+    Args:
+        currencies: 通貨コードのリスト（例: ["USD", "SGD"]）
+        exchange_types: 通貨 -> 為替種類（"クレカ" または "Wise"）のマッピング
+
+    Returns:
+        dict: 通貨 -> レートのマッピング（"通貨_種類"形式のキー）
+    """
+    if not currencies:
+        return {}
+
+    logger.info(f"為替レートを取得中... ({len(currencies)}通貨)")
+
+    rates = {}
+    exchange_client = ExchangeRateClient()
+    wise_client = WiseRateClient()
+
+    # 事前にExchangeRateClientのレートを取得
+    exchange_client.fetch_rates()
+
+    for currency in currencies:
+        currency = currency.upper().strip()
+        if not currency or currency == "JPY":
+            continue
+
+        exchange_type = exchange_types.get(currency, "クレカ")
+
+        if exchange_type == "Wise":
+            rate = wise_client.get_rate(currency, "JPY")
+            if rate:
+                rates[f"{currency}_Wise"] = rate
+                logger.info(f"  Wise: 1 {currency} = {rate:.4f} JPY")
+        else:
+            # クレカレート（手数料込み）
+            rate = exchange_client.get_credit_card_rate(currency, "JPY")
+            if rate:
+                rates[f"{currency}_クレカ"] = rate
+                logger.info(f"  クレカ: 1 {currency} = {rate:.4f} JPY")
+
+    return rates
 
 
 def fetch_prices_from_urls(urls: list[str]) -> dict[str, ScrapedData]:
@@ -124,6 +170,24 @@ def main():
 
             # 既存データをクリア（2行目以降）
             sheet.batch_clear([f'A2:CB{len(existing) + 1}'])
+
+        # 既存データからO列（取引通貨）とP列（為替種類）を収集
+        currency_exchange_types = {}  # 通貨 -> 為替種類
+        for pid, row in existing_data.items():
+            if len(row) > 15:
+                currency = row[14].strip().upper() if len(row) > 14 and row[14] else ""
+                exchange_type = row[15].strip() if len(row) > 15 and row[15] else "クレカ"
+                if currency and currency != "JPY":
+                    currency_exchange_types[currency] = exchange_type
+
+        # 為替レートを取得
+        exchange_rates = {}
+        if currency_exchange_types:
+            exchange_rates = fetch_exchange_rates(
+                list(currency_exchange_types.keys()),
+                currency_exchange_types
+            )
+            logger.info(f"為替レート取得完了: {len(exchange_rates)}件")
 
         # 価格自動取得オプション: 既存データのF列URLから価格を取得
         price_data = {}
@@ -246,6 +310,14 @@ def main():
             for i in range(15, 28):
                 if len(existing_row) > i:
                     row[i] = existing_row[i]
+
+            # Q列（為替レート）を自動更新
+            currency = row[14].strip().upper() if row[14] else ""
+            exchange_type = row[15].strip() if row[15] else "クレカ"
+            if currency and currency != "JPY":
+                rate_key = f"{currency}_{exchange_type}"
+                if rate_key in exchange_rates:
+                    row[16] = str(round(exchange_rates[rate_key], 4))  # Q: 為替レート
 
             # AC-AH: カラーミー価格情報
             row[28] = str(product.get("sales_price") or product.get("price") or 0)  # AC: 販売価格
