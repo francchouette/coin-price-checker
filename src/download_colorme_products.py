@@ -192,9 +192,9 @@ def main():
     # カラーミークライアント初期化
     colorme = ColorMeClient()
 
-    # 全商品を取得
+    # 全商品を取得（1万件以上に対応）
     logger.info("カラーミーから全商品を取得中...")
-    products = colorme.get_all_products(limit=1000)
+    products = colorme.get_all_products()  # デフォルト: 20000件
     logger.info(f"取得した商品数: {len(products)}件")
 
     if not products:

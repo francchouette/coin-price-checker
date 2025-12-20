@@ -288,7 +288,7 @@ class ColorMeClient:
                         logger.warning(f"価格変換エラー (ID: {product_id}): {actual_price} - {e}")
         return prices
 
-    def get_all_products(self, limit: int = 1000) -> list[dict]:
+    def get_all_products(self, limit: int = 20000) -> list[dict]:
         """
         全商品一覧を取得する
 
@@ -297,7 +297,7 @@ class ColorMeClient:
         meta.totalで全件数を取得し、全件取得するまで繰り返す。
 
         Args:
-            limit: 取得件数上限（デフォルト: 1000）
+            limit: 取得件数上限（デフォルト: 20000）
 
         Returns:
             list: 商品情報のリスト
