@@ -1,0 +1,125 @@
+name: ColorMe Product Management
+
+on:
+  # 手動実行
+  workflow_dispatch:
+    inputs:
+      action:
+        description: '実行するアクション'
+        required: true
+        default: 'download'
+        type: choice
+        options:
+          - 'download'
+          - 'download-with-prices'
+          - 'sync'
+          - 'sync-dry-run'
+      verbose:
+        description: '詳細ログを出力'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  manage-products:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/613320899872/locations/global/workloadIdentityPools/github-actions-pool/providers/github'
+          service_account: 'spreadsheet-access@coin-price-tracker-479614.iam.gserviceaccount.com'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        if: github.event.inputs.action == 'download-with-prices'
+        run: |
+          python -m playwright install chromium
+          python -m playwright install-deps chromium
+
+      - name: Download products from ColorMe
+        if: github.event.inputs.action == 'download'
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
+          GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+        run: |
+          echo "📥 カラーミーから商品をダウンロード中..."
+          python -m src.download_colorme_products
+
+      - name: Download products from ColorMe with price fetching
+        if: github.event.inputs.action == 'download-with-prices'
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
+          GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+          BRIGHTDATA_BROWSER_WS: ${{ secrets.BRIGHTDATA_BROWSER_WS }}
+        run: |
+          echo "📥 カラーミーから商品をダウンロード中（価格自動取得あり）..."
+          python -m src.download_colorme_products --fetch-prices
+
+      - name: Sync products to ColorMe (Dry Run)
+        if: github.event.inputs.action == 'sync-dry-run'
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
+          GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+        run: |
+          echo "🔍 同期テスト実行中（実際には更新しません）..."
+          VERBOSE_FLAG=""
+          if [ "${{ github.event.inputs.verbose }}" = "true" ]; then
+            VERBOSE_FLAG="--verbose"
+          fi
+          python -m src.sync_colorme_products --dry-run $VERBOSE_FLAG
+
+      - name: Sync products to ColorMe
+        if: github.event.inputs.action == 'sync'
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
+          GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+        run: |
+          echo "📤 シートの変更をカラーミーに同期中..."
+          VERBOSE_FLAG=""
+          if [ "${{ github.event.inputs.verbose }}" = "true" ]; then
+            VERBOSE_FLAG="--verbose"
+          fi
+          python -m src.sync_colorme_products $VERBOSE_FLAG
+
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const action = '${{ github.event.inputs.action }}';
+            const actionLabel = {
+              'download': 'ダウンロード',
+              'download-with-prices': 'ダウンロード（価格取得）',
+              'sync': '同期',
+              'sync-dry-run': '同期テスト'
+            }[action] || action;
+            const message = `❌ ColorMe Product Management (${actionLabel}) が失敗しました\n\nRepository: ${context.repo.owner}/${context.repo.repo}\nWorkflow: ${context.workflow}\nRun: ${context.runNumber}\n\nログ: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            console.log(message);
