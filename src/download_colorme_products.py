@@ -331,49 +331,49 @@ def main():
             row[3] = product.get("name", "")  # D: 商品名
             row[4] = f"https://ybx.jp/?pid={product_id}"  # E: カラーミー商品URL
 
-            # F-O: 仕入れ先情報（既存データを保持）
-            if len(existing_row) > 14:
-                row[5] = existing_row[5] if len(existing_row) > 5 else ""   # F: 仕入れ先商品URL
-                row[6] = existing_row[6] if len(existing_row) > 6 else ""   # G: 仕入れ先商品名
-                row[7] = existing_row[7] if len(existing_row) > 7 else ""   # H: 仕入れ先サイト
-                row[8] = existing_row[8] if len(existing_row) > 8 else ""   # I: 最上位カテゴリ
-                row[9] = existing_row[9] if len(existing_row) > 9 else ""   # J: 親カテゴリ
-                row[10] = existing_row[10] if len(existing_row) > 10 else "" # K: 子カテゴリ
+            # F-O: 仕入れ先情報（既存データを保持、数式があれば保持）
+            row[5] = preserve_or_set(existing_row, 5, "", old_row_num, new_row_num)   # F: 仕入れ先商品URL
+            row[6] = preserve_or_set(existing_row, 6, "", old_row_num, new_row_num)   # G: 仕入れ先商品名
+            row[7] = preserve_or_set(existing_row, 7, "", old_row_num, new_row_num)   # H: 仕入れ先サイト
+            row[8] = preserve_or_set(existing_row, 8, "", old_row_num, new_row_num)   # I: 最上位カテゴリ
+            row[9] = preserve_or_set(existing_row, 9, "", old_row_num, new_row_num)   # J: 親カテゴリ
+            row[10] = preserve_or_set(existing_row, 10, "", old_row_num, new_row_num) # K: 子カテゴリ
 
-                # L列: 仕入れ先価格（現地通貨）- 自動取得または既存値
-                supplier_url = row[5].strip() if row[5] else ""
-                if supplier_url and supplier_url in price_data:
-                    scraped = price_data[supplier_url]
-                    if not scraped.error:
-                        # 前回価格をM列に保存
-                        prev_price_str = existing_row[11] if len(existing_row) > 11 else ""
-                        row[12] = prev_price_str  # M: 前回仕入れ価格
+            # L-O列: 価格情報（数式があれば保持、スクレイピング結果があれば更新）
+            # まず既存値または数式を保持
+            row[11] = preserve_or_set(existing_row, 11, "", old_row_num, new_row_num)  # L: 仕入れ先価格
+            row[12] = preserve_or_set(existing_row, 12, "", old_row_num, new_row_num)  # M: 前回仕入れ価格
+            row[13] = preserve_or_set(existing_row, 13, "", old_row_num, new_row_num)  # N: 価格変動率
+            row[14] = preserve_or_set(existing_row, 14, "", old_row_num, new_row_num)  # O: 取引通貨
 
+            # スクレイピング結果があり、かつ数式でない場合のみ更新
+            supplier_url = row[5].strip() if row[5] and not row[5].startswith("=") else ""
+            if supplier_url and supplier_url in price_data:
+                scraped = price_data[supplier_url]
+                if not scraped.error:
+                    # L列が数式でない場合のみ更新
+                    if not (row[11] and isinstance(row[11], str) and row[11].startswith("=")):
+                        # 前回価格をM列に保存（M列が数式でない場合）
+                        if not (row[12] and isinstance(row[12], str) and row[12].startswith("=")):
+                            row[12] = existing_row[11] if len(existing_row) > 11 else ""
                         # 新価格をL列に設定
-                        row[11] = str(scraped.price)  # L: 仕入れ先価格（現地通貨）
-                        row[14] = scraped.currency  # O: 取引通貨
+                        row[11] = str(scraped.price)
 
-                        # 価格変動率を計算してN列に設定
-                        if prev_price_str:
+                    # O列が数式でない場合のみ更新
+                    if not (row[14] and isinstance(row[14], str) and row[14].startswith("=")):
+                        row[14] = scraped.currency
+
+                    # N列が数式でない場合のみ価格変動率を計算
+                    if not (row[13] and isinstance(row[13], str) and row[13].startswith("=")):
+                        prev_price_str = existing_row[11] if len(existing_row) > 11 else ""
+                        if prev_price_str and not prev_price_str.startswith("="):
                             try:
                                 prev_price = float(prev_price_str)
                                 if prev_price > 0:
                                     change_rate = ((scraped.price - prev_price) / prev_price) * 100
-                                    row[13] = f"{change_rate:+.2f}%"  # N: 価格変動率
+                                    row[13] = f"{change_rate:+.2f}%"
                             except ValueError:
                                 pass
-                    else:
-                        # スクレイピング失敗時は既存値を保持
-                        row[11] = existing_row[11] if len(existing_row) > 11 else ""
-                        row[12] = existing_row[12] if len(existing_row) > 12 else ""
-                        row[13] = existing_row[13] if len(existing_row) > 13 else ""
-                        row[14] = existing_row[14] if len(existing_row) > 14 else ""
-                else:
-                    # 価格取得対象外は既存値を保持
-                    row[11] = existing_row[11] if len(existing_row) > 11 else ""
-                    row[12] = existing_row[12] if len(existing_row) > 12 else ""
-                    row[13] = existing_row[13] if len(existing_row) > 13 else ""
-                    row[14] = existing_row[14] if len(existing_row) > 14 else ""
 
             # P-AB: 価格計算（既存データを保持、数式は行番号を調整）
             for i in range(15, 28):
