@@ -34,6 +34,7 @@ class ColorMeProduct:
     exchange_type: str = "クレカ"  # 為替種類（O列）: "クレカ" or "Wise"
     shipping_cost: int = 0  # 送料（R列）
     misc_cost: int = 0  # 諸経費（S列）
+    selling_price: int = 0  # 販売適正価格（T列）- カラーミーに登録する価格
     cost: int = 0  # 原価（U列）- カラーミーのcostフィールドに反映
     # 外部価格履歴用フィールド（Z-AB列）※G列追加により1列ずれ
     previous_source_price: float = 0.0  # Z列: 前回の取得元価格
@@ -287,12 +288,16 @@ class ColorMeClient:
                         logger.warning(f"価格変換エラー (ID: {product_id}): {actual_price} - {e}")
         return prices
 
-    def get_all_products(self, limit: int = 100) -> list[dict]:
+    def get_all_products(self, limit: int = 1000) -> list[dict]:
         """
         全商品一覧を取得する
 
+        カラーミーAPIはoffsetパラメータでページネーションを行う。
+        APIは1回のリクエストで最大50件を返す。
+        meta.totalで全件数を取得し、全件取得するまで繰り返す。
+
         Args:
-            limit: 取得件数上限
+            limit: 取得件数上限（デフォルト: 1000）
 
         Returns:
             list: 商品情報のリスト
@@ -304,19 +309,29 @@ class ColorMeClient:
         try:
             products = []
             offset = 0
+            per_page = 50  # カラーミーAPIの1リクエストあたりの最大取得件数
+            total = None
 
             while True:
+                logger.info(f"商品取得中: offset={offset}")
                 response = requests.get(
                     f"{self.API_BASE}/products.json",
                     headers=self._headers(),
-                    params={"limit": min(limit, 100), "offset": offset},
+                    params={"limit": per_page, "offset": offset},
                     timeout=30
                 )
                 response.raise_for_status()
                 data = response.json()
 
+                # metaから全件数を取得
+                meta = data.get("meta", {})
+                if total is None:
+                    total = meta.get("total", 0)
+                    logger.info(f"全商品数: {total}件")
+
                 batch = data.get("products", [])
                 if not batch:
+                    logger.info(f"offset={offset}: データなし、取得終了")
                     break
 
                 # 最初の商品の画像関連フィールドをログ出力（デバッグ用）
@@ -327,14 +342,20 @@ class ColorMeClient:
                     logger.info(f"[APIデバッグ] 最初の商品の全フィールドキー: {list(first.keys())}")
 
                 products.extend(batch)
-                logger.info(f"商品取得: {len(products)}件")
+                logger.info(f"offset={offset}: {len(batch)}件取得、合計 {len(products)}件")
 
-                if len(batch) < 100:
-                    break
-
-                offset += len(batch)
+                # 取得件数が上限に達した場合は終了
                 if len(products) >= limit:
+                    logger.info(f"取得上限 {limit} 件に達したため終了")
                     break
+
+                # 全件取得完了チェック
+                if total and len(products) >= total:
+                    logger.info(f"全商品 {total} 件を取得完了")
+                    break
+
+                # 次のページへ
+                offset += len(batch)
 
             logger.info(f"全商品取得完了: {len(products)}件")
             return products
@@ -466,13 +487,16 @@ class ColorMeClient:
             # O列相当: 取得価格 × 為替レート × 枚数
             base_price = source_price * exchange_rate * product.quantity
 
-            # R列の計算式: round(O × E + P + Q, -2)
-            # 販売価格 = round(本体価格 × マージン率 + 送料 + 諸経費, -2)
-            new_price = round(
-                base_price * product.margin_rate + product.shipping_cost + product.misc_cost,
-                -2  # 100円単位で丸め
-            )
-            new_price = int(new_price)
+            # T列（販売適正価格）をそのまま使用（シートで計算された値）
+            new_price = product.selling_price
+
+            # T列が0または空の場合はスキップ
+            if new_price <= 0:
+                logger.warning(
+                    f"スキップ: {product.name} - T列（販売適正価格）が未設定"
+                )
+                result["skipped"] += 1
+                continue
 
             # 価格差額
             price_diff = new_price - colorme_current_price
@@ -483,9 +507,8 @@ class ColorMeClient:
                     f"[価格計算] {product.name}\n"
                     f"    カラーミー現在価格: {colorme_current_price:,}円\n"
                     f"    取得元価格: {source_price:,.0f}円\n"
-                    f"    本体価格(O列相当): {base_price:,.0f}円\n"
-                    f"    マージン率: {product.margin_rate}, 送料: {product.shipping_cost:,}円, 諸経費: {product.misc_cost:,}円\n"
-                    f"    販売価格(R列相当): {new_price:,}円\n"
+                    f"    本体価格(Q列相当): {base_price:,.0f}円\n"
+                    f"    販売適正価格(T列): {new_price:,}円\n"
                     f"    差額: {price_diff:+,}円"
                 )
             else:
@@ -494,9 +517,8 @@ class ColorMeClient:
                     f"    カラーミー現在価格: {colorme_current_price:,}円\n"
                     f"    取得元価格: {product.source_currency} {source_price:,.2f}\n"
                     f"    為替レート: {exchange_rate:.2f} ({product.exchange_type})\n"
-                    f"    本体価格(O列相当): {base_price:,.0f}円\n"
-                    f"    マージン率: {product.margin_rate}, 送料: {product.shipping_cost:,}円, 諸経費: {product.misc_cost:,}円\n"
-                    f"    販売価格(R列相当): {new_price:,}円\n"
+                    f"    本体価格(Q列相当): {base_price:,.0f}円\n"
+                    f"    販売適正価格(T列): {new_price:,}円\n"
                     f"    差額: {price_diff:+,}円"
                 )
 
@@ -544,8 +566,8 @@ class ColorMeClient:
                 "exchange_rate": 1 if product.source_currency == "JPY" else exchange_rate,
                 "source_price": source_price,
                 "source_currency": product.source_currency,
-                "base_price": base_price,  # O列: 取得価格×為替×枚数
-                "selling_price": new_price,  # R列: round(O×E+P+Q, -2)
+                "base_price": base_price,  # Q列: 取得価格×為替×枚数
+                "selling_price": new_price,  # T列: 販売適正価格（シートから読み取り）
                 "update_enabled": product.update_enabled,
                 "updated": False,
                 "in_stock": is_in_stock,  # AA列: 在庫状況
@@ -745,8 +767,12 @@ class ColorMeClient:
         if product.group_ids:
             updates["group_ids"] = product.group_ids
 
-        # 価格情報
-        if product.regular_price > 0:
+        # 価格情報（T列: 販売適正価格を優先）
+        if product.selling_price > 0:
+            updates["price"] = product.selling_price
+            updates["sales_price"] = product.selling_price
+            logger.info(f"  価格更新: T列（販売適正価格）= {product.selling_price:,}円")
+        elif product.regular_price > 0:
             updates["price"] = product.regular_price
             updates["sales_price"] = product.regular_price
         if product.members_price > 0:
