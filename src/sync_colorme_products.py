@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 # 列インデックス定義（A列=0から始まる）
+# ※L列に「仕入れ先在庫状況」を追加したため、旧L列以降は+1シフト
 class ColIndex:
     """新カラーミー商品管理シートの列インデックス"""
     # A-B: 操作項目
@@ -32,87 +33,88 @@ class ColIndex:
     PRODUCT_ID = 2         # C: カラーミー商品ID
     NAME = 3               # D: 商品名
     COLORME_URL = 4        # E: カラーミー商品URL
-    # F-O: 仕入れ先情報
+    # F-P: 仕入れ先情報
     SUPPLIER_URL = 5       # F: 仕入れ先商品URL
     SUPPLIER_NAME = 6      # G: 仕入れ先商品名
     SUPPLIER_SITE = 7      # H: 仕入れ先サイト
     TOP_CATEGORY = 8       # I: 最上位カテゴリ
     PARENT_CATEGORY = 9    # J: 親カテゴリ
     CHILD_CATEGORY = 10    # K: 子カテゴリ
-    SUPPLIER_PRICE = 11    # L: 仕入れ先価格（現地通貨）
-    PREV_PRICE = 12        # M: 前回仕入れ価格
-    PRICE_CHANGE_RATE = 13 # N: 価格変動率
-    CURRENCY = 14          # O: 取引通貨
-    # P-AB: 価格計算
-    EXCHANGE_TYPE = 15     # P: 為替種類
-    EXCHANGE_RATE = 16     # Q: 為替レート
-    PURCHASE_PRICE_JPY = 17 # R: 仕入れ額(日本円)
-    QUANTITY = 18          # S: 枚数
-    PURCHASE_TOTAL = 19    # T: 仕入れ合計
-    MARGIN_RATE = 20       # U: 設定マージン率
-    MARGIN_AMOUNT = 21     # V: 設定マージン額
-    SHIPPING = 22          # W: 送料
-    FEE = 23               # X: 手数料
-    TOTAL_COST = 24        # Y: 合計原価
-    PROPER_PRICE = 25      # Z: 適正価格
-    GROSS_PROFIT = 26      # AA: 粗利額
-    GROSS_PROFIT_RATE = 27 # AB: 粗利率
-    # AC-AH: カラーミー価格情報
-    SALES_PRICE = 28       # AC: 販売価格
-    REGULAR_PRICE = 29     # AD: 定価
-    MEMBERS_PRICE = 30     # AE: 会員価格
-    COST = 31              # AF: 原価
-    TAX_INCLUDED_PRICE = 32 # AG: 消費税込販売価格
-    TAX_AMOUNT = 33        # AH: 消費税額
-    # AI-AL: カテゴリー・グループ
-    CATEGORY_ID_BIG = 34   # AI: 大カテゴリーID
-    CATEGORY_ID_SMALL = 35 # AJ: 小カテゴリーID
-    GROUP_IDS = 36         # AK: グループID
-    MODEL_NUMBER = 37      # AL: 型番
-    # AM-AS: 在庫管理
-    STOCKS = 38            # AM: 在庫数
-    STOCK_MANAGED = 39     # AN: 在庫管理
-    FEW_NUM = 40           # AO: 残りわずか数
-    SOLDOUT_DISPLAY = 41   # AP: 売切れ表示
-    MIN_NUM = 42           # AQ: 最小購入数
-    MAX_NUM = 43           # AR: 最大購入数
-    UNIT = 44              # AS: 単位
-    # AT-AW: 送料・配送
-    DELIVERY_CHARGE = 45   # AT: 個別送料
-    COOL_CHARGE = 46       # AU: クール便料金
-    WEIGHT = 47            # AV: 重量(g)
-    NO_DELIVERY = 48       # AW: 配送不要
-    # AX-BA: 商品説明
-    EXPL = 49              # AX: 商品説明
-    SIMPLE_EXPL = 50       # AY: 簡易説明
-    MOBILE_EXPL = 51       # AZ: スマホ説明
-    MEMO = 52              # BA: 備考
-    # BB-BK: 画像
-    MAIN_IMAGE = 53        # BB: メイン画像URL
-    THUMBNAIL = 54         # BC: サムネイルURL
-    IMAGE_URL_START = 55   # BD: 画像URL1（BD-BK）
-    # BL-BN: SEO
-    PAGE_TITLE = 63        # BL: ページタイトル
-    META_DESC = 64         # BM: メタディスクリプション
-    META_KEYWORDS = 65     # BN: メタキーワード
-    # BO-BS: フラグ
-    REDUCED_TAX = 66       # BO: 軽減税率対象
-    DIGITAL_CONTENT = 67   # BP: デジタルコンテンツ
-    SUBSCRIPTION = 68      # BQ: 定期購入
-    DISPLAY_ORDER = 69     # BR: 表示順
-    DISABLED_PAYMENTS = 70 # BS: 利用不可決済
-    # BT-BU: 掲載期間
-    START_DATE = 71        # BT: 掲載開始日時
-    END_DATE = 72          # BU: 掲載終了日時
-    # BV-BZ: 更新制御
-    PRICE_UPDATE = 73      # BV: 価格更新ON/OFF
-    STOCK_SYNC = 74        # BW: 在庫連動ON/OFF
-    DISPLAY_SYNC = 75      # BX: 表示連動
-    SYNC_STATUS = 76       # BY: 同期ステータス
-    SYNC_DATETIME = 77     # BZ: 同期日時
-    # CA-CB: システム情報
-    CREATED_DATE = 78      # CA: 商品作成日時
-    UPDATED_DATE = 79      # CB: 商品更新日時
+    SUPPLIER_STOCK = 11    # L: 仕入れ先在庫状況（新規追加）
+    SUPPLIER_PRICE = 12    # M: 仕入れ先価格（現地通貨）（旧L列）
+    PREV_PRICE = 13        # N: 前回仕入れ価格（旧M列）
+    PRICE_CHANGE_RATE = 14 # O: 価格変動率（旧N列）
+    CURRENCY = 15          # P: 取引通貨（旧O列）
+    # Q-AC: 価格計算
+    EXCHANGE_TYPE = 16     # Q: 為替種類（旧P列）
+    EXCHANGE_RATE = 17     # R: 為替レート（旧Q列）
+    PURCHASE_PRICE_JPY = 18 # S: 仕入れ額(日本円)（旧R列）
+    QUANTITY = 19          # T: 枚数（旧S列）
+    PURCHASE_TOTAL = 20    # U: 仕入れ合計（旧T列）
+    MARGIN_RATE = 21       # V: 設定マージン率（旧U列）
+    MARGIN_AMOUNT = 22     # W: 設定マージン額（旧V列）
+    SHIPPING = 23          # X: 送料（旧W列）
+    FEE = 24               # Y: 手数料（旧X列）
+    TOTAL_COST = 25        # Z: 合計原価（旧Y列）
+    PROPER_PRICE = 26      # AA: 適正価格（旧Z列）
+    GROSS_PROFIT = 27      # AB: 粗利額（旧AA列）
+    GROSS_PROFIT_RATE = 28 # AC: 粗利率（旧AB列）
+    # AD-AI: カラーミー価格情報
+    SALES_PRICE = 29       # AD: 販売価格（旧AC列）
+    REGULAR_PRICE = 30     # AE: 定価（旧AD列）
+    MEMBERS_PRICE = 31     # AF: 会員価格（旧AE列）
+    COST = 32              # AG: 原価（旧AF列）
+    TAX_INCLUDED_PRICE = 33 # AH: 消費税込販売価格（旧AG列）
+    TAX_AMOUNT = 34        # AI: 消費税額（旧AH列）
+    # AJ-AM: カテゴリー・グループ
+    CATEGORY_ID_BIG = 35   # AJ: 大カテゴリーID（旧AI列）
+    CATEGORY_ID_SMALL = 36 # AK: 小カテゴリーID（旧AJ列）
+    GROUP_IDS = 37         # AL: グループID（旧AK列）
+    MODEL_NUMBER = 38      # AM: 型番（旧AL列）
+    # AN-AT: 在庫管理
+    STOCKS = 39            # AN: 在庫数（旧AM列）
+    STOCK_MANAGED = 40     # AO: 在庫管理（旧AN列）
+    FEW_NUM = 41           # AP: 残りわずか数（旧AO列）
+    SOLDOUT_DISPLAY = 42   # AQ: 売切れ表示（旧AP列）
+    MIN_NUM = 43           # AR: 最小購入数（旧AQ列）
+    MAX_NUM = 44           # AS: 最大購入数（旧AR列）
+    UNIT = 45              # AT: 単位（旧AS列）
+    # AU-AX: 送料・配送
+    DELIVERY_CHARGE = 46   # AU: 個別送料（旧AT列）
+    COOL_CHARGE = 47       # AV: クール便料金（旧AU列）
+    WEIGHT = 48            # AW: 重量(g)（旧AV列）
+    NO_DELIVERY = 49       # AX: 配送不要（旧AW列）
+    # AY-BB: 商品説明
+    EXPL = 50              # AY: 商品説明（旧AX列）
+    SIMPLE_EXPL = 51       # AZ: 簡易説明（旧AY列）
+    MOBILE_EXPL = 52       # BA: スマホ説明（旧AZ列）
+    MEMO = 53              # BB: 備考（旧BA列）
+    # BC-BL: 画像
+    MAIN_IMAGE = 54        # BC: メイン画像URL（旧BB列）
+    THUMBNAIL = 55         # BD: サムネイルURL（旧BC列）
+    IMAGE_URL_START = 56   # BE: 画像URL1（BE-BL）（旧BD列）
+    # BM-BO: SEO
+    PAGE_TITLE = 64        # BM: ページタイトル（旧BL列）
+    META_DESC = 65         # BN: メタディスクリプション（旧BM列）
+    META_KEYWORDS = 66     # BO: メタキーワード（旧BN列）
+    # BP-BT: フラグ
+    REDUCED_TAX = 67       # BP: 軽減税率対象（旧BO列）
+    DIGITAL_CONTENT = 68   # BQ: デジタルコンテンツ（旧BP列）
+    SUBSCRIPTION = 69      # BR: 定期購入（旧BQ列）
+    DISPLAY_ORDER = 70     # BS: 表示順（旧BR列）
+    DISABLED_PAYMENTS = 71 # BT: 利用不可決済（旧BS列）
+    # BU-BV: 掲載期間
+    START_DATE = 72        # BU: 掲載開始日時（旧BT列）
+    END_DATE = 73          # BV: 掲載終了日時（旧BU列）
+    # BW-CA: 更新制御
+    PRICE_UPDATE = 74      # BW: 価格更新ON/OFF（旧BV列）
+    STOCK_SYNC = 75        # BX: 在庫連動ON/OFF（旧BW列）
+    DISPLAY_SYNC = 76      # BY: 表示連動（旧BX列）
+    SYNC_STATUS = 77       # BZ: 同期ステータス（旧BY列）
+    SYNC_DATETIME = 78     # CA: 同期日時（旧BZ列）
+    # CB-CC: システム情報
+    CREATED_DATE = 79      # CB: 商品作成日時（旧CA列）
+    UPDATED_DATE = 80      # CC: 商品更新日時（旧CB列）
 
 
 def parse_int(value: str, default: int = 0) -> int:
