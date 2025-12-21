@@ -417,7 +417,7 @@ def main():
             row[2] = preserve_or_set(existing_row, 2, c_default, old_row_num, new_row_num)  # C: 価格更新ON/OFF
             d_default = str(existing_row[3]) if len(existing_row) > 3 and existing_row[3] else "OFF"
             row[3] = preserve_or_set(existing_row, 3, d_default, old_row_num, new_row_num)  # D: 在庫連動ON/OFF
-            e_default = str(existing_row[4]) if len(existing_row) > 4 and existing_row[4] else "変更しない"
+            e_default = str(existing_row[4]) if len(existing_row) > 4 and existing_row[4] else "OFF"
             row[4] = preserve_or_set(existing_row, 4, e_default, old_row_num, new_row_num)  # E: 表示連動
             row[5] = preserve_or_set(existing_row, 5, "ダウンロード済", old_row_num, new_row_num, preserve_existing=False)  # F: 同期ステータス
 
