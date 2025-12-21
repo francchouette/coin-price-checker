@@ -1,0 +1,57 @@
+name: Sync ColorMe Products
+
+on:
+  # 手動実行
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'テスト実行（実際に更新しない）'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/613320899872/locations/global/workloadIdentityPools/github-actions-pool/providers/github'
+          service_account: 'spreadsheet-access@coin-price-tracker-479614.iam.gserviceaccount.com'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Sync products to ColorMe
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
+          GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+        run: |
+          DRY_RUN_FLAG=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          python -m src.sync_colorme_products $DRY_RUN_FLAG
