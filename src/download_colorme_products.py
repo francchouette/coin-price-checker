@@ -25,16 +25,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def preserve_or_set(existing_row: list, index: int, new_value: str, old_row_num: int, new_row_num: int) -> str:
+def preserve_or_set(existing_row: list, index: int, new_value: str, old_row_num: int, new_row_num: int, preserve_existing: bool = True) -> str:
     """
-    既存セルが数式の場合は行番号を調整して保持し、そうでなければ新しい値を設定する
+    既存セルが数式の場合は行番号を調整して保持する。
+    preserve_existing=Trueの場合、既存の値（数式以外）も保持する。
+    preserve_existing=Falseの場合、数式のみ保持し、それ以外はnew_valueを使用する。
 
     Args:
         existing_row: 既存の行データ
         index: 列インデックス
-        new_value: 新しい値（既存が数式でない場合に使用）
+        new_value: 新しい値（既存データがない場合、またはpreserve_existing=Falseで数式でない場合に使用）
         old_row_num: 元の行番号（1-indexed）
         new_row_num: 新しい行番号（1-indexed）
+        preserve_existing: 既存の値（数式以外）も保持するかどうか（デフォルト: True）
 
     Returns:
         str: セルに設定する値
@@ -42,7 +45,11 @@ def preserve_or_set(existing_row: list, index: int, new_value: str, old_row_num:
     if len(existing_row) > index:
         cell_value = existing_row[index]
         if isinstance(cell_value, str) and cell_value.startswith("="):
+            # 数式の場合は行番号を調整
             return adjust_formula_row(cell_value, old_row_num, new_row_num)
+        elif preserve_existing and cell_value:
+            # 既存の値を保持（空でない場合）
+            return cell_value
     return new_value
 
 
@@ -407,11 +414,11 @@ def main():
                     if rate_key in exchange_rates:
                         row[16] = str(round(exchange_rates[rate_key], 4))  # Q: 為替レート
 
-            # AC-AH: カラーミー価格情報（数式があれば保持）
-            row[28] = preserve_or_set(existing_row, 28, str(product.get("sales_price") or product.get("price") or 0), old_row_num, new_row_num)  # AC: 販売価格
-            row[29] = preserve_or_set(existing_row, 29, str(product.get("price") or 0), old_row_num, new_row_num)  # AD: 定価
-            row[30] = preserve_or_set(existing_row, 30, str(product.get("members_price") or 0), old_row_num, new_row_num)  # AE: 会員価格
-            row[31] = preserve_or_set(existing_row, 31, str(product.get("cost") or 0), old_row_num, new_row_num)  # AF: 原価
+            # AC-AH: カラーミー価格情報（数式があれば保持、値はAPIから取得）
+            row[28] = preserve_or_set(existing_row, 28, str(product.get("sales_price") or product.get("price") or 0), old_row_num, new_row_num, preserve_existing=False)  # AC: 販売価格
+            row[29] = preserve_or_set(existing_row, 29, str(product.get("price") or 0), old_row_num, new_row_num, preserve_existing=False)  # AD: 定価
+            row[30] = preserve_or_set(existing_row, 30, str(product.get("members_price") or 0), old_row_num, new_row_num, preserve_existing=False)  # AE: 会員価格
+            row[31] = preserve_or_set(existing_row, 31, str(product.get("cost") or 0), old_row_num, new_row_num, preserve_existing=False)  # AF: 原価
             row[32] = preserve_or_set(existing_row, 32, "", old_row_num, new_row_num)  # AG: 消費税込販売価格
             row[33] = preserve_or_set(existing_row, 33, "", old_row_num, new_row_num)  # AH: 消費税額
 
@@ -421,15 +428,15 @@ def main():
             row[36] = preserve_or_set(existing_row, 36, group_ids_str, old_row_num, new_row_num)  # AK: グループID
             row[37] = preserve_or_set(existing_row, 37, product.get("model_number", "") or "", old_row_num, new_row_num)  # AL: 型番
 
-            # AM-AS: 在庫管理（数式があれば保持）
-            row[38] = preserve_or_set(existing_row, 38, str(product.get("stocks") or 0), old_row_num, new_row_num)  # AM: 在庫数
-            row[39] = preserve_or_set(existing_row, 39, "する" if product.get("stock_managed", True) else "しない", old_row_num, new_row_num)  # AN: 在庫管理
-            row[40] = preserve_or_set(existing_row, 40, str(product.get("few_num") or 0), old_row_num, new_row_num)  # AO: 残りわずか数
+            # AM-AS: 在庫管理（数式があれば保持、APIから取得した値で更新）
+            row[38] = preserve_or_set(existing_row, 38, str(product.get("stocks") or 0), old_row_num, new_row_num, preserve_existing=False)  # AM: 在庫数
+            row[39] = preserve_or_set(existing_row, 39, "する" if product.get("stock_managed", True) else "しない", old_row_num, new_row_num, preserve_existing=False)  # AN: 在庫管理
+            row[40] = preserve_or_set(existing_row, 40, str(product.get("few_num") or 0), old_row_num, new_row_num, preserve_existing=False)  # AO: 残りわずか数
             soldout_display = product.get("soldout_display", True)
-            row[41] = preserve_or_set(existing_row, 41, "表示" if soldout_display else "非表示", old_row_num, new_row_num)  # AP: 売切れ表示
-            row[42] = preserve_or_set(existing_row, 42, str(product.get("min_num") or 1), old_row_num, new_row_num)  # AQ: 最小購入数
-            row[43] = preserve_or_set(existing_row, 43, str(product.get("max_num") or 0), old_row_num, new_row_num)  # AR: 最大購入数
-            row[44] = preserve_or_set(existing_row, 44, product.get("unit", "") or "", old_row_num, new_row_num)  # AS: 単位
+            row[41] = preserve_or_set(existing_row, 41, "表示" if soldout_display else "非表示", old_row_num, new_row_num, preserve_existing=False)  # AP: 売切れ表示
+            row[42] = preserve_or_set(existing_row, 42, str(product.get("min_num") or 1), old_row_num, new_row_num, preserve_existing=False)  # AQ: 最小購入数
+            row[43] = preserve_or_set(existing_row, 43, str(product.get("max_num") or 0), old_row_num, new_row_num, preserve_existing=False)  # AR: 最大購入数
+            row[44] = preserve_or_set(existing_row, 44, product.get("unit", "") or "", old_row_num, new_row_num, preserve_existing=False)  # AS: 単位
 
             # AT-AW: 送料・配送（数式があれば保持）
             row[45] = preserve_or_set(existing_row, 45, str(product.get("delivery_charge") or 0), old_row_num, new_row_num)  # AT: 個別送料
@@ -457,14 +464,14 @@ def main():
             row[73] = preserve_or_set(existing_row, 73, existing_row[73] if len(existing_row) > 73 else "OFF", old_row_num, new_row_num)  # BV: 価格更新ON/OFF
             row[74] = preserve_or_set(existing_row, 74, existing_row[74] if len(existing_row) > 74 else "OFF", old_row_num, new_row_num)  # BW: 在庫連動ON/OFF
             row[75] = preserve_or_set(existing_row, 75, existing_row[75] if len(existing_row) > 75 else "変更しない", old_row_num, new_row_num)  # BX: 表示連動
-            row[76] = preserve_or_set(existing_row, 76, "ダウンロード済", old_row_num, new_row_num)  # BY: 同期ステータス
-            row[77] = preserve_or_set(existing_row, 77, now, old_row_num, new_row_num)  # BZ: 同期日時
+            row[76] = preserve_or_set(existing_row, 76, "ダウンロード済", old_row_num, new_row_num, preserve_existing=False)  # BY: 同期ステータス
+            row[77] = preserve_or_set(existing_row, 77, now, old_row_num, new_row_num, preserve_existing=False)  # BZ: 同期日時
 
-            # CA-CB: システム情報（数式があれば保持）
+            # CA-CB: システム情報（数式があれば保持、APIから取得）
             make_date = product.get("make_date", "")
             update_date = product.get("update_date", "")
-            row[78] = preserve_or_set(existing_row, 78, make_date if make_date else "", old_row_num, new_row_num)  # CA: 商品作成日時
-            row[79] = preserve_or_set(existing_row, 79, update_date if update_date else "", old_row_num, new_row_num)  # CB: 商品更新日時
+            row[78] = preserve_or_set(existing_row, 78, make_date if make_date else "", old_row_num, new_row_num, preserve_existing=False)  # CA: 商品作成日時
+            row[79] = preserve_or_set(existing_row, 79, update_date if update_date else "", old_row_num, new_row_num, preserve_existing=False)  # CB: 商品更新日時
 
             rows.append(row)
 
