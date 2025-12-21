@@ -126,9 +126,12 @@ class BullionstarProductFetcher:
         wait_time = random.uniform(self.MIN_WAIT, self.MAX_WAIT)
         time.sleep(wait_time)
 
-    def get_all_products(self) -> list[BullionstarProduct]:
+    def get_all_products(self, limit: Optional[int] = None) -> list[BullionstarProduct]:
         """
         全ロケーションの商品ページ一覧をAPIから取得
+
+        Args:
+            limit: 取得件数制限（Noneで全件）
 
         Returns:
             list[BullionstarProduct]: 商品リスト
@@ -138,14 +141,22 @@ class BullionstarProductFetcher:
         timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
 
         for location_id, (sales_region, base_url) in SALES_LOCATIONS.items():
+            # limitに達したら終了
+            if limit and len(all_products) >= limit:
+                break
+
             logger.info(f"\n{'='*60}")
             logger.info(f"販売拠点: {sales_region}")
             logger.info(f"{'='*60}")
 
+            # 残り必要件数を計算
+            remaining = limit - len(all_products) if limit else None
+
             products = self._fetch_location_products(
                 location_id=location_id,
                 base_url=base_url,
-                timestamp=timestamp
+                timestamp=timestamp,
+                limit=remaining
             )
 
             # 重複を除外して追加（URLのみでチェック）
@@ -153,8 +164,15 @@ class BullionstarProductFetcher:
                 if product.url not in seen_keys:
                     seen_keys.add(product.url)
                     all_products.append(product)
+                    # limitに達したら終了
+                    if limit and len(all_products) >= limit:
+                        break
 
             logger.info(f"  → {sales_region}: {len(products)}件（累計: {len(all_products)}件）")
+
+            # limitに達したら終了
+            if limit and len(all_products) >= limit:
+                break
 
         logger.info(f"\n商品ページ取得完了: {len(all_products)}件")
         return all_products
@@ -163,16 +181,24 @@ class BullionstarProductFetcher:
         self,
         location_id: int,
         base_url: str,
-        timestamp: str
+        timestamp: str,
+        limit: Optional[int] = None
     ) -> list[BullionstarProduct]:
         """
         特定ロケーションの全商品をAPIから取得（ページネーション対応）
+
+        Args:
+            limit: 取得件数制限（Noneで全件）
         """
         products = []
         page = 1
         total_count = None
 
         while True:
+            # limitに達したら終了
+            if limit and len(products) >= limit:
+                break
+
             api_url = f"{base_url}{self.API_PATH}"
             params = {
                 "locationId": location_id,
@@ -190,7 +216,10 @@ class BullionstarProductFetcher:
                 # 初回のみ総数を取得
                 if total_count is None:
                     total_count = pagination.get("totalCount", 0)
-                    logger.info(f"  商品総数: {total_count}件")
+                    if limit:
+                        logger.info(f"  商品総数: {total_count}件（{limit}件まで取得）")
+                    else:
+                        logger.info(f"  商品総数: {total_count}件")
 
                 # 商品グループを処理
                 product_groups = result.get("groups", [])
@@ -203,6 +232,10 @@ class BullionstarProductFetcher:
                     group_products = group.get("products", [])
 
                     for prod in group_products:
+                        # limitに達したら終了
+                        if limit and len(products) >= limit:
+                            break
+
                         prod_url = prod.get("url", "")
                         prod_name = prod.get("title", "")
 
@@ -233,7 +266,15 @@ class BullionstarProductFetcher:
                         ))
                         page_count += 1
 
+                    # limitに達したら終了
+                    if limit and len(products) >= limit:
+                        break
+
                 logger.info(f"  ページ {page}: {page_count}件取得（累計: {len(products)}件）")
+
+                # limitに達したら終了
+                if limit and len(products) >= limit:
+                    break
 
                 # 次のページがあるか確認
                 next_page = pagination.get("nextPage")
@@ -562,10 +603,14 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
         return False
 
 
-def fetch_bullionstar_products() -> list[BullionstarProduct]:
-    """Bullionstarから商品ページ一覧を取得"""
+def fetch_bullionstar_products(limit: Optional[int] = None) -> list[BullionstarProduct]:
+    """Bullionstarから商品ページ一覧を取得
+
+    Args:
+        limit: 取得件数制限（Noneで全件）
+    """
     fetcher = BullionstarProductFetcher()
-    return fetcher.get_all_products()
+    return fetcher.get_all_products(limit=limit)
 
 
 def fetch_prices_for_products(
@@ -788,7 +833,9 @@ def main():
             logger.error(f"無効なロケーション: {args.location}")
             sys.exit(1)
 
-    products = fetch_bullionstar_products()
+    # limitはfetch_prices有効時のみAPI取得にも適用
+    api_limit = args.limit if args.fetch_prices else None
+    products = fetch_bullionstar_products(limit=api_limit)
 
     if not products:
         logger.warning("商品を取得できませんでした")
