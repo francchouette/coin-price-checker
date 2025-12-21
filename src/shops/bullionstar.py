@@ -24,11 +24,16 @@ class BullionstarScraper(BaseScraper):
     PRICE_TABLE_SELECTOR = ".info tr"
     STOCK_SELECTOR = ".product-default-wrap.product-price-update"
 
+    # ロケーションセレクタ（製造国/発行国を取得）
+    # 商品詳細のリスト項目から "Country: XXX" を探す
+    PRODUCT_DETAILS_SELECTOR = ".product-overview li, .product-details li, .info li"
+
     def __init__(self, page):
         super().__init__(page)
         self._detected_currency = None  # 検出された通貨（インスタンス変数）
         self._currency_set = False  # 通貨設定済みフラグ
         self._is_out_of_stock = False  # 在庫切れフラグ
+        self._detected_location = None  # 検出されたロケーション
 
     def _set_currency_cookie(self):
         """JPY表示用のCookieを設定する"""
@@ -239,3 +244,51 @@ class BullionstarScraper(BaseScraper):
         なければデフォルト（USD）を返す
         """
         return self._detected_currency or self.CURRENCY
+
+    def _extract_location(self) -> Optional[str]:
+        """
+        製造国/発行国（Country）を抽出する
+
+        商品詳細リストから "Country: XXX" パターンを探す
+        """
+        try:
+            # 商品詳細のリスト項目を取得
+            items = self.page.query_selector_all(self.PRODUCT_DETAILS_SELECTOR)
+
+            for item in items:
+                text = item.inner_text().strip()
+                # "Country: XXX" パターンをマッチ
+                match = re.match(r'^Country:\s*(.+)$', text, re.IGNORECASE)
+                if match:
+                    country = match.group(1).strip()
+                    if country:
+                        self._detected_location = country
+                        logger.info(f"製造国検出: {country}")
+                        return country
+
+            # 見つからない場合はページ全体からテキストを検索
+            page_text = self.page.inner_text("body")
+            match = re.search(r'Country:\s*([A-Za-z\s/]+?)(?:\n|$|<)', page_text)
+            if match:
+                country = match.group(1).strip()
+                if country and len(country) < 50:  # 妥当な長さをチェック
+                    self._detected_location = country
+                    logger.info(f"製造国検出（ページ検索）: {country}")
+                    return country
+
+            logger.debug("製造国情報が見つかりませんでした")
+            return None
+
+        except Exception as e:
+            logger.error(f"製造国抽出エラー: {e}")
+            return None
+
+    def get_location(self) -> str:
+        """
+        検出されたロケーション（製造国/発行国）を返す
+
+        scrape()呼び出し後に使用する
+        """
+        if self._detected_location is None:
+            self._extract_location()
+        return self._detected_location or ""

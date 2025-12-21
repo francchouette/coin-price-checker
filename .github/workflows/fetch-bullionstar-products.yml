@@ -26,6 +26,16 @@ on:
         required: false
         default: false
         type: boolean
+      fetch_prices:
+        description: '価格・在庫もスクレイピングで取得（時間がかかります）'
+        required: false
+        default: false
+        type: boolean
+      limit:
+        description: '価格取得の件数制限（テスト用、空欄で全件）'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   fetch-products:
@@ -58,6 +68,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install Playwright browsers
+        if: ${{ inputs.fetch_prices == true }}
+        run: |
+          playwright install chromium
+
       - name: Fetch Bullionstar products
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
@@ -67,6 +82,12 @@ jobs:
             ARGS="$ARGS --dry-run"
           fi
           if [ -n "${{ inputs.category }}" ]; then
-            ARGS="$ARGS --category ${{ inputs.category }}"
+            ARGS="$ARGS --category '${{ inputs.category }}'"
+          fi
+          if [ "${{ inputs.fetch_prices }}" == "true" ]; then
+            ARGS="$ARGS --fetch-prices"
+          fi
+          if [ -n "${{ inputs.limit }}" ]; then
+            ARGS="$ARGS --limit ${{ inputs.limit }}"
           fi
           python -m src.bullionstar_products $ARGS
