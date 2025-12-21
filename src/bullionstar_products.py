@@ -6,7 +6,7 @@ Bullionstarの全商品ページURLとカテゴリー情報を取得し、
 
 取得情報（38列: A-AL）:
 - A-D: 仕入れ先商品ID / 商品名 / URL / サイト
-- E-H: 最上位カテゴリ / 親カテゴリ / 子カテゴリ / ロケーション
+- E-H: 最上位カテゴリ / 親カテゴリ / 子カテゴリ / 製造国
 - I-J: 初回取得日 / 商品グループID
 - K-M: 現在価格（現地通貨）/ 取引通貨 / 在庫状況
 - N-P: 為替種類 / 為替レート / 日本円換算価格
@@ -53,7 +53,7 @@ class BullionstarProduct:
     top_category: str                  # E列: 最上位カテゴリ
     parent_category: str               # F列: 親カテゴリ
     child_category: str                # G列: 子カテゴリ
-    location: str                      # H列: ロケーション
+    location: str                      # H列: 製造国
     fetched_at: str                    # I列: 初回取得日
 
     # オプションフィールド（価格情報）
@@ -92,8 +92,9 @@ class BullionstarProduct:
     mintage: str = ""                  # AL列: 発行数・限定数
 
 
-# ロケーション定義
-LOCATIONS = {
+# 販売拠点定義（APIエンドポイント用）
+# 注: これは商品取得用であり、H列（製造国）には使用しない
+SALES_LOCATIONS = {
     1: ("Singapore", "https://www.bullionstar.com"),
     2: ("USA", "https://www.bullionstar.us"),
     3: ("New Zealand", "https://www.bullionstar.co.nz"),
@@ -136,26 +137,24 @@ class BullionstarProductFetcher:
         seen_keys = set()
         timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
 
-        for location_id, (location_name, base_url) in LOCATIONS.items():
+        for location_id, (sales_region, base_url) in SALES_LOCATIONS.items():
             logger.info(f"\n{'='*60}")
-            logger.info(f"ロケーション: {location_name}")
+            logger.info(f"販売拠点: {sales_region}")
             logger.info(f"{'='*60}")
 
             products = self._fetch_location_products(
                 location_id=location_id,
-                location_name=location_name,
                 base_url=base_url,
                 timestamp=timestamp
             )
 
-            # 重複を除外して追加
+            # 重複を除外して追加（URLのみでチェック）
             for product in products:
-                key = (product.url, product.location)
-                if key not in seen_keys:
-                    seen_keys.add(key)
+                if product.url not in seen_keys:
+                    seen_keys.add(product.url)
                     all_products.append(product)
 
-            logger.info(f"  → {location_name}: {len(products)}件（累計: {len(all_products)}件）")
+            logger.info(f"  → {sales_region}: {len(products)}件（累計: {len(all_products)}件）")
 
         logger.info(f"\n商品ページ取得完了: {len(all_products)}件")
         return all_products
@@ -163,7 +162,6 @@ class BullionstarProductFetcher:
     def _fetch_location_products(
         self,
         location_id: int,
-        location_name: str,
         base_url: str,
         timestamp: str
     ) -> list[BullionstarProduct]:
@@ -230,7 +228,7 @@ class BullionstarProductFetcher:
                             top_category=top_category,
                             parent_category=parent_category,
                             child_category=group_name[:100] if group_name else "",
-                            location=location_name,
+                            location="",  # H列: 製造国はスクレイピング時に取得
                             fetched_at=timestamp
                         ))
                         page_count += 1
@@ -484,7 +482,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     product.top_category,                           # E: 最上位カテゴリ
                     product.parent_category,                        # F: 親カテゴリ
                     product.child_category,                         # G: 子カテゴリ
-                    product.location,                               # H: ロケーション
+                    product.location,                               # H: 製造国
                     product.fetched_at,                             # I: 初回取得日
                     product.group_id,                               # J: 商品グループID
                     stock_status,                                   # K: 在庫状況
@@ -525,11 +523,28 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
             sheet.append_rows(new_rows, value_input_option='RAW')
             logger.info(f"新規追加: {len(new_rows)}件")
 
-        # 既存行を更新
+        # 既存行を更新（バッチ更新でAPI制限を回避）
         if update_cells:
-            # バッチ更新のためにセルをグループ化
+            # gspreadのbatch_update形式に変換
+            batch_data = []
             for row_idx, col_idx, value in update_cells:
-                sheet.update_cell(row_idx, col_idx, value)
+                # 列番号をA1形式に変換（1=A, 2=B, ...）
+                col_letter = chr(ord('A') + col_idx - 1) if col_idx <= 26 else \
+                            chr(ord('A') + (col_idx - 1) // 26 - 1) + chr(ord('A') + (col_idx - 1) % 26)
+                cell_ref = f"{col_letter}{row_idx}"
+                batch_data.append({
+                    'range': cell_ref,
+                    'values': [[value]]
+                })
+
+            # バッチ更新を実行（100件ずつ分割してAPI制限を回避）
+            batch_size = 100
+            for i in range(0, len(batch_data), batch_size):
+                batch_chunk = batch_data[i:i + batch_size]
+                sheet.batch_update(batch_chunk, value_input_option='RAW')
+                if i + batch_size < len(batch_data):
+                    time.sleep(1)  # API制限対策で1秒待機
+
             logger.info(f"価格更新: {updated_count}件")
 
         if skipped_count > 0:
@@ -620,7 +635,7 @@ def fetch_prices_for_products(
                 product.exchange_rate = 1.0
                 product.price_jpy = result.price if result.price else 0.0
 
-                # ロケーション（製造国/発行国）を取得
+                # 製造国を取得
                 scraped_location = scraper.get_location()
                 if scraped_location:
                     product.location = scraped_location
@@ -783,7 +798,10 @@ def main():
     for i, product in enumerate(products[:10], 1):
         logger.info(f"  {i}. {product.name[:50]}...")
         logger.info(f"     URL: {product.url}")
-        logger.info(f"     {product.top_category} > {product.parent_category} [{product.location}]")
+        if product.location:
+            logger.info(f"     {product.top_category} > {product.parent_category} [製造国: {product.location}]")
+        else:
+            logger.info(f"     {product.top_category} > {product.parent_category}")
 
     if len(products) > 10:
         logger.info(f"  ... 他 {len(products) - 10} 件")
