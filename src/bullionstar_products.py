@@ -625,15 +625,22 @@ def fetch_prices_for_products(
                     continue
 
                 # 価格情報を更新
-                # BullionstarはJPY価格を取得するので、通貨はJPY固定
                 product.price = result.price
-                product.currency = "JPY"  # M列: 取引通貨は常にJPY
+                product.currency = result.currency  # M列: 実際の取引通貨
                 product.in_stock = result.in_stock
                 product.last_price_updated = timestamp
 
-                # JPYなので為替レートは1、日本円価格は取得価格そのまま
-                product.exchange_rate = 1.0
-                product.price_jpy = result.price if result.price else 0.0
+                # JPY以外の通貨が検出された場合は記録（後で為替変換）
+                if result.currency and result.currency != "JPY":
+                    currencies_found.add(result.currency)
+                    # 一旦為替レート未設定（後でまとめて設定）
+                    product.exchange_rate = 0.0
+                    product.price_jpy = 0.0
+                else:
+                    # JPYの場合は為替レート1、日本円価格はそのまま
+                    product.exchange_type = "なし"  # JPYなので為替不要
+                    product.exchange_rate = 1.0
+                    product.price_jpy = result.price if result.price else 0.0
 
                 # 製造国を取得
                 scraped_location = scraper.get_location()
