@@ -236,9 +236,10 @@ def main():
         if len(existing) > 1:
             logger.info(f"既存データ行数: {len(existing)}行, 数式データ行数: {len(existing_formulas) if existing_formulas else 0}行")
             for row_idx, row in enumerate(existing[1:], start=1):  # ヘッダーをスキップ
-                if len(row) > 2 and row[2]:  # C列: カラーミー商品ID
+                # ※2025-12: 操作項目列（C-F）追加により+4シフト: C→G(6)
+                if len(row) > 6 and row[6]:  # G列: カラーミー商品ID
                     try:
-                        pid = int(row[2])
+                        pid = int(row[6])
                         # 数式データと値データをマージ
                         # 数式データがあればそれを優先、なければ値データを使用
                         if existing_formulas and row_idx < len(existing_formulas):
@@ -259,23 +260,24 @@ def main():
                         existing_row_map[pid] = row_idx
                         max_existing_row = max(max_existing_row, row_idx)
 
-                        # デバッグ: 最初の3件のみF,O,P,S,U-X列の内容を確認
+                        # デバッグ: 最初の3件のみJ,S,T,W,Y-AB列の内容を確認
+                        # ※2025-12: 操作項目列（C-F）追加により+4シフト
                         if len(existing_data) <= 3:
                             r = existing_data[pid]
-                            logger.info(f"  既存データ 商品ID {pid}: F={r[5][:20] if r[5] else ''}, O={r[14]}, P={r[15]}, S={r[18]}, U-X={r[20:24]}")
+                            logger.info(f"  既存データ 商品ID {pid}: J={r[9][:20] if len(r) > 9 and r[9] else ''}, S={r[18] if len(r) > 18 else ''}, T={r[19] if len(r) > 19 else ''}, W={r[22] if len(r) > 22 else ''}, Y-AB={r[24:28] if len(r) > 27 else ''}")
                     except ValueError:
                         pass
             logger.info(f"既存データを取得: {len(existing_data)}件（数式を保持）")
             # 注意: 既存データをクリアしない - 各行を個別に更新する
 
-        # 既存データからP列（取引通貨）とQ列（為替種類）を収集
+        # 既存データからT列（取引通貨）とU列（為替種類）を収集
         # ※数式の場合は値を取得するためexistingから取得
-        # L列追加後: P列=index 15, Q列=index 16
+        # ※2025-12: 操作項目列（C-F）追加により+4シフト: P→T(19), Q→U(20)
         currency_exchange_types = {}  # 通貨 -> 為替種類
         for row_idx, row in enumerate(existing[1:], start=1):  # ヘッダーをスキップ
-            if len(row) > 16:
-                currency = row[15].strip().upper() if len(row) > 15 and row[15] else ""
-                exchange_type = row[16].strip() if len(row) > 16 and row[16] else "クレカ"
+            if len(row) > 20:
+                currency = row[19].strip().upper() if len(row) > 19 and row[19] else ""
+                exchange_type = row[20].strip() if len(row) > 20 and row[20] else "クレカ"
                 if currency and currency != "JPY":
                     currency_exchange_types[currency] = exchange_type
 
@@ -288,35 +290,36 @@ def main():
             )
             logger.info(f"為替レート取得完了: {len(exchange_rates)}件")
 
-        # 価格自動取得オプション: 既存データのF列URLから価格を取得
-        # ※F列はVLOOKUP数式の場合があるため、値として取得したexistingを使用
+        # 価格自動取得オプション: 既存データのJ列URLから価格を取得
+        # ※J列はVLOOKUP数式の場合があるため、値として取得したexistingを使用
+        # ※2025-12: 操作項目列（C-F）追加により+4シフト: F→J(9), C→G(6)
         price_data = {}
         url_to_pid = {}  # URL -> 商品IDのマッピング（スクレイピング結果の紐付け用）
         if args.fetch_prices and existing_data:
-            # F列（仕入れ先商品URL）を収集 - 値として取得したexistingから
+            # J列（仕入れ先商品URL）を収集 - 値として取得したexistingから
             urls_to_fetch = []
             empty_url_count = 0
             formula_url_count = 0
             for row_idx, row in enumerate(existing[1:], start=1):  # ヘッダーをスキップ
-                if len(row) > 5 and row[5]:  # F列: 仕入れ先商品URL（計算後の値）
-                    url = row[5].strip()
+                if len(row) > 9 and row[9]:  # J列: 仕入れ先商品URL（計算後の値）
+                    url = row[9].strip()
                     if url.startswith("http"):
                         urls_to_fetch.append(url)
                         # 商品IDとの紐付け
-                        if len(row) > 2 and row[2]:
+                        if len(row) > 6 and row[6]:
                             try:
-                                pid = int(row[2])
+                                pid = int(row[6])
                                 url_to_pid[url] = pid
                             except ValueError:
                                 pass
                     elif url.startswith("="):
                         formula_url_count += 1
-                        logger.warning(f"  F列が数式のまま: 行{row_idx+1}, 値={url[:50]}")
+                        logger.warning(f"  J列が数式のまま: 行{row_idx+1}, 値={url[:50]}")
                     else:
                         empty_url_count += 1
                 else:
                     empty_url_count += 1
-            logger.info(f"F列URL集計: URLあり={len(urls_to_fetch)}件, URLなし={empty_url_count}件, 数式のまま={formula_url_count}件")
+            logger.info(f"J列URL集計: URLあり={len(urls_to_fetch)}件, URLなし={empty_url_count}件, 数式のまま={formula_url_count}件")
 
             if urls_to_fetch:
                 # 重複を除いて価格取得
@@ -389,7 +392,8 @@ def main():
             }
             display_state = display_state_map.get(display_state_api, display_state_api)
 
-            # 81列分のデータを作成（A-CC列: 操作項目を先頭に配置、L列追加により1列増）
+            # 81列分のデータを作成（A-CC列: 操作項目を先頭に配置）
+            # ※2025-12: C-F列に価格更新ON/OFF等の操作列を移動
             row = [""] * 81
 
             # 既存データがあれば仕入れ先情報を保持
@@ -406,179 +410,172 @@ def main():
                 old_row_num = 0
                 new_row_num = next_new_row + len(new_rows) + 1  # ヘッダー含む
 
-            # A-B: 操作項目（既存値を保持、なければデフォルト値）
+            # A-F: 操作項目（既存値を保持、なければデフォルト値）
             row[0] = preserve_or_set(existing_row, 0, "変更なし", old_row_num, new_row_num)  # A: 同期モード
             row[1] = preserve_or_set(existing_row, 1, display_state, old_row_num, new_row_num)  # B: 掲載設定（既存値を保持）
+            c_default = str(existing_row[2]) if len(existing_row) > 2 and existing_row[2] else "OFF"
+            row[2] = preserve_or_set(existing_row, 2, c_default, old_row_num, new_row_num)  # C: 価格更新ON/OFF
+            d_default = str(existing_row[3]) if len(existing_row) > 3 and existing_row[3] else "OFF"
+            row[3] = preserve_or_set(existing_row, 3, d_default, old_row_num, new_row_num)  # D: 在庫連動ON/OFF
+            e_default = str(existing_row[4]) if len(existing_row) > 4 and existing_row[4] else "変更しない"
+            row[4] = preserve_or_set(existing_row, 4, e_default, old_row_num, new_row_num)  # E: 表示連動
+            row[5] = preserve_or_set(existing_row, 5, "ダウンロード済", old_row_num, new_row_num, preserve_existing=False)  # F: 同期ステータス
 
-            # C-E: 識別情報
-            row[2] = str(product_id)  # C: カラーミー商品ID
-            row[3] = product.get("name", "")  # D: 商品名
-            row[4] = f"https://ybx.jp/?pid={product_id}"  # E: カラーミー商品URL
+            # G-I: 識別情報
+            row[6] = str(product_id)  # G: カラーミー商品ID
+            row[7] = product.get("name", "")  # H: 商品名
+            row[8] = f"https://ybx.jp/?pid={product_id}"  # I: カラーミー商品URL
 
-            # F-O: 仕入れ先情報（既存データを保持、数式があれば保持）
-            row[5] = preserve_or_set(existing_row, 5, "", old_row_num, new_row_num)   # F: 仕入れ先商品URL
-            row[6] = preserve_or_set(existing_row, 6, "", old_row_num, new_row_num)   # G: 仕入れ先商品名
-            row[7] = preserve_or_set(existing_row, 7, "", old_row_num, new_row_num)   # H: 仕入れ先サイト
-            row[8] = preserve_or_set(existing_row, 8, "", old_row_num, new_row_num)   # I: 最上位カテゴリ
-            row[9] = preserve_or_set(existing_row, 9, "", old_row_num, new_row_num)   # J: 親カテゴリ
-            row[10] = preserve_or_set(existing_row, 10, "", old_row_num, new_row_num) # K: 子カテゴリ
+            # J-O: 仕入れ先情報（既存データを保持、数式があれば保持）
+            row[9] = preserve_or_set(existing_row, 9, "", old_row_num, new_row_num)   # J: 仕入れ先商品URL
+            row[10] = preserve_or_set(existing_row, 10, "", old_row_num, new_row_num)  # K: 仕入れ先商品名
+            row[11] = preserve_or_set(existing_row, 11, "", old_row_num, new_row_num)  # L: 仕入れ先サイト
+            row[12] = preserve_or_set(existing_row, 12, "", old_row_num, new_row_num)  # M: 最上位カテゴリ
+            row[13] = preserve_or_set(existing_row, 13, "", old_row_num, new_row_num)  # N: 親カテゴリ
+            row[14] = preserve_or_set(existing_row, 14, "", old_row_num, new_row_num)  # O: 子カテゴリ
 
-            # L列: 仕入れ先在庫状況（新規追加）
-            row[11] = preserve_or_set(existing_row, 11, "", old_row_num, new_row_num)  # L: 仕入れ先在庫状況
+            # P列: 仕入れ先在庫状況
+            row[15] = preserve_or_set(existing_row, 15, "", old_row_num, new_row_num)  # P: 仕入れ先在庫状況
 
-            # M-P列: 価格情報（数式があれば保持、スクレイピング結果があれば更新）
-            # まず既存値または数式を保持
-            row[12] = preserve_or_set(existing_row, 12, "", old_row_num, new_row_num)  # M: 仕入れ先価格（旧L列）
-            row[13] = preserve_or_set(existing_row, 13, "", old_row_num, new_row_num)  # N: 前回仕入れ価格（旧M列）
-            row[14] = preserve_or_set(existing_row, 14, "", old_row_num, new_row_num)  # O: 価格変動率（旧N列）
-            row[15] = preserve_or_set(existing_row, 15, "", old_row_num, new_row_num)  # P: 取引通貨（旧O列）
+            # Q-T列: 価格情報（数式があれば保持、スクレイピング結果があれば更新）
+            row[16] = preserve_or_set(existing_row, 16, "", old_row_num, new_row_num)  # Q: 仕入れ先価格（現地通貨）
+            row[17] = preserve_or_set(existing_row, 17, "", old_row_num, new_row_num)  # R: 前回仕入れ価格
+            row[18] = preserve_or_set(existing_row, 18, "", old_row_num, new_row_num)  # S: 価格変動率
+            row[19] = preserve_or_set(existing_row, 19, "", old_row_num, new_row_num)  # T: 取引通貨（旧P列）
 
             # スクレイピング結果があり、かつ数式でない場合のみ更新
-            # F列が数式（VLOOKUP等）の場合は、existingから計算後の値を取得
+            # J列が数式（VLOOKUP等）の場合は、existingから計算後の値を取得
             supplier_url = ""
             if is_existing:
                 row_idx = existing_row_map[product_id]
-                if row_idx < len(existing) and len(existing[row_idx]) > 5:
-                    supplier_url = existing[row_idx][5].strip() if existing[row_idx][5] else ""
+                if row_idx < len(existing) and len(existing[row_idx]) > 9:
+                    supplier_url = existing[row_idx][9].strip() if existing[row_idx][9] else ""
             else:
-                supplier_url_raw = row[5]
+                supplier_url_raw = row[9]
                 supplier_url = str(supplier_url_raw).strip() if supplier_url_raw and not str(supplier_url_raw).startswith("=") else ""
 
             if supplier_url and supplier_url.startswith("http") and supplier_url in price_data:
                 scraped = price_data[supplier_url]
                 if not scraped.error:
-                    # L列: 仕入れ先在庫状況を更新
-                    if not (row[11] and isinstance(row[11], str) and row[11].startswith("=")):
-                        row[11] = "In Stock" if scraped.in_stock else "Out of Stock"
+                    # P列(15): 仕入れ先在庫状況を更新
+                    if not (row[15] and isinstance(row[15], str) and row[15].startswith("=")):
+                        row[15] = "In Stock" if scraped.in_stock else "Out of Stock"
 
-                    # M列が数式でない場合のみ更新
-                    if not (row[12] and isinstance(row[12], str) and row[12].startswith("=")):
-                        # 前回価格をN列に保存（N列が数式でない場合）
-                        if not (row[13] and isinstance(row[13], str) and row[13].startswith("=")):
-                            prev_val = existing_row[12] if len(existing_row) > 12 else ""
-                            row[13] = str(prev_val) if prev_val else ""
-                        # 新価格をM列に設定
-                        row[12] = str(scraped.price)
+                    # Q列(16)が数式でない場合のみ更新
+                    if not (row[16] and isinstance(row[16], str) and row[16].startswith("=")):
+                        # 前回価格をR列(17)に保存（R列が数式でない場合）
+                        if not (row[17] and isinstance(row[17], str) and row[17].startswith("=")):
+                            prev_val = existing_row[16] if len(existing_row) > 16 else ""
+                            row[17] = str(prev_val) if prev_val else ""
+                        # 新価格をQ列(16)に設定
+                        row[16] = str(scraped.price)
 
-                    # P列: スクレイピング結果の通貨で常に更新（数式があっても値で上書き）
-                    old_currency = row[15]
-                    row[15] = scraped.currency
+                    # T列(19): スクレイピング結果の通貨で常に更新（数式があっても値で上書き）
+                    old_currency = row[19]
+                    row[19] = scraped.currency
                     if old_currency != scraped.currency:
                         if old_currency and str(old_currency).startswith("="):
                             logger.info(f"  商品ID {product_id}: 通貨更新（数式を値に置換） -> {scraped.currency}")
                         else:
                             logger.info(f"  商品ID {product_id}: 通貨更新 {old_currency} -> {scraped.currency}")
 
-                    # O列が数式でない場合のみ価格変動率を計算
-                    if not (row[14] and isinstance(row[14], str) and row[14].startswith("=")):
-                        prev_price_raw = existing_row[12] if len(existing_row) > 12 else ""
+                    # S列が数式でない場合のみ価格変動率を計算
+                    if not (row[18] and isinstance(row[18], str) and row[18].startswith("=")):
+                        prev_price_raw = existing_row[16] if len(existing_row) > 16 else ""
                         prev_price_str = str(prev_price_raw) if prev_price_raw else ""
                         if prev_price_str and not prev_price_str.startswith("="):
                             try:
                                 prev_price = float(prev_price_str)
                                 if prev_price > 0:
                                     change_rate = ((scraped.price - prev_price) / prev_price) * 100
-                                    row[14] = f"{change_rate:+.2f}%"
+                                    row[18] = f"{change_rate:+.2f}%"
                             except ValueError:
                                 pass
 
-            # Q-AC: 価格計算（既存データを保持、数式は行番号を調整）
-            # Q(16), R(17), S(18), T(19), U(20), V(21), W(22), X(23), Y(24), Z(25), AA(26), AB(27), AC(28)
-            for i in range(16, 29):
+            # U-AG: 価格計算（既存データを保持、数式は行番号を調整）
+            for i in range(20, 33):
                 row[i] = preserve_or_set(existing_row, i, "", old_row_num, new_row_num)
 
-            # R列（為替レート）を自動更新（数式でない場合のみ）
-            if not (row[17] and isinstance(row[17], str) and row[17].startswith("=")):
-                # P列とQ列は数式の場合があるため、既存の値データからも取得を試みる
-                # まずrow[15]（取引通貨）を確認
-                currency_val = row[15]
+            # V列（為替レート）を自動更新（数式でない場合のみ）
+            if not (row[21] and isinstance(row[21], str) and row[21].startswith("=")):
+                # T列とU列は数式の場合があるため、既存の値データからも取得を試みる
+                currency_val = row[19]
                 if currency_val and isinstance(currency_val, str) and currency_val.startswith("="):
-                    # 数式の場合、existingから計算済みの値を取得
                     row_idx = existing_row_map.get(product_id)
-                    if row_idx and row_idx < len(existing) and len(existing[row_idx]) > 15:
-                        currency_val = existing[row_idx][15]
+                    if row_idx and row_idx < len(existing) and len(existing[row_idx]) > 19:
+                        currency_val = existing[row_idx][19]
                 currency = currency_val.strip().upper() if currency_val else ""
 
-                exchange_type_val = row[16]
+                exchange_type_val = row[20]
                 if exchange_type_val and isinstance(exchange_type_val, str) and exchange_type_val.startswith("="):
-                    # 数式の場合、existingから計算済みの値を取得
                     row_idx = existing_row_map.get(product_id)
-                    if row_idx and row_idx < len(existing) and len(existing[row_idx]) > 16:
-                        exchange_type_val = existing[row_idx][16]
+                    if row_idx and row_idx < len(existing) and len(existing[row_idx]) > 20:
+                        exchange_type_val = existing[row_idx][20]
                 exchange_type = exchange_type_val.strip() if exchange_type_val else "クレカ"
 
                 if currency == "JPY":
-                    row[17] = "1"  # R: 為替レート（JPYは1）
+                    row[21] = "1"  # V: 為替レート（JPYは1）
                 elif currency:
                     rate_key = f"{currency}_{exchange_type}"
                     if rate_key in exchange_rates:
-                        row[17] = str(round(exchange_rates[rate_key], 4))  # R: 為替レート
-                        logger.info(f"  商品ID {product_id}: 為替レート更新 {rate_key} = {row[17]}")
+                        row[21] = str(round(exchange_rates[rate_key], 4))  # V: 為替レート
+                        logger.info(f"  商品ID {product_id}: 為替レート更新 {rate_key} = {row[21]}")
                     else:
                         logger.warning(f"  商品ID {product_id}: 為替レート見つからず {rate_key}, 利用可能: {list(exchange_rates.keys())}")
 
-            # AD-AI: カラーミー価格情報（数式があれば保持、値はAPIから取得）
-            row[29] = preserve_or_set(existing_row, 29, str(product.get("sales_price") or product.get("price") or 0), old_row_num, new_row_num, preserve_existing=False)  # AD: 販売価格（旧AC列）
-            row[30] = preserve_or_set(existing_row, 30, str(product.get("price") or 0), old_row_num, new_row_num, preserve_existing=False)  # AE: 定価（旧AD列）
-            row[31] = preserve_or_set(existing_row, 31, str(product.get("members_price") or 0), old_row_num, new_row_num, preserve_existing=False)  # AF: 会員価格（旧AE列）
-            row[32] = preserve_or_set(existing_row, 32, str(product.get("cost") or 0), old_row_num, new_row_num, preserve_existing=False)  # AG: 原価（旧AF列）
-            row[33] = preserve_or_set(existing_row, 33, "", old_row_num, new_row_num)  # AH: 消費税込販売価格（旧AG列）
-            row[34] = preserve_or_set(existing_row, 34, "", old_row_num, new_row_num)  # AI: 消費税額（旧AH列）
+            # AH-AM: カラーミー価格情報（数式があれば保持、値はAPIから取得）
+            row[33] = preserve_or_set(existing_row, 33, str(product.get("sales_price") or product.get("price") or 0), old_row_num, new_row_num, preserve_existing=False)  # AH: 販売価格
+            row[34] = preserve_or_set(existing_row, 34, str(product.get("price") or 0), old_row_num, new_row_num, preserve_existing=False)  # AI: 定価
+            row[35] = preserve_or_set(existing_row, 35, str(product.get("members_price") or 0), old_row_num, new_row_num, preserve_existing=False)  # AJ: 会員価格
+            row[36] = preserve_or_set(existing_row, 36, str(product.get("cost") or 0), old_row_num, new_row_num, preserve_existing=False)  # AK: 原価
+            row[37] = preserve_or_set(existing_row, 37, "", old_row_num, new_row_num)  # AL: 消費税込販売価格
+            row[38] = preserve_or_set(existing_row, 38, "", old_row_num, new_row_num)  # AM: 消費税額
 
-            # AJ-AM: カテゴリー・グループ（数式があれば保持）
-            row[35] = preserve_or_set(existing_row, 35, str(category_id_big) if category_id_big else "", old_row_num, new_row_num)  # AJ: 大カテゴリーID（旧AI列）
-            row[36] = preserve_or_set(existing_row, 36, str(category_id_small) if category_id_small else "", old_row_num, new_row_num)  # AK: 小カテゴリーID（旧AJ列）
-            row[37] = preserve_or_set(existing_row, 37, group_ids_str, old_row_num, new_row_num)  # AL: グループID（旧AK列）
-            row[38] = preserve_or_set(existing_row, 38, product.get("model_number", "") or "", old_row_num, new_row_num)  # AM: 型番（旧AL列）
+            # AN-AQ: カテゴリー・グループ（数式があれば保持）
+            row[39] = preserve_or_set(existing_row, 39, str(category_id_big) if category_id_big else "", old_row_num, new_row_num)  # AN: 大カテゴリーID
+            row[40] = preserve_or_set(existing_row, 40, str(category_id_small) if category_id_small else "", old_row_num, new_row_num)  # AO: 小カテゴリーID
+            row[41] = preserve_or_set(existing_row, 41, group_ids_str, old_row_num, new_row_num)  # AP: グループID
+            row[42] = preserve_or_set(existing_row, 42, product.get("model_number", "") or "", old_row_num, new_row_num)  # AQ: 型番
 
-            # AN-AT: 在庫管理（数式があれば保持、APIから取得した値で更新）
-            row[39] = preserve_or_set(existing_row, 39, str(product.get("stocks") or 0), old_row_num, new_row_num, preserve_existing=False)  # AN: 在庫数（旧AM列）
-            row[40] = preserve_or_set(existing_row, 40, "する" if product.get("stock_managed", True) else "しない", old_row_num, new_row_num, preserve_existing=False)  # AO: 在庫管理（旧AN列）
-            row[41] = preserve_or_set(existing_row, 41, str(product.get("few_num") or 0), old_row_num, new_row_num, preserve_existing=False)  # AP: 残りわずか数（旧AO列）
+            # AR-AX: 在庫管理（数式があれば保持、APIから取得した値で更新）
+            row[43] = preserve_or_set(existing_row, 43, str(product.get("stocks") or 0), old_row_num, new_row_num, preserve_existing=False)  # AR: 在庫数
+            row[44] = preserve_or_set(existing_row, 44, "する" if product.get("stock_managed", True) else "しない", old_row_num, new_row_num, preserve_existing=False)  # AS: 在庫管理
+            row[45] = preserve_or_set(existing_row, 45, str(product.get("few_num") or 0), old_row_num, new_row_num, preserve_existing=False)  # AT: 残りわずか数
             soldout_display = product.get("soldout_display", True)
-            row[42] = preserve_or_set(existing_row, 42, "表示" if soldout_display else "非表示", old_row_num, new_row_num, preserve_existing=False)  # AQ: 売切れ表示（旧AP列）
-            row[43] = preserve_or_set(existing_row, 43, str(product.get("min_num") or 1), old_row_num, new_row_num, preserve_existing=False)  # AR: 最小購入数（旧AQ列）
-            row[44] = preserve_or_set(existing_row, 44, str(product.get("max_num") or 0), old_row_num, new_row_num, preserve_existing=False)  # AS: 最大購入数（旧AR列）
-            row[45] = preserve_or_set(existing_row, 45, product.get("unit", "") or "", old_row_num, new_row_num, preserve_existing=False)  # AT: 単位（旧AS列）
+            row[46] = preserve_or_set(existing_row, 46, "表示" if soldout_display else "非表示", old_row_num, new_row_num, preserve_existing=False)  # AU: 売切れ表示
+            row[47] = preserve_or_set(existing_row, 47, str(product.get("min_num") or 1), old_row_num, new_row_num, preserve_existing=False)  # AV: 最小購入数
+            row[48] = preserve_or_set(existing_row, 48, str(product.get("max_num") or 0), old_row_num, new_row_num, preserve_existing=False)  # AW: 最大購入数
+            row[49] = preserve_or_set(existing_row, 49, product.get("unit", "") or "", old_row_num, new_row_num, preserve_existing=False)  # AX: 単位
 
-            # AU-AX: 送料・配送（数式があれば保持）
-            row[46] = preserve_or_set(existing_row, 46, str(product.get("delivery_charge") or 0), old_row_num, new_row_num)  # AU: 個別送料（旧AT列）
-            row[47] = preserve_or_set(existing_row, 47, "", old_row_num, new_row_num)  # AV: クール便料金（旧AU列）
-            row[48] = preserve_or_set(existing_row, 48, "", old_row_num, new_row_num)  # AW: 重量(g)（旧AV列）
-            row[49] = preserve_or_set(existing_row, 49, "", old_row_num, new_row_num)  # AX: 配送不要（旧AW列）
+            # AY-BB: 送料・配送（数式があれば保持）
+            row[50] = preserve_or_set(existing_row, 50, str(product.get("delivery_charge") or 0), old_row_num, new_row_num)  # AY: 個別送料
+            row[51] = preserve_or_set(existing_row, 51, "", old_row_num, new_row_num)  # AZ: クール便料金
+            row[52] = preserve_or_set(existing_row, 52, "", old_row_num, new_row_num)  # BA: 重量(g)
+            row[53] = preserve_or_set(existing_row, 53, "", old_row_num, new_row_num)  # BB: 配送不要
 
-            # AY-BB: 商品説明（数式があれば保持）
-            row[50] = preserve_or_set(existing_row, 50, product.get("expl", "") or "", old_row_num, new_row_num)  # AY: 商品説明（旧AX列）
-            row[51] = preserve_or_set(existing_row, 51, product.get("simple_expl", "") or "", old_row_num, new_row_num)  # AZ: 簡易説明（旧AY列）
-            row[52] = preserve_or_set(existing_row, 52, "", old_row_num, new_row_num)  # BA: スマホ説明（旧AZ列）
-            row[53] = preserve_or_set(existing_row, 53, "", old_row_num, new_row_num)  # BB: 備考（旧BA列）
+            # BC-BF: 商品説明（数式があれば保持）
+            row[54] = preserve_or_set(existing_row, 54, product.get("expl", "") or "", old_row_num, new_row_num)  # BC: 商品説明
+            row[55] = preserve_or_set(existing_row, 55, product.get("simple_expl", "") or "", old_row_num, new_row_num)  # BD: 簡易説明
+            row[56] = preserve_or_set(existing_row, 56, "", old_row_num, new_row_num)  # BE: スマホ説明
+            row[57] = preserve_or_set(existing_row, 57, "", old_row_num, new_row_num)  # BF: 備考
 
-            # BC-BL: 画像（数式があれば保持）
-            row[54] = preserve_or_set(existing_row, 54, image_url, old_row_num, new_row_num)  # BC: メイン画像URL（旧BB列）
-            row[55] = preserve_or_set(existing_row, 55, product.get("thumbnail_image_url", "") or "", old_row_num, new_row_num)  # BD: サムネイルURL（旧BC列）
+            # BG-BP: 画像（数式があれば保持）
+            row[58] = preserve_or_set(existing_row, 58, image_url, old_row_num, new_row_num)  # BG: メイン画像URL
+            row[59] = preserve_or_set(existing_row, 59, product.get("thumbnail_image_url", "") or "", old_row_num, new_row_num)  # BH: サムネイルURL
             for i, url in enumerate(image_urls[:8]):
-                row[56 + i] = preserve_or_set(existing_row, 56 + i, url, old_row_num, new_row_num)  # BE-BL: 画像URL1-8（旧BD-BK列）
+                row[60 + i] = preserve_or_set(existing_row, 60 + i, url, old_row_num, new_row_num)  # BI-BP: 画像URL1-8
 
-            # BM-BV: SEO、フラグ、掲載期間（数式があれば保持）
-            for i in range(64, 74):
+            # BQ-BZ: SEO、フラグ、掲載期間（数式があれば保持）
+            for i in range(68, 78):
                 default_val = str(existing_row[i]) if len(existing_row) > i and existing_row[i] else ""
                 row[i] = preserve_or_set(existing_row, i, default_val, old_row_num, new_row_num)
 
-            # BW-CA: 更新制御（既存の設定を保持、数式があれば保持）
-            bw_default = str(existing_row[74]) if len(existing_row) > 74 and existing_row[74] else "OFF"
-            row[74] = preserve_or_set(existing_row, 74, bw_default, old_row_num, new_row_num)  # BW: 価格更新ON/OFF（旧BV列）
-            bx_default = str(existing_row[75]) if len(existing_row) > 75 and existing_row[75] else "OFF"
-            row[75] = preserve_or_set(existing_row, 75, bx_default, old_row_num, new_row_num)  # BX: 在庫連動ON/OFF（旧BW列）
-            by_default = str(existing_row[76]) if len(existing_row) > 76 and existing_row[76] else "変更しない"
-            row[76] = preserve_or_set(existing_row, 76, by_default, old_row_num, new_row_num)  # BY: 表示連動（旧BX列）
-            row[77] = preserve_or_set(existing_row, 77, "ダウンロード済", old_row_num, new_row_num, preserve_existing=False)  # BZ: 同期ステータス（旧BY列）
-            row[78] = preserve_or_set(existing_row, 78, now, old_row_num, new_row_num, preserve_existing=False)  # CA: 同期日時（旧BZ列）
-
-            # CB-CC: システム情報（数式があれば保持、APIから取得）
+            # CA-CC: システム情報
+            row[78] = preserve_or_set(existing_row, 78, now, old_row_num, new_row_num, preserve_existing=False)  # CA: 同期日時
             make_date = product.get("make_date", "")
             update_date = product.get("update_date", "")
-            row[79] = preserve_or_set(existing_row, 79, make_date if make_date else "", old_row_num, new_row_num, preserve_existing=False)  # CB: 商品作成日時（旧CA列）
-            row[80] = preserve_or_set(existing_row, 80, update_date if update_date else "", old_row_num, new_row_num, preserve_existing=False)  # CC: 商品更新日時（旧CB列）
+            row[79] = preserve_or_set(existing_row, 79, make_date if make_date else "", old_row_num, new_row_num, preserve_existing=False)  # CB: 商品作成日時
+            row[80] = preserve_or_set(existing_row, 80, update_date if update_date else "", old_row_num, new_row_num, preserve_existing=False)  # CC: 商品更新日時
 
             # 既存商品か新規商品かで振り分け
             if is_existing:
