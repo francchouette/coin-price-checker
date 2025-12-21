@@ -424,7 +424,9 @@ def main():
             if not (row[16] and isinstance(row[16], str) and row[16].startswith("=")):
                 currency = row[14].strip().upper() if row[14] else ""
                 exchange_type = row[15].strip() if row[15] else "クレカ"
-                if currency and currency != "JPY":
+                if currency == "JPY":
+                    row[16] = "1"  # Q: 為替レート（JPYは1）
+                elif currency:
                     rate_key = f"{currency}_{exchange_type}"
                     if rate_key in exchange_rates:
                         row[16] = str(round(exchange_rates[rate_key], 4))  # Q: 為替レート
@@ -498,17 +500,23 @@ def main():
             else:
                 new_rows.append(row)
 
-        # バッチ書き込み
+        # バッチ書き込み（API呼び出し回数を最小化）
         updated_count = 0
         added_count = 0
 
-        # 既存行の更新（各行を個別に更新）
+        # 既存行の更新（batch_updateで一括処理）
         if update_rows:
             logger.info(f"既存商品を更新中: {len(update_rows)}件")
+            batch_data = []
             for row_num, row_data in update_rows.items():
                 sheet_row = row_num + 1  # 1-indexed（ヘッダー含む）
-                sheet.update(f'A{sheet_row}:CB{sheet_row}', [row_data], value_input_option='USER_ENTERED')
-                updated_count += 1
+                batch_data.append({
+                    'range': f'A{sheet_row}:CB{sheet_row}',
+                    'values': [row_data]
+                })
+            # batch_updateで一括更新（1回のAPI呼び出し）
+            sheet.batch_update(batch_data, value_input_option='USER_ENTERED')
+            updated_count = len(update_rows)
             logger.info(f"既存商品の更新完了: {updated_count}件")
 
         # 新規行の追加（末尾に一括追加）
@@ -516,7 +524,7 @@ def main():
             start_row = max_existing_row + 2  # ヘッダー含む
             end_row = start_row + len(new_rows) - 1
             logger.info(f"新規商品を追加中: {len(new_rows)}件 (行{start_row}〜{end_row})")
-            sheet.update(f'A{start_row}:CB{end_row}', new_rows, value_input_option='USER_ENTERED')
+            sheet.update(values=new_rows, range_name=f'A{start_row}:CB{end_row}', value_input_option='USER_ENTERED')
             added_count = len(new_rows)
             logger.info(f"新規商品の追加完了: {added_count}件")
 
