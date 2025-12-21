@@ -268,13 +268,14 @@ def main():
             logger.info(f"既存データを取得: {len(existing_data)}件（数式を保持）")
             # 注意: 既存データをクリアしない - 各行を個別に更新する
 
-        # 既存データからO列（取引通貨）とP列（為替種類）を収集
+        # 既存データからP列（取引通貨）とQ列（為替種類）を収集
         # ※数式の場合は値を取得するためexistingから取得
+        # L列追加後: P列=index 15, Q列=index 16
         currency_exchange_types = {}  # 通貨 -> 為替種類
         for row_idx, row in enumerate(existing[1:], start=1):  # ヘッダーをスキップ
-            if len(row) > 15:
-                currency = row[14].strip().upper() if len(row) > 14 and row[14] else ""
-                exchange_type = row[15].strip() if len(row) > 15 and row[15] else "クレカ"
+            if len(row) > 16:
+                currency = row[15].strip().upper() if len(row) > 15 and row[15] else ""
+                exchange_type = row[16].strip() if len(row) > 16 and row[16] else "クレカ"
                 if currency and currency != "JPY":
                     currency_exchange_types[currency] = exchange_type
 
@@ -325,6 +326,22 @@ def main():
                 success_count = len([r for r in price_data.values() if not r.error])
                 fail_count = len([r for r in price_data.values() if r.error])
                 logger.info(f"価格取得完了: {success_count}件成功, {fail_count}件失敗")
+
+                # スクレイピング結果から新しい通貨を収集し、為替レートを追加取得
+                new_currencies = set()
+                for scraped in price_data.values():
+                    if not scraped.error and scraped.currency:
+                        currency = scraped.currency.upper()
+                        if currency != "JPY" and currency not in currency_exchange_types:
+                            new_currencies.add(currency)
+
+                if new_currencies:
+                    logger.info(f"スクレイピング結果から新規通貨を検出: {new_currencies}")
+                    # 新規通貨の為替レートを取得（デフォルトはクレカ）
+                    new_currency_types = {c: "クレカ" for c in new_currencies}
+                    new_rates = fetch_exchange_rates(list(new_currencies), new_currency_types)
+                    exchange_rates.update(new_rates)
+                    logger.info(f"新規通貨の為替レート取得完了: {len(new_rates)}件")
 
         # 商品データを行に変換
         # 既存行の更新と新規行の追加を分けて処理
