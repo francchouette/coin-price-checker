@@ -1,0 +1,67 @@
+name: Fetch Supplier Prices
+
+on:
+  # 4時間ごとに実行
+  schedule:
+    - cron: '0 */4 * * *'
+
+  # 手動実行
+  workflow_dispatch:
+    inputs:
+      site:
+        description: '対象サイト'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - 'all'
+          - 'bullionstar'
+          - 'apmex'
+          - 'britannia'
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/613320899872/locations/global/workloadIdentityPools/github-actions-pool/providers/github'
+          service_account: 'spreadsheet-access@coin-price-tracker-479614.iam.gserviceaccount.com'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: |
+          playwright install chromium
+
+      - name: Fetch supplier prices
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          BRIGHTDATA_BROWSER_WS: ${{ secrets.BRIGHTDATA_BROWSER_WS }}
+          GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+        run: |
+          SITE_FLAG=""
+          if [ -n "${{ github.event.inputs.site }}" ] && [ "${{ github.event.inputs.site }}" != "all" ]; then
+            SITE_FLAG="--site=${{ github.event.inputs.site }}"
+          fi
+          python -m src.fetch_suppliers $SITE_FLAG

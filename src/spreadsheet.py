@@ -566,6 +566,14 @@ class SpreadsheetClient:
                                 except ValueError:
                                     pass
 
+                            # 販売適正価格（T列、index 19）- カラーミーに登録する価格
+                            selling_price = 0
+                            if len(row) >= 20 and row[19].strip():
+                                try:
+                                    selling_price = int(float(row[19].strip().replace(',', '')))
+                                except ValueError:
+                                    pass
+
                             # U列: 原価（index 20）
                             cost = 0
                             if len(row) >= 21 and row[20].strip():
@@ -734,6 +742,7 @@ class SpreadsheetClient:
                                 exchange_type=exchange_type,
                                 shipping_cost=shipping_cost,
                                 misc_cost=misc_cost,
+                                selling_price=selling_price,
                                 cost=cost,
                                 previous_source_price=previous_source_price,
                                 source_change_rate=source_change_rate,
@@ -1751,3 +1760,630 @@ class SpreadsheetClient:
         except Exception as e:
             logger.error(f"画像URL一括更新エラー: {e}")
             return 0
+
+    # ========================================
+    # 新シート構造（2025-12 新設計）
+    # ========================================
+
+    def _col_to_letter(self, col_num: int) -> str:
+        """列番号をアルファベットに変換"""
+        result = ""
+        while col_num > 0:
+            col_num, remainder = divmod(col_num - 1, 26)
+            result = chr(65 + remainder) + result
+        return result
+
+    def create_new_sheets(self) -> dict:
+        """
+        新しい3つのシートを作成し、スプレッドシートの左側に配置する
+
+        Returns:
+            dict: {"suppliers": bool, "initial": bool, "management": bool}
+        """
+        if not self._spreadsheet:
+            logger.error("スプレッドシートに接続されていません")
+            return {"suppliers": False, "initial": False, "management": False}
+
+        result = {"suppliers": False, "initial": False, "management": False}
+
+        try:
+            existing_sheets = [ws.title for ws in self._spreadsheet.worksheets()]
+
+            # 1. 商品仕入れ先一覧シート
+            if Config.SHEET_SUPPLIERS not in existing_sheets:
+                sheet = self._spreadsheet.add_worksheet(
+                    title=Config.SHEET_SUPPLIERS,
+                    rows=1000,
+                    cols=30
+                )
+                # ヘッダーを設定
+                sheet.update('A1:W1', [Config.SUPPLIER_HEADERS], value_input_option='RAW')
+                # ヘッダー行を固定
+                sheet.freeze(rows=1)
+                result["suppliers"] = True
+                logger.info(f"シート作成: {Config.SHEET_SUPPLIERS}")
+            else:
+                result["suppliers"] = True
+                logger.info(f"シート既存: {Config.SHEET_SUPPLIERS}")
+
+            # 2. 新カラーミー商品初期登録一覧シート
+            if Config.SHEET_COLORME_INITIAL not in existing_sheets:
+                sheet = self._spreadsheet.add_worksheet(
+                    title=Config.SHEET_COLORME_INITIAL,
+                    rows=1000,
+                    cols=90
+                )
+                # ヘッダーを設定（管理シート + 初期登録専用列）
+                all_headers = Config.COLORME_V2_HEADERS + Config.COLORME_INITIAL_EXTRA_HEADERS
+                end_col = self._col_to_letter(len(all_headers))
+                sheet.update(f'A1:{end_col}1', [all_headers], value_input_option='RAW')
+                # ヘッダー行を固定
+                sheet.freeze(rows=1)
+                result["initial"] = True
+                logger.info(f"シート作成: {Config.SHEET_COLORME_INITIAL}")
+            else:
+                result["initial"] = True
+                logger.info(f"シート既存: {Config.SHEET_COLORME_INITIAL}")
+
+            # 3. 新カラーミー商品管理シート
+            if Config.SHEET_COLORME_V2 not in existing_sheets:
+                sheet = self._spreadsheet.add_worksheet(
+                    title=Config.SHEET_COLORME_V2,
+                    rows=1000,
+                    cols=85
+                )
+                # ヘッダーを設定
+                end_col = self._col_to_letter(len(Config.COLORME_V2_HEADERS))
+                sheet.update(f'A1:{end_col}1', [Config.COLORME_V2_HEADERS], value_input_option='RAW')
+                # ヘッダー行を固定
+                sheet.freeze(rows=1)
+                result["management"] = True
+                logger.info(f"シート作成: {Config.SHEET_COLORME_V2}")
+            else:
+                result["management"] = True
+                logger.info(f"シート既存: {Config.SHEET_COLORME_V2}")
+
+            # シートを左側に移動（逆順で移動することで正しい順序になる）
+            self._move_sheets_to_left()
+
+            return result
+
+        except Exception as e:
+            logger.error(f"新シート作成エラー: {e}")
+            return result
+
+    def _move_sheets_to_left(self):
+        """新しい3つのシートをスプレッドシートの左側に移動"""
+        try:
+            sheets = self._spreadsheet.worksheets()
+            sheet_titles = [ws.title for ws in sheets]
+
+            # 移動対象のシート（表示順）
+            target_sheets = [
+                Config.SHEET_SUPPLIERS,
+                Config.SHEET_COLORME_INITIAL,
+                Config.SHEET_COLORME_V2,
+            ]
+
+            # 各シートを左側に移動
+            for i, title in enumerate(target_sheets):
+                if title in sheet_titles:
+                    sheet = self._spreadsheet.worksheet(title)
+                    self._spreadsheet.reorder_worksheets([sheet] + [ws for ws in sheets if ws.title != title])
+                    # シートリストを更新
+                    sheets = self._spreadsheet.worksheets()
+
+            logger.info("新シートを左側に移動しました")
+
+        except Exception as e:
+            logger.warning(f"シート移動エラー: {e}")
+
+    def get_supplier_products(self) -> list[dict]:
+        """
+        商品仕入れ先一覧シートから商品リストを取得する
+
+        Returns:
+            list[dict]: 仕入れ先商品のリスト
+        """
+        if not self._spreadsheet:
+            logger.error("スプレッドシートに接続されていません")
+            return []
+
+        try:
+            sheet = self._spreadsheet.worksheet(Config.SHEET_SUPPLIERS)
+            records = sheet.get_all_values()
+
+            products = []
+            for i, row in enumerate(records[1:], start=2):  # ヘッダーをスキップ
+                if len(row) >= 3 and row[2].strip():  # C列（URL）がある場合
+                    product = {
+                        "row_num": i,
+                        "supplier_product_id": row[0].strip() if len(row) > 0 else "",
+                        "supplier_product_name": row[1].strip() if len(row) > 1 else "",
+                        "supplier_product_url": row[2].strip() if len(row) > 2 else "",
+                        "supplier_site": row[3].strip() if len(row) > 3 else "",
+                        "top_category": row[4].strip() if len(row) > 4 else "",
+                        "parent_category": row[5].strip() if len(row) > 5 else "",
+                        "child_category": row[6].strip() if len(row) > 6 else "",
+                        "location": row[7].strip() if len(row) > 7 else "",
+                        "first_fetched": row[8].strip() if len(row) > 8 else "",
+                        "group_id": row[9].strip() if len(row) > 9 else "",
+                        "current_price": self._parse_float(row[10]) if len(row) > 10 else 0,
+                        "currency": row[11].strip() if len(row) > 11 else "USD",
+                        "stock_status": row[12].strip() if len(row) > 12 else "",
+                        "exchange_type": row[13].strip() if len(row) > 13 else "",
+                        "exchange_rate": self._parse_float(row[14]) if len(row) > 14 else 0,
+                        "jpy_price": self._parse_float(row[15]) if len(row) > 15 else 0,
+                        "last_updated": row[16].strip() if len(row) > 16 else "",
+                        "previous_price": self._parse_float(row[17]) if len(row) > 17 else 0,
+                        "change_rate": self._parse_float(row[18]) if len(row) > 18 else 0,
+                        "adopted": row[19].strip() == "TRUE" if len(row) > 19 else False,
+                        "adopted_reason": row[20].strip() if len(row) > 20 else "",
+                        "colorme_product_id": row[21].strip() if len(row) > 21 else "",
+                        "note": row[22].strip() if len(row) > 22 else "",
+                    }
+                    products.append(product)
+
+            logger.info(f"仕入れ先商品を{len(products)}件取得しました")
+            return products
+
+        except gspread.exceptions.WorksheetNotFound:
+            logger.warning(f"シート '{Config.SHEET_SUPPLIERS}' が見つかりません")
+            return []
+        except Exception as e:
+            logger.error(f"仕入れ先商品の取得エラー: {e}")
+            return []
+
+    def _parse_float(self, value: str) -> float:
+        """文字列を浮動小数点数に変換"""
+        if not value:
+            return 0.0
+        try:
+            # カンマ、%、+を除去
+            cleaned = value.strip().replace(',', '').replace('%', '').replace('+', '')
+            return float(cleaned)
+        except ValueError:
+            return 0.0
+
+    def get_unregistered_suppliers(self) -> list[dict]:
+        """
+        カラーミー未登録の採用済み仕入れ先商品を取得する
+
+        条件:
+        - 採用フラグがTRUE
+        - カラーミー商品IDが空
+
+        Returns:
+            list[dict]: 未登録の仕入れ先商品リスト
+        """
+        products = self.get_supplier_products()
+        unregistered = [
+            p for p in products
+            if p["adopted"] and not p["colorme_product_id"]
+        ]
+        logger.info(f"未登録の採用済み商品: {len(unregistered)}件")
+        return unregistered
+
+    def add_initial_registration_row(self, data: dict) -> bool:
+        """
+        初期登録一覧シートに行を追加する
+
+        Args:
+            data: 登録データ（日本語キー）
+
+        Returns:
+            bool: 成功時True
+        """
+        if not self._spreadsheet:
+            logger.error("スプレッドシートに接続されていません")
+            return False
+
+        try:
+            sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME_INITIAL)
+
+            # 84列分のデータを作成
+            row = [""] * 84
+
+            # A-C: 識別情報
+            row[0] = str(data.get("カラーミー商品ID", ""))  # A
+            row[1] = data.get("商品名", "")  # B
+            row[2] = data.get("カラーミー商品URL", "")  # C
+
+            # D-K: 仕入れ先情報
+            row[3] = data.get("仕入れ先商品URL", "")  # D
+            row[4] = data.get("仕入れ先商品名", "")  # E
+            row[5] = data.get("仕入れ先サイト", "")  # F
+            row[6] = data.get("最上位カテゴリ", "")  # G
+            row[7] = data.get("親カテゴリ", "")  # H
+            row[8] = data.get("子カテゴリ", "")  # I
+            row[9] = str(data.get("仕入れ先価格（現地通貨）", ""))  # J
+            row[10] = data.get("取引通貨", "SGD")  # K
+
+            # L-X: 価格計算
+            row[11] = data.get("為替種類", "クレカ")  # L
+            row[12] = str(data.get("為替レート", ""))  # M
+            row[14] = str(data.get("枚数", 1))  # O
+            row[16] = str(data.get("設定マージン率", 0.2))  # Q
+            row[18] = str(data.get("送料", 0))  # S
+            row[19] = str(data.get("手数料", 0))  # T
+
+            # Y-AD: カラーミー価格情報
+            row[24] = str(data.get("販売価格", ""))  # Y
+            row[25] = str(data.get("定価", ""))  # Z
+            row[26] = str(data.get("会員価格", ""))  # AA
+            row[27] = str(data.get("原価", ""))  # AB
+
+            # AE-AI: カテゴリー・グループ
+            row[30] = str(data.get("大カテゴリーID", ""))  # AE
+            row[31] = str(data.get("小カテゴリーID", ""))  # AF
+            row[32] = data.get("グループID", "")  # AG
+            row[33] = data.get("型番", "")  # AH
+            row[34] = data.get("掲載設定", "showing")  # AI
+
+            # AJ-AP: 在庫管理
+            row[35] = str(data.get("在庫数", 10))  # AJ
+            row[36] = data.get("在庫管理", "する")  # AK
+            row[37] = str(data.get("残りわずか数", 3))  # AL
+            row[38] = data.get("売切れ表示", "表示")  # AM
+            row[39] = str(data.get("最小購入数", 1))  # AN
+            row[40] = str(data.get("最大購入数", 0))  # AO
+            row[41] = data.get("単位", "")  # AP
+
+            # AQ-AT: 送料・配送
+            row[42] = str(data.get("個別送料", 0))  # AQ
+            row[43] = str(data.get("クール便料金", 0))  # AR
+            row[44] = str(data.get("重量(g)", 0))  # AS
+            row[45] = "TRUE" if data.get("配送不要") else ""  # AT
+
+            # AU-AX: 商品説明
+            row[46] = data.get("商品説明", "")  # AU
+            row[47] = data.get("簡易説明", "")  # AV
+            row[48] = data.get("スマホ説明", "")  # AW
+            row[49] = data.get("備考", "")  # AX
+
+            # AY-BH: 画像
+            row[50] = data.get("メイン画像URL", "")  # AY
+            row[51] = data.get("サムネイルURL", "")  # AZ
+            row[52] = data.get("画像URL1", "")  # BA
+            row[53] = data.get("画像URL2", "")  # BB
+            row[54] = data.get("画像URL3", "")  # BC
+            row[55] = data.get("画像URL4", "")  # BD
+            row[56] = data.get("画像URL5", "")  # BE
+            row[57] = data.get("画像URL6", "")  # BF
+            row[58] = data.get("画像URL7", "")  # BG
+            row[59] = data.get("画像URL8", "")  # BH
+
+            # BI-BK: SEO項目
+            row[60] = data.get("ページタイトル", "")  # BI
+            row[61] = data.get("メタディスクリプション", "")  # BJ
+            row[62] = data.get("メタキーワード", "")  # BK
+
+            # BL-BP: フラグ・設定
+            row[63] = "TRUE" if data.get("軽減税率対象") else ""  # BL
+            row[64] = "TRUE" if data.get("デジタルコンテンツ") else ""  # BM
+            row[65] = "TRUE" if data.get("定期購入") else ""  # BN
+            row[66] = str(data.get("表示順", 0))  # BO
+            row[67] = data.get("利用不可決済", "")  # BP
+
+            # BQ-BR: 掲載期間
+            row[68] = data.get("掲載開始日時", "")  # BQ
+            row[69] = data.get("掲載終了日時", "")  # BR
+
+            # BS-BX: 更新制御
+            row[70] = data.get("価格更新ON/OFF", "ON")  # BS
+            row[71] = data.get("在庫連動ON/OFF", "ON")  # BT
+            row[72] = data.get("表示連動", "連動")  # BU
+            row[73] = data.get("同期モード", "新規登録")  # BV
+            row[74] = data.get("同期ステータス", "")  # BW
+            row[75] = data.get("同期日時", "")  # BX
+
+            # BY-CB: システム情報
+            row[76] = data.get("商品作成日時", "")  # BY
+            row[77] = data.get("商品更新日時", "")  # BZ
+            row[78] = str(data.get("前回仕入れ価格", ""))  # CA
+            row[79] = str(data.get("価格変動率", ""))  # CB
+
+            # CC-CF: 初期登録専用列
+            row[80] = data.get("登録ステータス", "未登録")  # CC
+            row[81] = data.get("登録日時", "")  # CD
+            row[82] = data.get("要確認フラグ", "")  # CE
+            row[83] = data.get("確認メモ", "")  # CF
+
+            sheet.append_row(row, value_input_option='USER_ENTERED')
+            logger.info(f"初期登録一覧に追加: {data.get('商品名', '')}")
+            return True
+
+        except Exception as e:
+            logger.error(f"初期登録一覧への追加エラー: {e}")
+            return False
+
+    def get_confirmed_registrations(self) -> list[dict]:
+        """
+        確認済みの初期登録一覧を取得する
+
+        Returns:
+            list[dict]: 確認済み（登録待ち）の商品リスト
+        """
+        if not self._spreadsheet:
+            logger.error("スプレッドシートに接続されていません")
+            return []
+
+        try:
+            sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME_INITIAL)
+            records = sheet.get_all_values()
+
+            confirmed = []
+            for i, row in enumerate(records[1:], start=2):  # ヘッダーをスキップ
+                if len(row) >= 81 and row[80].strip() == "確認済":
+                    # 行データを辞書に変換
+                    product = self._parse_initial_registration_row(row, i)
+                    confirmed.append(product)
+
+            logger.info(f"確認済み商品: {len(confirmed)}件")
+            return confirmed
+
+        except gspread.exceptions.WorksheetNotFound:
+            logger.warning(f"シート '{Config.SHEET_COLORME_INITIAL}' が見つかりません")
+            return []
+        except Exception as e:
+            logger.error(f"確認済み商品の取得エラー: {e}")
+            return []
+
+    def _parse_initial_registration_row(self, row: list, row_num: int) -> dict:
+        """初期登録一覧の行データを辞書に変換"""
+        return {
+            "_row_num": row_num,
+            "カラーミー商品ID": row[0].strip() if len(row) > 0 else "",
+            "商品名": row[1].strip() if len(row) > 1 else "",
+            "カラーミー商品URL": row[2].strip() if len(row) > 2 else "",
+            "仕入れ先商品URL": row[3].strip() if len(row) > 3 else "",
+            "仕入れ先商品名": row[4].strip() if len(row) > 4 else "",
+            "仕入れ先サイト": row[5].strip() if len(row) > 5 else "",
+            "仕入れ先価格": self._parse_float(row[9]) if len(row) > 9 else 0,
+            "取引通貨": row[10].strip() if len(row) > 10 else "USD",
+            "為替種類": row[11].strip() if len(row) > 11 else "",
+            "販売価格": self._parse_float(row[24]) if len(row) > 24 else 0,
+            "定価": self._parse_float(row[25]) if len(row) > 25 else 0,
+            "会員価格": self._parse_float(row[26]) if len(row) > 26 else 0,
+            "原価": self._parse_float(row[27]) if len(row) > 27 else 0,
+            "大カテゴリーID": int(row[30]) if len(row) > 30 and row[30].strip().isdigit() else 0,
+            "小カテゴリーID": int(row[31]) if len(row) > 31 and row[31].strip().isdigit() else 0,
+            "グループID": row[32].strip() if len(row) > 32 else "",
+            "型番": row[33].strip() if len(row) > 33 else "",
+            "掲載設定": row[34].strip() if len(row) > 34 else "showing",
+            "在庫数": int(self._parse_float(row[35])) if len(row) > 35 else 10,
+            "在庫管理": row[36].strip() if len(row) > 36 else "する",
+            "残りわずか数": int(self._parse_float(row[37])) if len(row) > 37 else 3,
+            "売切れ表示": row[38].strip() if len(row) > 38 else "表示",
+            "最小購入数": int(self._parse_float(row[39])) if len(row) > 39 else 1,
+            "最大購入数": int(self._parse_float(row[40])) if len(row) > 40 else 0,
+            "個別送料": int(self._parse_float(row[42])) if len(row) > 42 else 0,
+            "商品説明": row[46].strip() if len(row) > 46 else "",
+            "簡易説明": row[47].strip() if len(row) > 47 else "",
+            "画像URL1": row[52].strip() if len(row) > 52 else "",
+            "画像URL2": row[53].strip() if len(row) > 53 else "",
+            "画像URL3": row[54].strip() if len(row) > 54 else "",
+            "画像URL4": row[55].strip() if len(row) > 55 else "",
+            "画像URL5": row[56].strip() if len(row) > 56 else "",
+            "画像URL6": row[57].strip() if len(row) > 57 else "",
+            "画像URL7": row[58].strip() if len(row) > 58 else "",
+            "画像URL8": row[59].strip() if len(row) > 59 else "",
+            "登録ステータス": row[80].strip() if len(row) > 80 else "",
+        }
+
+    def update_initial_registration_status(
+        self,
+        row_num: int,
+        status: str,
+        colorme_id: int = None,
+        timestamp: str = None
+    ) -> bool:
+        """
+        初期登録一覧の登録ステータスを更新する
+
+        Args:
+            row_num: 行番号
+            status: ステータス（登録済/エラー等）
+            colorme_id: 登録されたカラーミー商品ID
+            timestamp: 登録日時
+
+        Returns:
+            bool: 成功時True
+        """
+        if not self._spreadsheet:
+            return False
+
+        try:
+            sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME_INITIAL)
+
+            updates = []
+
+            # A列: カラーミー商品ID
+            if colorme_id:
+                updates.append({
+                    'range': f'A{row_num}',
+                    'values': [[str(colorme_id)]]
+                })
+
+            # CC列: 登録ステータス
+            updates.append({
+                'range': f'CC{row_num}',
+                'values': [[status]]
+            })
+
+            # CD列: 登録日時
+            if timestamp:
+                updates.append({
+                    'range': f'CD{row_num}',
+                    'values': [[timestamp]]
+                })
+
+            if updates:
+                sheet.batch_update(updates, value_input_option='RAW')
+
+            logger.info(f"初期登録ステータス更新: 行{row_num} -> {status}")
+            return True
+
+        except Exception as e:
+            logger.error(f"初期登録ステータス更新エラー: {e}")
+            return False
+
+    def copy_to_colorme_management(self, row_data: dict) -> bool:
+        """
+        登録済み商品を新カラーミー商品管理シートにコピーする
+
+        Args:
+            row_data: 初期登録一覧の行データ
+
+        Returns:
+            bool: 成功時True
+        """
+        if not self._spreadsheet:
+            return False
+
+        try:
+            sheet = self._spreadsheet.worksheet(Config.SHEET_COLORME_V2)
+
+            # 80列分のデータを作成（初期登録専用列は除く）
+            row = [""] * 80
+
+            # データをコピー
+            row[0] = str(row_data.get("colorme_id", ""))  # A: カラーミー商品ID
+            row[1] = row_data.get("name", "")  # B: 商品名
+            row[3] = row_data.get("supplier_url", "")  # D: 仕入れ先商品URL
+            row[4] = row_data.get("supplier_name", "")  # E: 仕入れ先商品名
+            row[5] = row_data.get("supplier_site", "")  # F: 仕入れ先サイト
+            row[9] = str(row_data.get("supplier_price", ""))  # J: 仕入れ先価格
+            row[10] = row_data.get("currency", "USD")  # K: 取引通貨
+            row[11] = row_data.get("exchange_type", "")  # L: 為替種類
+            row[30] = str(row_data.get("category_id_big", ""))  # AE: 大カテゴリーID
+            row[31] = str(row_data.get("category_id_small", ""))  # AF: 小カテゴリーID
+            row[32] = row_data.get("group_ids", "")  # AG: グループID
+            row[33] = row_data.get("model_number", "")  # AH: 型番
+            row[50] = row_data.get("description", "")  # AU: 商品説明
+            row[51] = row_data.get("simple_description", "")  # AV: 簡易説明
+
+            # 画像URL
+            image_urls = row_data.get("image_urls", [])
+            for i, url in enumerate(image_urls[:8]):
+                row[56 + i] = url  # BA-BH: 画像URL1-8
+
+            # SEO項目
+            row[60] = row_data.get("page_title", "")  # BI: ページタイトル
+            row[61] = row_data.get("meta_description", "")  # BJ: メタディスクリプション
+            row[62] = row_data.get("meta_keywords", "")  # BK: メタキーワード
+
+            # 更新制御（デフォルト値）
+            row[70] = "OFF"  # BS: 価格更新ON/OFF
+            row[71] = "OFF"  # BT: 在庫連動ON/OFF
+            row[72] = "変更しない"  # BU: 表示連動
+            row[73] = "なし"  # BV: 同期モード
+
+            sheet.append_row(row, value_input_option='USER_ENTERED')
+            logger.info(f"商品管理シートにコピー: {row_data.get('name', '')}")
+            return True
+
+        except Exception as e:
+            logger.error(f"商品管理シートへのコピーエラー: {e}")
+            return False
+
+    def update_supplier_colorme_id(self, supplier_url: str, colorme_id: int) -> bool:
+        """
+        仕入れ先一覧のカラーミー商品IDを更新する
+
+        Args:
+            supplier_url: 仕入れ先商品URL
+            colorme_id: カラーミー商品ID
+
+        Returns:
+            bool: 成功時True
+        """
+        if not self._spreadsheet:
+            return False
+
+        try:
+            sheet = self._spreadsheet.worksheet(Config.SHEET_SUPPLIERS)
+            all_data = sheet.get_all_values()
+
+            # URLで行を検索
+            for i, row in enumerate(all_data[1:], start=2):
+                if len(row) >= 3 and row[2].strip() == supplier_url:
+                    # V列（22列目）を更新
+                    sheet.update(f'V{i}', [[str(colorme_id)]], value_input_option='RAW')
+                    logger.info(f"仕入れ先一覧のカラーミーID更新: {supplier_url} -> {colorme_id}")
+                    return True
+
+            logger.warning(f"仕入れ先が見つかりません: {supplier_url}")
+            return False
+
+        except Exception as e:
+            logger.error(f"仕入れ先カラーミーID更新エラー: {e}")
+            return False
+
+    def update_supplier_price(self, supplier_url: str, update_data: dict) -> bool:
+        """
+        仕入れ先一覧の価格情報を更新する
+
+        Args:
+            supplier_url: 仕入れ先商品URL
+            update_data: 更新データ（キーはヘッダー名に対応）
+                - 現在価格（現地通貨）
+                - 取引通貨
+                - 在庫状況
+                - 為替種類
+                - 為替レート
+                - 日本円換算価格
+                - 最終価格更新日時
+                - 前回価格（現地通貨）
+                - 価格変動率
+
+        Returns:
+            bool: 成功時True
+        """
+        if not self._spreadsheet:
+            return False
+
+        try:
+            sheet = self._spreadsheet.worksheet(Config.SHEET_SUPPLIERS)
+            all_data = sheet.get_all_values()
+
+            # URLで行を検索（C列 = index 2）
+            for i, row in enumerate(all_data[1:], start=2):
+                if len(row) >= 3 and row[2].strip() == supplier_url:
+                    # 列マッピング（ヘッダー名 → 列記号）
+                    column_map = {
+                        "現在価格（現地通貨）": "K",
+                        "取引通貨": "L",
+                        "在庫状況": "M",
+                        "為替種類": "N",
+                        "為替レート": "O",
+                        "日本円換算価格": "P",
+                        "最終価格更新日時": "Q",
+                        "前回価格（現地通貨）": "R",
+                        "価格変動率": "S",
+                    }
+
+                    updates = []
+                    for key, col in column_map.items():
+                        if key in update_data:
+                            value = update_data[key]
+                            if value is not None and value != "":
+                                updates.append({
+                                    'range': f'{col}{i}',
+                                    'values': [[str(value)]]
+                                })
+
+                    if updates:
+                        sheet.batch_update(updates, value_input_option='USER_ENTERED')
+                        logger.info(f"仕入れ先価格更新: {supplier_url}")
+                        return True
+                    else:
+                        logger.warning(f"更新データがありません: {supplier_url}")
+                        return True
+
+            logger.warning(f"仕入れ先が見つかりません: {supplier_url}")
+            return False
+
+        except Exception as e:
+            logger.error(f"仕入れ先価格更新エラー: {e}")
+            return False

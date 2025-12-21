@@ -57,3 +57,26 @@ export COLORME_ACCESS_TOKEN="your-token-here"
   - `src/colorme_image_uploader.py` モジュールを使用
   - 管理画面（admin.shop-pro.jp）にログインして商品編集画面から画像をアップロード
   - 環境変数 `COLORME_LOGIN_ID`, `COLORME_PASSWORD` が必要
+
+## 重要なアーキテクチャ決定事項
+
+### スプレッドシート列のトリガー
+
+| アクション | コマンド | トリガー列 | 説明 |
+|-----------|---------|-----------|------|
+| price-check | `python -m src.main` | H列（価格更新ON/OFF） | H列がONの商品のみカラーミーに価格更新 |
+| add-product | `python -m src.add_product` | AC列（同期モード） | AC列の値で処理分岐 |
+| sync-colorme | `python -m src.main --sync-colorme` | AC列（同期モード） | AC列の値で処理分岐 |
+
+### 価格計算
+
+- **T列（販売適正価格）の値をそのままカラーミーに登録**
+- T列はシート上で数式 `=Q/(2-F)+G+R+S` などで計算される
+- コードは独自計算せず、T列の値を直接使用する
+- T列が0または空の場合は価格更新をスキップ
+
+### 商品一覧の差分追加
+
+- **Bullionstar商品一覧** (`src/bullionstar_products.py`): URLをユニークキーとして差分のみ追加
+- **APMEX商品一覧**: 同様にURLで差分チェック
+- 毎回全件追加すると重複が発生するため、必ず差分チェックを行うこと

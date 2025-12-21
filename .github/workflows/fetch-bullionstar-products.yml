@@ -36,6 +36,14 @@ on:
         required: false
         default: ''
         type: string
+      exchange_type:
+        description: '為替種類（日本円換算に使用）'
+        required: false
+        default: 'クレカ'
+        type: choice
+        options:
+          - 'クレカ'
+          - 'Wise'
 
 jobs:
   fetch-products:
@@ -89,5 +97,8 @@ jobs:
           fi
           if [ -n "${{ inputs.limit }}" ]; then
             ARGS="$ARGS --limit ${{ inputs.limit }}"
+          fi
+          if [ -n "${{ inputs.exchange_type }}" ]; then
+            ARGS="$ARGS --exchange-type '${{ inputs.exchange_type }}'"
           fi
           python -m src.bullionstar_products $ARGS

@@ -28,12 +28,30 @@ class BullionstarScraper(BaseScraper):
     # 商品詳細のリスト項目から "Country: XXX" を探す
     PRODUCT_DETAILS_SELECTOR = ".product-overview li, .product-details li, .info li"
 
+    # 画像セレクタ
+    MAIN_IMAGE_SELECTOR = ".product-main-image img, .product-image img, .main-image img"
+    THUMBNAIL_SELECTOR = ".product-thumbnails img, .product-gallery img, .thumbnails img"
+
+    # 商品説明セレクタ
+    DESCRIPTION_SELECTOR = ".product-description, .description, .product-info .expl"
+
+    # 仕様セレクタ（商品詳細リスト）
+    SPECS_SELECTOR = ".product-overview li, .product-details li, .info li, .specifications li"
+
     def __init__(self, page):
         super().__init__(page)
         self._detected_currency = None  # 検出された通貨（インスタンス変数）
         self._currency_set = False  # 通貨設定済みフラグ
         self._is_out_of_stock = False  # 在庫切れフラグ
         self._detected_location = None  # 検出されたロケーション
+        # 追加フィールド（38列対応）
+        self._main_image_url = ""
+        self._thumbnail_url = ""
+        self._image_urls: list[str] = []  # 画像URL1-8
+        self._specs = ""
+        self._description_en = ""
+        self._mint_year = ""
+        self._mintage = ""
 
     def _set_currency_cookie(self):
         """JPY表示用のCookieを設定する"""
@@ -59,11 +77,22 @@ class BullionstarScraper(BaseScraper):
     def scrape(self, url: str) -> ScrapedData:
         """
         商品ページをスクレイピングする（JPY通貨Cookie設定付き）
+        画像、仕様、商品説明、発行年、発行数も取得する
         """
         # ページアクセス前にJPY通貨Cookieを設定
         self._set_currency_cookie()
         # 親クラスのscrapeを呼び出す
-        return super().scrape(url)
+        result = super().scrape(url)
+
+        # 追加情報を抽出（エラーでも試行）
+        try:
+            self._extract_images()
+            self._extract_specs_and_details()
+            self._extract_description()
+        except Exception as e:
+            logger.warning(f"追加情報抽出エラー: {e}")
+
+        return result
 
     def _extract_price(self) -> Optional[float]:
         """
@@ -292,3 +321,264 @@ class BullionstarScraper(BaseScraper):
         if self._detected_location is None:
             self._extract_location()
         return self._detected_location or ""
+
+    def _extract_images(self) -> None:
+        """
+        商品画像URLを抽出する
+
+        - メイン画像URL（最大解像度）
+        - サムネイルURL
+        - 追加画像URL（最大8枚）
+        """
+        try:
+            seen_urls = set()
+
+            # メイン画像を取得
+            main_img = self.page.query_selector(self.MAIN_IMAGE_SELECTOR)
+            if main_img:
+                src = main_img.get_attribute("src") or main_img.get_attribute("data-src")
+                if src:
+                    # 最大解像度のURLに変換（_thumb, _small等を除去）
+                    full_src = self._get_full_resolution_url(src)
+                    self._main_image_url = full_src
+                    seen_urls.add(full_src)
+                    logger.debug(f"メイン画像: {full_src[:80]}...")
+
+            # サムネイル画像を取得
+            thumbnails = self.page.query_selector_all(self.THUMBNAIL_SELECTOR)
+            image_urls = []
+
+            for thumb in thumbnails:
+                src = thumb.get_attribute("src") or thumb.get_attribute("data-src")
+                if src:
+                    full_src = self._get_full_resolution_url(src)
+                    if full_src not in seen_urls:
+                        seen_urls.add(full_src)
+                        image_urls.append(full_src)
+
+            # 最初のサムネイルをサムネイルURLとして設定
+            if image_urls:
+                self._thumbnail_url = image_urls[0]
+                self._image_urls = image_urls[:8]  # 最大8枚
+                logger.debug(f"追加画像: {len(self._image_urls)}枚")
+
+            # JSON-LDからも画像を取得
+            self._extract_images_from_json_ld(seen_urls)
+
+        except Exception as e:
+            logger.warning(f"画像抽出エラー: {e}")
+
+    def _get_full_resolution_url(self, url: str) -> str:
+        """
+        サムネイルURLを最大解像度のURLに変換する
+        例: /image_thumb.jpg -> /image.jpg
+        """
+        if not url:
+            return url
+
+        # 相対URLを絶対URLに変換
+        if url.startswith("//"):
+            url = "https:" + url
+        elif url.startswith("/"):
+            url = "https://www.bullionstar.com" + url
+
+        # サムネイルサフィックスを除去
+        for suffix in ["_thumb", "_small", "_medium", "_large", "-thumb", "-small"]:
+            url = url.replace(suffix, "")
+
+        return url
+
+    def _extract_images_from_json_ld(self, seen_urls: set) -> None:
+        """JSON-LDから画像URLを抽出する"""
+        try:
+            scripts = self.page.query_selector_all('script[type="application/ld+json"]')
+
+            for script in scripts:
+                try:
+                    content = script.inner_text()
+                    data = json.loads(content)
+                    items = data if isinstance(data, list) else [data]
+
+                    for item in items:
+                        if not isinstance(item, dict):
+                            continue
+
+                        if item.get("@type") == "Product":
+                            # imageフィールドを取得
+                            images = item.get("image", [])
+                            if isinstance(images, str):
+                                images = [images]
+
+                            for img_url in images:
+                                if isinstance(img_url, str) and img_url not in seen_urls:
+                                    full_url = self._get_full_resolution_url(img_url)
+                                    seen_urls.add(full_url)
+
+                                    if not self._main_image_url:
+                                        self._main_image_url = full_url
+                                    elif len(self._image_urls) < 8:
+                                        self._image_urls.append(full_url)
+
+                except json.JSONDecodeError:
+                    continue
+
+        except Exception as e:
+            logger.debug(f"JSON-LD画像抽出エラー: {e}")
+
+    def _extract_specs_and_details(self) -> None:
+        """
+        仕様・スペックと詳細情報（発行年、発行数）を抽出する
+
+        商品詳細リストから以下を取得:
+        - Weight / Purity / Diameter / Thickness 等 → 仕様・スペック
+        - Year / Mint Year → 発行年
+        - Mintage / Limited → 発行数・限定数
+        """
+        try:
+            specs_parts = []
+            items = self.page.query_selector_all(self.SPECS_SELECTOR)
+
+            for item in items:
+                text = item.inner_text().strip()
+                if not text:
+                    continue
+
+                # 発行年を検出
+                year_match = re.match(r'^(Year|Mint Year|Issue Year):\s*(.+)$', text, re.IGNORECASE)
+                if year_match:
+                    self._mint_year = year_match.group(2).strip()
+                    logger.debug(f"発行年検出: {self._mint_year}")
+                    continue
+
+                # 発行数・限定数を検出
+                mintage_match = re.match(r'^(Mintage|Limited|Edition|Issued):\s*(.+)$', text, re.IGNORECASE)
+                if mintage_match:
+                    self._mintage = mintage_match.group(2).strip()
+                    logger.debug(f"発行数検出: {self._mintage}")
+                    continue
+
+                # 仕様情報を収集（Country以外）
+                if re.match(r'^(Weight|Purity|Fineness|Diameter|Thickness|Size|Metal|Content|AGW|ASW):', text, re.IGNORECASE):
+                    specs_parts.append(text)
+
+            if specs_parts:
+                self._specs = " | ".join(specs_parts)
+                logger.debug(f"仕様: {self._specs[:100]}...")
+
+            # JSON-LDからも詳細情報を取得
+            self._extract_details_from_json_ld()
+
+        except Exception as e:
+            logger.warning(f"仕様抽出エラー: {e}")
+
+    def _extract_details_from_json_ld(self) -> None:
+        """JSON-LDから詳細情報を抽出する"""
+        try:
+            scripts = self.page.query_selector_all('script[type="application/ld+json"]')
+
+            for script in scripts:
+                try:
+                    content = script.inner_text()
+                    data = json.loads(content)
+                    items = data if isinstance(data, list) else [data]
+
+                    for item in items:
+                        if not isinstance(item, dict):
+                            continue
+
+                        if item.get("@type") == "Product":
+                            # 追加プロパティからスペックを取得
+                            additional_props = item.get("additionalProperty", [])
+                            for prop in additional_props:
+                                if isinstance(prop, dict):
+                                    name = prop.get("name", "")
+                                    value = prop.get("value", "")
+                                    if name and value:
+                                        if name.lower() in ["year", "mint year"]:
+                                            if not self._mint_year:
+                                                self._mint_year = str(value)
+                                        elif name.lower() in ["mintage", "limited"]:
+                                            if not self._mintage:
+                                                self._mintage = str(value)
+
+                except json.JSONDecodeError:
+                    continue
+
+        except Exception as e:
+            logger.debug(f"JSON-LD詳細抽出エラー: {e}")
+
+    def _extract_description(self) -> None:
+        """商品説明（英語）を抽出する"""
+        try:
+            desc_elem = self.page.query_selector(self.DESCRIPTION_SELECTOR)
+            if desc_elem:
+                text = desc_elem.inner_text().strip()
+                if text:
+                    # 長すぎる場合は切り詰め
+                    self._description_en = text[:5000] if len(text) > 5000 else text
+                    logger.debug(f"商品説明: {self._description_en[:100]}...")
+                    return
+
+            # JSON-LDからも説明を取得
+            scripts = self.page.query_selector_all('script[type="application/ld+json"]')
+            for script in scripts:
+                try:
+                    content = script.inner_text()
+                    data = json.loads(content)
+                    items = data if isinstance(data, list) else [data]
+
+                    for item in items:
+                        if isinstance(item, dict) and item.get("@type") == "Product":
+                            desc = item.get("description", "")
+                            if desc:
+                                self._description_en = desc[:5000] if len(desc) > 5000 else desc
+                                return
+
+                except json.JSONDecodeError:
+                    continue
+
+        except Exception as e:
+            logger.warning(f"商品説明抽出エラー: {e}")
+
+    # ========================================
+    # 追加フィールドのゲッター
+    # ========================================
+
+    def get_main_image_url(self) -> str:
+        """メイン画像URLを返す"""
+        return self._main_image_url
+
+    def get_thumbnail_url(self) -> str:
+        """サムネイルURLを返す"""
+        return self._thumbnail_url
+
+    def get_image_urls(self) -> list[str]:
+        """追加画像URL（最大8枚）を返す"""
+        return self._image_urls
+
+    def get_specs(self) -> str:
+        """仕様・スペックを返す"""
+        return self._specs
+
+    def get_description_en(self) -> str:
+        """商品説明（英語）を返す"""
+        return self._description_en
+
+    def get_mint_year(self) -> str:
+        """発行年を返す"""
+        return self._mint_year
+
+    def get_mintage(self) -> str:
+        """発行数・限定数を返す"""
+        return self._mintage
+
+    def reset_extra_fields(self) -> None:
+        """追加フィールドをリセットする（次の商品用）"""
+        self._detected_location = None
+        self._main_image_url = ""
+        self._thumbnail_url = ""
+        self._image_urls = []
+        self._specs = ""
+        self._description_en = ""
+        self._mint_year = ""
+        self._mintage = ""

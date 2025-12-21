@@ -4,20 +4,16 @@ Bullionstar 商品ページ一覧取得スクリプト
 Bullionstarの全商品ページURLとカテゴリー情報を取得し、
 スプレッドシートの「ブリオンスター商品ページ一覧」シートに保存する。
 
-取得情報（23列: A-W）:
-- 仕入れ先商品ID (BS-XXXXXX)
-- 仕入れ先商品名
-- 仕入れ先商品URL
-- 仕入れ先サイト (固定: Bullionstar)
-- 最上位カテゴリ / 親カテゴリ / 子カテゴリ
-- ロケーション
-- 初回取得日
-- 商品グループID（将来用）
-- 現在価格（現地通貨）/ 取引通貨 / 在庫状況
-- 為替種類 / 為替レート / 日本円換算価格
-- 最終価格更新日時 / 前回価格 / 価格変動率
-- 採用フラグ / 採用理由（将来用）
-- カラーミー商品ID / 備考
+取得情報（38列: A-AL）:
+- A-D: 仕入れ先商品ID / 商品名 / URL / サイト
+- E-H: 最上位カテゴリ / 親カテゴリ / 子カテゴリ / ロケーション
+- I-J: 初回取得日 / 商品グループID
+- K-M: 現在価格（現地通貨）/ 取引通貨 / 在庫状況
+- N-P: 為替種類 / 為替レート / 日本円換算価格
+- Q-S: 最終価格更新日時 / 前回価格 / 価格変動率
+- T-W: 採用フラグ / 採用理由 / カラーミー商品ID / 備考
+- X-AG: 画像URL（メイン、サムネイル、画像1-8）
+- AH-AL: 仕様・スペック / 商品説明（英/日）/ 発行年 / 発行数
 
 次回実行時は上書きせず、差分のみ追加。既存商品は価格情報を更新。
 
@@ -40,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import Config
 from src.spreadsheet import SpreadsheetClient
+from src.exchange_rate import ExchangeRateClient, WiseRateClient
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +46,7 @@ JST = timezone(timedelta(hours=9))
 
 @dataclass
 class BullionstarProduct:
-    """Bullionstar商品データ（23列対応）"""
+    """Bullionstar商品データ（38列対応: A-AL）"""
     # 必須フィールド
     name: str                          # B列: 仕入れ先商品名
     url: str                           # C列: 仕入れ先商品URL（ユニークキー）
@@ -63,9 +60,9 @@ class BullionstarProduct:
     supplier_id: str = ""              # A列: 仕入れ先商品ID (BS-XXXXXX)
     site: str = "Bullionstar"          # D列: 仕入れ先サイト
     group_id: str = ""                 # J列: 商品グループID（将来用）
-    price: Optional[float] = None      # K列: 現在価格（現地通貨）
-    currency: str = ""                 # L列: 取引通貨
-    in_stock: Optional[bool] = None    # M列: 在庫状況
+    in_stock: Optional[bool] = None    # K列: 在庫状況
+    price: Optional[float] = None      # L列: 現在価格（現地通貨）
+    currency: str = ""                 # M列: 取引通貨
     exchange_type: str = "クレカ"       # N列: 為替種類
     exchange_rate: float = 0.0         # O列: 為替レート
     price_jpy: float = 0.0             # P列: 日本円換算価格
@@ -76,6 +73,23 @@ class BullionstarProduct:
     adopted_reason: str = ""           # U列: 採用理由（将来用）
     colorme_id: str = ""               # V列: カラーミー商品ID
     memo: str = ""                     # W列: 備考
+    # 画像URL（X-AG列: 10列）
+    main_image_url: str = ""           # X列: メイン画像URL
+    thumbnail_url: str = ""            # Y列: サムネイルURL
+    image_url1: str = ""               # Z列: 画像URL1
+    image_url2: str = ""               # AA列: 画像URL2
+    image_url3: str = ""               # AB列: 画像URL3
+    image_url4: str = ""               # AC列: 画像URL4
+    image_url5: str = ""               # AD列: 画像URL5
+    image_url6: str = ""               # AE列: 画像URL6
+    image_url7: str = ""               # AF列: 画像URL7
+    image_url8: str = ""               # AG列: 画像URL8
+    # 商品情報（AH-AL列: 5列）
+    specs: str = ""                    # AH列: 仕様・スペック
+    description_en: str = ""           # AI列: 商品説明（英語）
+    description_ja: str = ""           # AJ列: 商品説明（日本語）
+    mint_year: str = ""                # AK列: 発行年
+    mintage: str = ""                  # AL列: 発行数・限定数
 
 
 # ロケーション定義
@@ -275,6 +289,56 @@ class BullionstarProductFetcher:
         return top_category, parent_category
 
 
+def fetch_exchange_rates(currencies: list[str], exchange_type: str = "クレカ") -> dict[str, float]:
+    """
+    通貨リストから為替レートを取得する
+
+    Args:
+        currencies: 通貨コードのリスト（例: ["USD", "SGD"]）
+        exchange_type: 為替種類（"クレカ" または "Wise"）
+
+    Returns:
+        dict: 通貨 -> レートのマッピング
+    """
+    if not currencies:
+        return {}
+
+    logger.info(f"為替レートを取得中... ({len(currencies)}通貨)")
+
+    rates = {}
+    exchange_client = ExchangeRateClient()
+    wise_client = WiseRateClient()
+
+    # 事前にExchangeRateClientのレートを取得
+    exchange_client.fetch_rates()
+
+    for currency in currencies:
+        currency = currency.upper().strip()
+        if not currency or currency == "JPY":
+            rates[currency] = 1.0
+            continue
+
+        if exchange_type == "Wise":
+            rate = wise_client.get_rate(currency, "JPY")
+            if rate:
+                rates[currency] = rate
+                logger.info(f"  Wise: 1 {currency} = {rate:.4f} JPY")
+            else:
+                # Wiseが取得できない場合は一般レートで代用
+                general_rate = exchange_client.get_rate(currency, "JPY")
+                if general_rate:
+                    rates[currency] = general_rate
+                    logger.info(f"  Wise（代替）: 1 {currency} = {general_rate:.4f} JPY")
+        else:
+            # クレカレート（手数料込み）
+            rate = exchange_client.get_credit_card_rate(currency, "JPY")
+            if rate:
+                rates[currency] = rate
+                logger.info(f"  クレカ: 1 {currency} = {rate:.4f} JPY")
+
+    return rates
+
+
 def generate_supplier_id(existing_ids: set[str]) -> str:
     """
     新しい仕入れ先商品IDを生成（BS-XXXXXX形式）
@@ -295,7 +359,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
     """
     商品をスプレッドシートに保存（差分追加・価格更新モード）
 
-    - 新規商品: 23列のデータを追加（A列にBS-XXXXXXを自動採番）
+    - 新規商品: 38列のデータを追加（A列にBS-XXXXXXを自動採番）
     - 既存商品: 価格関連列（K-S列）を更新
     - C列（URL）をユニークキーとして使用
     """
@@ -316,15 +380,15 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
             sheet = client._spreadsheet.add_worksheet(
                 title=sheet_name,
                 rows=10000,
-                cols=30
+                cols=45  # 38列 + 余裕
             )
-            sheet.update('A1:W1', [headers])
+            sheet.update('A1:AL1', [headers])
             logger.info(f"シート '{sheet_name}' を作成しました")
 
         # 既存データを取得
         existing_data = sheet.get_all_values()
         if not existing_data:
-            sheet.update('A1:W1', [headers])
+            sheet.update('A1:AL1', [headers])
             logger.info("ヘッダー行を追加")
             existing_data = [headers]
 
@@ -348,37 +412,50 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
         for product in products:
             if product.url in existing_by_url:
                 # 既存商品: 価格情報を更新（K-S列）
+                # 新列構造: K=在庫, L=価格, M=通貨, N=為替種類, O=為替レート, P=日本円, Q=更新日時, R=前回価格, S=変動率
                 row_idx, existing_row = existing_by_url[product.url]
 
                 # 価格情報がある場合のみ更新
                 if product.price is not None:
-                    # R列: 前回価格（現在のK列の値を保存）
-                    if len(existing_row) > 10 and existing_row[10]:
+                    # R列(18): 前回価格（現在のL列(11)の値を保存）
+                    if len(existing_row) > 11 and existing_row[11]:
                         try:
-                            prev_price = float(existing_row[10])
+                            prev_price = float(existing_row[11])
                             update_cells.append((row_idx, 18, str(prev_price)))  # R列
                         except ValueError:
                             pass
 
-                    # K列: 現在価格
-                    update_cells.append((row_idx, 11, str(product.price)))
-
-                    # L列: 取引通貨
-                    if product.currency:
-                        update_cells.append((row_idx, 12, product.currency))
-
-                    # M列: 在庫状況
+                    # K列(11): 在庫状況
                     if product.in_stock is not None:
                         stock_status = "In Stock" if product.in_stock else "Out of Stock"
-                        update_cells.append((row_idx, 13, stock_status))
+                        update_cells.append((row_idx, 11, stock_status))
 
-                    # Q列: 最終価格更新日時
+                    # L列(12): 現在価格
+                    update_cells.append((row_idx, 12, str(product.price)))
+
+                    # M列(13): 取引通貨
+                    if product.currency:
+                        update_cells.append((row_idx, 13, product.currency))
+
+                    # N列(14): 為替種類
+                    if product.exchange_type:
+                        update_cells.append((row_idx, 14, product.exchange_type))
+
+                    # O列(15): 為替レート
+                    if product.exchange_rate > 0:
+                        update_cells.append((row_idx, 15, str(round(product.exchange_rate, 4))))
+
+                    # P列(16): 日本円換算価格
+                    if product.price_jpy > 0:
+                        update_cells.append((row_idx, 16, str(int(product.price_jpy))))
+
+                    # Q列(17): 最終価格更新日時
                     update_cells.append((row_idx, 17, product.last_price_updated or product.fetched_at))
 
-                    # S列: 価格変動率（計算）
-                    if len(existing_row) > 10 and existing_row[10]:
+                    # S列(19): 価格変動率（計算）- L列(11)の前回価格を使用
+                    if len(existing_row) > 11 and existing_row[11]:
                         try:
-                            prev_price = float(existing_row[10])
+                            prev_price = float(existing_row[11])
                             if prev_price > 0:
                                 change_rate = ((product.price - prev_price) / prev_price) * 100
                                 update_cells.append((row_idx, 19, f"{change_rate:+.2f}%"))
@@ -389,7 +466,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 else:
                     skipped_count += 1
             else:
-                # 新規商品: 23列のデータを作成
+                # 新規商品: 38列のデータを作成
                 supplier_id = generate_supplier_id(existing_ids)
                 existing_ids.add(supplier_id)
 
@@ -398,6 +475,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 if product.in_stock is not None:
                     stock_status = "In Stock" if product.in_stock else "Out of Stock"
 
+                # 新列構造: K=在庫, L=価格, M=通貨, N=為替種類, O=為替レート, P=日本円, Q=更新日時, R=前回価格, S=変動率
                 new_row = [
                     supplier_id,                                    # A: 仕入れ先商品ID
                     product.name,                                   # B: 仕入れ先商品名
@@ -409,12 +487,12 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     product.location,                               # H: ロケーション
                     product.fetched_at,                             # I: 初回取得日
                     product.group_id,                               # J: 商品グループID
-                    str(product.price) if product.price else "",    # K: 現在価格
-                    product.currency,                               # L: 取引通貨
-                    stock_status,                                   # M: 在庫状況
+                    stock_status,                                   # K: 在庫状況
+                    str(product.price) if product.price else "",    # L: 現在価格
+                    product.currency,                               # M: 取引通貨
                     product.exchange_type,                          # N: 為替種類
                     str(product.exchange_rate) if product.exchange_rate else "",  # O: 為替レート
-                    str(product.price_jpy) if product.price_jpy else "",  # P: 日本円換算価格
+                    str(int(product.price_jpy)) if product.price_jpy else "",  # P: 日本円換算価格
                     product.last_price_updated,                     # Q: 最終価格更新日時
                     str(product.prev_price) if product.prev_price else "",  # R: 前回価格
                     product.price_change_rate,                      # S: 価格変動率
@@ -422,6 +500,23 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     product.adopted_reason,                         # U: 採用理由
                     product.colorme_id,                             # V: カラーミー商品ID
                     product.memo,                                   # W: 備考
+                    # 画像URL（X-AG列: 10列）
+                    product.main_image_url,                         # X: メイン画像URL
+                    product.thumbnail_url,                          # Y: サムネイルURL
+                    product.image_url1,                             # Z: 画像URL1
+                    product.image_url2,                             # AA: 画像URL2
+                    product.image_url3,                             # AB: 画像URL3
+                    product.image_url4,                             # AC: 画像URL4
+                    product.image_url5,                             # AD: 画像URL5
+                    product.image_url6,                             # AE: 画像URL6
+                    product.image_url7,                             # AF: 画像URL7
+                    product.image_url8,                             # AG: 画像URL8
+                    # 商品情報（AH-AL列: 5列）
+                    product.specs,                                  # AH: 仕様・スペック
+                    product.description_en,                         # AI: 商品説明（英語）
+                    product.description_ja,                         # AJ: 商品説明（日本語）
+                    product.mint_year,                              # AK: 発行年
+                    product.mintage,                                # AL: 発行数・限定数
                 ]
                 new_rows.append(new_row)
 
@@ -460,17 +555,20 @@ def fetch_bullionstar_products() -> list[BullionstarProduct]:
 
 def fetch_prices_for_products(
     products: list[BullionstarProduct],
-    limit: Optional[int] = None
+    limit: Optional[int] = None,
+    exchange_type: str = "クレカ"
 ) -> list[BullionstarProduct]:
     """
-    商品リストの価格・在庫情報をスクレイピングで取得
+    商品リストの価格・在庫・画像・仕様情報をスクレイピングで取得し、
+    日本円換算価格も計算する
 
     Args:
         products: 商品リスト
         limit: 取得件数制限（Noneで全件）
+        exchange_type: 為替種類（"クレカ" または "Wise"）
 
     Returns:
-        価格情報が付加された商品リスト
+        価格・画像・仕様情報・日本円換算価格が付加された商品リスト
     """
     try:
         from playwright.sync_api import sync_playwright
@@ -480,11 +578,12 @@ def fetch_prices_for_products(
         return products
 
     target_products = products[:limit] if limit else products
-    logger.info(f"価格取得開始: {len(target_products)}件")
+    logger.info(f"価格・画像取得開始: {len(target_products)}件")
 
     timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
     success_count = 0
     error_count = 0
+    currencies_found: set[str] = set()  # 見つかった通貨を収集
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -507,24 +606,69 @@ def fetch_prices_for_products(
                 if result.error:
                     logger.warning(f"  エラー: {result.error}")
                     error_count += 1
+                    scraper.reset_extra_fields()
                     continue
 
                 # 価格情報を更新
+                # BullionstarはJPY価格を取得するので、通貨はJPY固定
                 product.price = result.price
-                product.currency = result.currency
+                product.currency = "JPY"  # M列: 取引通貨は常にJPY
                 product.in_stock = result.in_stock
                 product.last_price_updated = timestamp
+
+                # JPYなので為替レートは1、日本円価格は取得価格そのまま
+                product.exchange_rate = 1.0
+                product.price_jpy = result.price if result.price else 0.0
 
                 # ロケーション（製造国/発行国）を取得
                 scraped_location = scraper.get_location()
                 if scraped_location:
                     product.location = scraped_location
-                    logger.info(f"  価格: {result.currency} {result.price:.2f}, 在庫: {'あり' if result.in_stock else 'なし'}, 製造国: {scraped_location}")
-                else:
-                    logger.info(f"  価格: {result.currency} {result.price:.2f}, 在庫: {'あり' if result.in_stock else 'なし'}")
+
+                # 画像情報を取得（38列対応）
+                product.main_image_url = scraper.get_main_image_url()
+                product.thumbnail_url = scraper.get_thumbnail_url()
+                image_urls = scraper.get_image_urls()
+                # 画像URL1-8を設定
+                if len(image_urls) > 0:
+                    product.image_url1 = image_urls[0]
+                if len(image_urls) > 1:
+                    product.image_url2 = image_urls[1]
+                if len(image_urls) > 2:
+                    product.image_url3 = image_urls[2]
+                if len(image_urls) > 3:
+                    product.image_url4 = image_urls[3]
+                if len(image_urls) > 4:
+                    product.image_url5 = image_urls[4]
+                if len(image_urls) > 5:
+                    product.image_url6 = image_urls[5]
+                if len(image_urls) > 6:
+                    product.image_url7 = image_urls[6]
+                if len(image_urls) > 7:
+                    product.image_url8 = image_urls[7]
+
+                # 仕様・詳細情報を取得
+                product.specs = scraper.get_specs()
+                product.description_en = scraper.get_description_en()
+                product.mint_year = scraper.get_mint_year()
+                product.mintage = scraper.get_mintage()
+
+                # ログ出力
+                img_count = 1 + len(image_urls) if product.main_image_url else len(image_urls)
+                logger.info(
+                    f"  価格: {result.currency} {result.price:.2f}, "
+                    f"在庫: {'あり' if result.in_stock else 'なし'}, "
+                    f"画像: {img_count}枚"
+                )
+                if scraped_location:
+                    logger.info(f"  製造国: {scraped_location}")
+                if product.specs:
+                    logger.info(f"  仕様: {product.specs[:50]}...")
+                if product.mint_year:
+                    logger.info(f"  発行年: {product.mint_year}")
 
                 # 次の商品用にスクレイパーの状態をリセット
-                scraper._detected_location = None
+                scraper.reset_extra_fields()
 
                 success_count += 1
 
@@ -534,11 +678,39 @@ def fetch_prices_for_products(
             except Exception as e:
                 logger.error(f"  スクレイピングエラー: {e}")
                 error_count += 1
+                scraper.reset_extra_fields()
                 continue
 
         browser.close()
 
-    logger.info(f"価格取得完了: 成功={success_count}件, 失敗={error_count}件")
+    logger.info(f"価格・画像取得完了: 成功={success_count}件, 失敗={error_count}件")
+
+    # BullionstarはJPY価格を取得するため、為替レート取得は通常不要
+    # （スクレイピング時にJPY/為替レート1/日本円価格を設定済み）
+    # 万が一JPY以外の通貨が検出された場合のみ為替レートを取得
+    if currencies_found:
+        logger.info("\n" + "=" * 60)
+        logger.info(f"JPY以外の通貨が検出されました: {currencies_found}")
+        logger.info("為替レートを取得して日本円換算価格を計算")
+        logger.info("=" * 60)
+
+        exchange_rates = fetch_exchange_rates(list(currencies_found), exchange_type)
+
+        # 各商品の日本円換算価格を計算（JPY以外のみ）
+        jpy_calculated_count = 0
+        for product in target_products:
+            if product.price is not None and product.currency:
+                currency = product.currency.upper()
+                if currency != "JPY":
+                    rate = exchange_rates.get(currency)
+                    if rate:
+                        product.exchange_type = exchange_type
+                        product.exchange_rate = rate
+                        product.price_jpy = round(product.price * rate, 0)
+                        jpy_calculated_count += 1
+
+        logger.info(f"日本円換算完了: {jpy_calculated_count}件")
+
     return products
 
 
@@ -555,6 +727,8 @@ def main():
     parser.add_argument("--fetch-prices", action="store_true", help="価格・在庫もスクレイピングで取得")
     parser.add_argument("--limit", type=int, help="価格取得の件数制限（テスト用）")
     parser.add_argument("--category", type=str, help="特定カテゴリのみ (Gold, Silver, Platinum等)")
+    parser.add_argument("--exchange-type", type=str, default="クレカ",
+                        choices=["クレカ", "Wise"], help="為替種類 (デフォルト: クレカ)")
 
     args = parser.parse_args()
 
@@ -617,9 +791,13 @@ def main():
     # 価格取得
     if args.fetch_prices:
         logger.info("\n" + "=" * 60)
-        logger.info("価格・在庫情報を取得")
+        logger.info(f"価格・在庫情報を取得（為替種類: {args.exchange_type}）")
         logger.info("=" * 60)
-        products = fetch_prices_for_products(products, limit=args.limit)
+        products = fetch_prices_for_products(
+            products,
+            limit=args.limit,
+            exchange_type=args.exchange_type
+        )
 
     if args.dry_run:
         logger.info("\n[ドライラン] スプレッドシートへの保存をスキップ")
