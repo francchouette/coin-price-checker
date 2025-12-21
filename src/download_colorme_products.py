@@ -459,8 +459,11 @@ def main():
                         row[12] = str(scraped.price)
 
                     # P列が数式でない場合のみ更新
+                    old_currency = row[15]
                     if not (row[15] and isinstance(row[15], str) and row[15].startswith("=")):
                         row[15] = scraped.currency
+                        if old_currency != scraped.currency:
+                            logger.info(f"  商品ID {product_id}: 通貨更新 {old_currency} -> {scraped.currency}")
 
                     # O列が数式でない場合のみ価格変動率を計算
                     if not (row[14] and isinstance(row[14], str) and row[14].startswith("=")):
