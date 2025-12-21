@@ -183,17 +183,6 @@ def row_to_update_data(row: list) -> dict:
             "id_small": category_id_small
         }
 
-    # グループID
-    group_ids_str = get_cell(ColIndex.GROUP_IDS)
-    if group_ids_str:
-        group_ids = []
-        for gid in group_ids_str.split(","):
-            gid = gid.strip()
-            if gid.isdigit():
-                group_ids.append(int(gid))
-        if group_ids:
-            updates["group_ids"] = group_ids
-
     # 型番
     model_number = get_cell(ColIndex.MODEL_NUMBER)
     if model_number:
