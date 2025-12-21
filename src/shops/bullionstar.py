@@ -497,8 +497,43 @@ class BullionstarScraper(BaseScraper):
             # JSON-LDからも詳細情報を取得
             self._extract_details_from_json_ld()
 
+            # 発行年が見つからない場合、商品名から抽出を試みる
+            if not self._mint_year:
+                self._extract_year_from_product_name()
+
         except Exception as e:
             logger.warning(f"仕様抽出エラー: {e}")
+
+    def _extract_year_from_product_name(self) -> None:
+        """商品名から発行年を抽出する"""
+        try:
+            # H1タグまたはJSON-LDから商品名を取得
+            product_name = ""
+            h1 = self.page.query_selector("h1")
+            if h1:
+                product_name = h1.inner_text().strip()
+
+            if not product_name:
+                return
+
+            # 商品名の先頭に年（4桁）があるかチェック
+            # 例: "2026 1 oz United Kingdom Gold Britannia"
+            year_match = re.match(r'^(20\d{2})\s+', product_name)
+            if year_match:
+                self._mint_year = year_match.group(1)
+                logger.debug(f"発行年検出（商品名から）: {self._mint_year}")
+                return
+
+            # "Year of the XXX" パターンから年を抽出
+            # 例: "2024 Year of the Dragon"
+            year_match = re.search(r'(20\d{2})\s+Year of', product_name, re.IGNORECASE)
+            if year_match:
+                self._mint_year = year_match.group(1)
+                logger.debug(f"発行年検出（Year ofパターン）: {self._mint_year}")
+                return
+
+        except Exception as e:
+            logger.debug(f"商品名からの発行年抽出エラー: {e}")
 
     def _extract_details_from_json_ld(self) -> None:
         """JSON-LDから詳細情報を抽出する"""
