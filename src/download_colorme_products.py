@@ -422,14 +422,31 @@ def main():
 
             # Q列（為替レート）を自動更新（数式でない場合のみ）
             if not (row[16] and isinstance(row[16], str) and row[16].startswith("=")):
-                currency = row[14].strip().upper() if row[14] else ""
-                exchange_type = row[15].strip() if row[15] else "クレカ"
+                # O列とP列は数式の場合があるため、既存の値データからも取得を試みる
+                # まずrow[14]（既存値/数式保持後の値）を確認
+                currency_val = row[14]
+                if currency_val and isinstance(currency_val, str) and currency_val.startswith("="):
+                    # 数式の場合、existingから計算済みの値を取得
+                    row_idx = existing_row_map.get(product_id)
+                    if row_idx and row_idx < len(existing) and len(existing[row_idx]) > 14:
+                        currency_val = existing[row_idx][14]
+                currency = currency_val.strip().upper() if currency_val else ""
+
+                exchange_type_val = row[15]
+                if exchange_type_val and isinstance(exchange_type_val, str) and exchange_type_val.startswith("="):
+                    # 数式の場合、existingから計算済みの値を取得
+                    row_idx = existing_row_map.get(product_id)
+                    if row_idx and row_idx < len(existing) and len(existing[row_idx]) > 15:
+                        exchange_type_val = existing[row_idx][15]
+                exchange_type = exchange_type_val.strip() if exchange_type_val else "クレカ"
+
                 if currency == "JPY":
                     row[16] = "1"  # Q: 為替レート（JPYは1）
                 elif currency:
                     rate_key = f"{currency}_{exchange_type}"
                     if rate_key in exchange_rates:
                         row[16] = str(round(exchange_rates[rate_key], 4))  # Q: 為替レート
+                        logger.debug(f"  商品ID {product_id}: {currency} -> {rate_key} = {row[16]}")
 
             # AC-AH: カラーミー価格情報（数式があれば保持、値はAPIから取得）
             row[28] = preserve_or_set(existing_row, 28, str(product.get("sales_price") or product.get("price") or 0), old_row_num, new_row_num, preserve_existing=False)  # AC: 販売価格
