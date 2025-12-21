@@ -218,16 +218,34 @@ def main():
         existing_data = {}  # 商品ID -> 既存行データのマッピング（数式含む）
         existing_row_map = {}  # 商品ID -> 行番号のマッピング
         if len(existing) > 1:
+            logger.info(f"既存データ行数: {len(existing)}行, 数式データ行数: {len(existing_formulas) if existing_formulas else 0}行")
             for row_idx, row in enumerate(existing[1:], start=1):  # ヘッダーをスキップ
                 if len(row) > 2 and row[2]:  # C列: カラーミー商品ID
                     try:
                         pid = int(row[2])
-                        # 数式データを使用（存在すれば）
+                        # 数式データと値データをマージ
+                        # 数式データがあればそれを優先、なければ値データを使用
                         if existing_formulas and row_idx < len(existing_formulas):
-                            existing_data[pid] = existing_formulas[row_idx]
+                            formula_row = list(existing_formulas[row_idx])
+                            # 数式データが短い場合は値データで補完（80列まで）
+                            while len(formula_row) < 80:
+                                if len(row) > len(formula_row):
+                                    formula_row.append(row[len(formula_row)])
+                                else:
+                                    formula_row.append("")
+                            existing_data[pid] = formula_row
                         else:
-                            existing_data[pid] = row
+                            # 値データを使用（80列まで拡張）
+                            value_row = list(row)
+                            while len(value_row) < 80:
+                                value_row.append("")
+                            existing_data[pid] = value_row
                         existing_row_map[pid] = row_idx
+
+                        # デバッグ: 最初の3件のみF,O,P,S,U-X列の内容を確認
+                        if len(existing_data) <= 3:
+                            r = existing_data[pid]
+                            logger.info(f"  既存データ 商品ID {pid}: F={r[5][:20] if r[5] else ''}, O={r[14]}, P={r[15]}, S={r[18]}, U-X={r[20:24]}")
                     except ValueError:
                         pass
             logger.info(f"既存データを取得: {len(existing_data)}件（数式を保持）")
@@ -322,9 +340,9 @@ def main():
             old_row_num = existing_row_map.get(product_id, 0) + 1  # 1-indexed（ヘッダー含む）
             new_row_num = len(rows) + 2  # 現在書き込む行番号（ヘッダー+1）
 
-            # A-B: 操作項目
-            row[0] = "変更なし"  # A: 同期モード
-            row[1] = display_state  # B: 掲載設定（日本語）
+            # A-B: 操作項目（既存値を保持、なければデフォルト値）
+            row[0] = preserve_or_set(existing_row, 0, "変更なし", old_row_num, new_row_num)  # A: 同期モード
+            row[1] = display_state  # B: 掲載設定（日本語）- APIから取得
 
             # C-E: 識別情報
             row[2] = str(product_id)  # C: カラーミー商品ID
@@ -376,14 +394,9 @@ def main():
                                 pass
 
             # P-AB: 価格計算（既存データを保持、数式は行番号を調整）
+            # P(15), Q(16), R(17), S(18), T(19), U(20), V(21), W(22), X(23), Y(24), Z(25), AA(26), AB(27)
             for i in range(15, 28):
-                if len(existing_row) > i:
-                    cell_value = existing_row[i]
-                    # 数式の場合は行番号を調整
-                    if isinstance(cell_value, str) and cell_value.startswith("="):
-                        row[i] = adjust_formula_row(cell_value, old_row_num, new_row_num)
-                    else:
-                        row[i] = cell_value
+                row[i] = preserve_or_set(existing_row, i, "", old_row_num, new_row_num)
 
             # Q列（為替レート）を自動更新（数式でない場合のみ）
             if not (row[16] and isinstance(row[16], str) and row[16].startswith("=")):
