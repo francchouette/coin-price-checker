@@ -7,23 +7,11 @@ on:
       action:
         description: '実行するアクション'
         required: true
-        default: 'download'
+        default: 'full-cycle-dry-run'
         type: choice
         options:
-          - 'download'
-          - 'download-with-prices'
-          - 'sync'
-          - 'sync-dry-run'
           - 'full-cycle'
           - 'full-cycle-dry-run'
-      verbose:
-        description: '詳細ログを出力'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'false'
-          - 'true'
 
 jobs:
   manage-products:
@@ -57,65 +45,14 @@ jobs:
           pip install -r requirements.txt
 
       - name: Install Playwright browsers
-        if: contains(fromJSON('["download-with-prices", "full-cycle", "full-cycle-dry-run"]'), github.event.inputs.action)
         run: |
           python -m playwright install chromium
           python -m playwright install-deps chromium
-
-      - name: Download products from ColorMe
-        if: github.event.inputs.action == 'download'
-        env:
-          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
-          GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
-        run: |
-          echo "📥 カラーミーから商品をダウンロード中..."
-          python -m src.download_colorme_products
-
-      - name: Download products from ColorMe with price fetching
-        if: github.event.inputs.action == 'download-with-prices'
-        env:
-          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
-          GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
-          BRIGHTDATA_BROWSER_WS: ${{ secrets.BRIGHTDATA_BROWSER_WS }}
-        run: |
-          echo "📥 カラーミーから商品をダウンロード中（価格自動取得あり）..."
-          python -m src.download_colorme_products --fetch-prices
-
-      - name: Sync products to ColorMe (Dry Run)
-        if: github.event.inputs.action == 'sync-dry-run'
-        env:
-          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
-          GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
-        run: |
-          echo "🔍 同期テスト実行中（実際には更新しません）..."
-          VERBOSE_FLAG=""
-          if [ "${{ github.event.inputs.verbose }}" = "true" ]; then
-            VERBOSE_FLAG="--verbose"
-          fi
-          python -m src.sync_colorme_products --dry-run $VERBOSE_FLAG
-
-      - name: Sync products to ColorMe
-        if: github.event.inputs.action == 'sync'
-        env:
-          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
-          GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
-        run: |
-          echo "📤 シートの変更をカラーミーに同期中..."
-          VERBOSE_FLAG=""
-          if [ "${{ github.event.inputs.verbose }}" = "true" ]; then
-            VERBOSE_FLAG="--verbose"
-          fi
-          python -m src.sync_colorme_products $VERBOSE_FLAG
 
       # ========================================
       # フルサイクル: ダウンロード → 価格取得 → 同期
       # ========================================
       - name: "[Full Cycle] Step 1: Download products from ColorMe"
-        if: contains(fromJSON('["full-cycle", "full-cycle-dry-run"]'), github.event.inputs.action)
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
@@ -134,11 +71,7 @@ jobs:
         run: |
           echo "📤 [2/3] A列「更新」の商品をカラーミーに同期中..."
           echo "  → トリガー: A列（同期モード）= 更新"
-          VERBOSE_FLAG=""
-          if [ "${{ github.event.inputs.verbose }}" = "true" ]; then
-            VERBOSE_FLAG="--verbose"
-          fi
-          python -m src.sync_colorme_products $VERBOSE_FLAG
+          python -m src.sync_colorme_products --verbose
 
       - name: "[Full Cycle Dry Run] Step 2: Sync test (no actual update)"
         if: github.event.inputs.action == 'full-cycle-dry-run'
@@ -149,14 +82,9 @@ jobs:
         run: |
           echo "🔍 [2/3] 同期テスト実行中（実際には更新しません）..."
           echo "  → トリガー: A列（同期モード）= 更新"
-          VERBOSE_FLAG=""
-          if [ "${{ github.event.inputs.verbose }}" = "true" ]; then
-            VERBOSE_FLAG="--verbose"
-          fi
-          python -m src.sync_colorme_products --dry-run $VERBOSE_FLAG
+          python -m src.sync_colorme_products --dry-run --verbose
 
       - name: "[Full Cycle] Step 3: Summary"
-        if: contains(fromJSON('["full-cycle", "full-cycle-dry-run"]'), github.event.inputs.action)
         run: |
           echo "✅ [3/3] フルサイクル完了"
           echo ""
@@ -173,10 +101,6 @@ jobs:
           script: |
             const action = '${{ github.event.inputs.action }}';
             const actionLabel = {
-              'download': 'ダウンロード',
-              'download-with-prices': 'ダウンロード（価格取得）',
-              'sync': '同期',
-              'sync-dry-run': '同期テスト',
               'full-cycle': 'フルサイクル',
               'full-cycle-dry-run': 'フルサイクル（テスト）'
             }[action] || action;
