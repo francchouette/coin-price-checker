@@ -28,9 +28,11 @@ class BullionstarScraper(BaseScraper):
     # 商品詳細のリスト項目から "Country: XXX" を探す
     PRODUCT_DETAILS_SELECTOR = ".product-overview li, .product-details li, .info li"
 
-    # 画像セレクタ
-    MAIN_IMAGE_SELECTOR = ".product-main-image img, .product-image img, .main-image img"
-    THUMBNAIL_SELECTOR = ".product-thumbnails img, .product-gallery img, .thumbnails img"
+    # 画像セレクタ（Bullionstar固有の構造）
+    # メイン画像: .photo セクション内の大きい画像
+    MAIN_IMAGE_SELECTOR = ".photo > img, section.photo > img, .product-image img"
+    # サムネイル: .photo ul li 内の画像
+    THUMBNAIL_SELECTOR = ".photo ul li img, .photo li img, .product-thumbnails img"
 
     # 商品説明セレクタ
     DESCRIPTION_SELECTOR = ".product-description, .description, .product-info .expl"
@@ -54,23 +56,26 @@ class BullionstarScraper(BaseScraper):
         self._mintage = ""
 
     def _set_currency_cookie(self):
-        """JPY表示用のCookieを設定する"""
+        """JPY表示用のCookieを設定する（全ドメイン対応）"""
         if self._currency_set:
             return
 
         try:
-            # Bullionstarの通貨設定Cookieを追加
+            # Bullionstarの全ドメインに通貨設定Cookieを追加
             context = self.page.context
-            context.add_cookies([
+            domains = [".bullionstar.com", ".bullionstar.us", ".bullionstar.co.nz"]
+            cookies = [
                 {
                     "name": "currency",
                     "value": "JPY",
-                    "domain": ".bullionstar.com",
+                    "domain": domain,
                     "path": "/"
                 }
-            ])
+                for domain in domains
+            ]
+            context.add_cookies(cookies)
             self._currency_set = True
-            logger.info("Bullionstar: JPY通貨Cookieを設定しました")
+            logger.info("Bullionstar: JPY通貨Cookieを設定しました（全ドメイン）")
         except Exception as e:
             logger.warning(f"通貨Cookie設定エラー: {e}")
 
@@ -297,13 +302,21 @@ class BullionstarScraper(BaseScraper):
 
             # 見つからない場合はページ全体からテキストを検索
             page_text = self.page.inner_text("body")
-            match = re.search(r'Country:\s*([A-Za-z\s/]+?)(?:\n|$|<)', page_text)
+            # "Country: XXX" または "Country\nXXX" パターンに対応
+            match = re.search(r'Country[:\s]+([A-Za-z\s/,]+?)(?:\n|$|\t|Weight|Purity|Diameter)', page_text)
             if match:
                 country = match.group(1).strip()
                 if country and len(country) < 50:  # 妥当な長さをチェック
                     self._detected_location = country
                     logger.info(f"製造国検出（ページ検索）: {country}")
                     return country
+
+            # JSON-LDからも検索
+            country = self._extract_country_from_json_ld()
+            if country:
+                self._detected_location = country
+                logger.info(f"製造国検出（JSON-LD）: {country}")
+                return country
 
             logger.debug("製造国情報が見つかりませんでした")
             return None
@@ -326,30 +339,44 @@ class BullionstarScraper(BaseScraper):
         """
         商品画像URLを抽出する
 
-        - メイン画像URL（最大解像度）
-        - サムネイルURL
-        - 追加画像URL（最大8枚）
+        Bullionstarの画像構造:
+        - .photo > img: メイン画像（300x300）
+        - .photo ul li img: サムネイル画像（73x73）
+        - data-src-x2: 2倍解像度画像
+        - data-zoom-image: ズーム用高解像度画像
+        - JSON-LD image: 600x600の画像URL配列
         """
         try:
             seen_urls = set()
+            image_urls = []
 
-            # メイン画像を取得
+            # メイン画像を取得（高解像度版を優先）
             main_img = self.page.query_selector(self.MAIN_IMAGE_SELECTOR)
             if main_img:
-                src = main_img.get_attribute("src") or main_img.get_attribute("data-src")
+                # 高解像度版を優先して取得
+                src = (
+                    main_img.get_attribute("data-zoom-image") or
+                    main_img.get_attribute("data-src-x2") or
+                    main_img.get_attribute("src") or
+                    main_img.get_attribute("data-src")
+                )
                 if src:
-                    # 最大解像度のURLに変換（_thumb, _small等を除去）
                     full_src = self._get_full_resolution_url(src)
                     self._main_image_url = full_src
                     seen_urls.add(full_src)
                     logger.debug(f"メイン画像: {full_src[:80]}...")
 
-            # サムネイル画像を取得
+            # サムネイル画像を取得（高解像度版を優先）
             thumbnails = self.page.query_selector_all(self.THUMBNAIL_SELECTOR)
-            image_urls = []
 
             for thumb in thumbnails:
-                src = thumb.get_attribute("src") or thumb.get_attribute("data-src")
+                # 高解像度版を優先して取得
+                src = (
+                    thumb.get_attribute("data-zoom-image") or
+                    thumb.get_attribute("data-src-x2") or
+                    thumb.get_attribute("src") or
+                    thumb.get_attribute("data-src")
+                )
                 if src:
                     full_src = self._get_full_resolution_url(src)
                     if full_src not in seen_urls:
@@ -360,10 +387,12 @@ class BullionstarScraper(BaseScraper):
             if image_urls:
                 self._thumbnail_url = image_urls[0]
                 self._image_urls = image_urls[:8]  # 最大8枚
-                logger.debug(f"追加画像: {len(self._image_urls)}枚")
+                logger.debug(f"サムネイルから画像: {len(self._image_urls)}枚")
 
-            # JSON-LDからも画像を取得
+            # JSON-LDからも画像を取得（高品質な600x600画像が含まれる）
             self._extract_images_from_json_ld(seen_urls)
+
+            logger.info(f"画像取得完了: メイン={1 if self._main_image_url else 0}枚, 追加={len(self._image_urls)}枚")
 
         except Exception as e:
             logger.warning(f"画像抽出エラー: {e}")
@@ -506,6 +535,46 @@ class BullionstarScraper(BaseScraper):
 
         except Exception as e:
             logger.debug(f"JSON-LD詳細抽出エラー: {e}")
+
+    def _extract_country_from_json_ld(self) -> Optional[str]:
+        """JSON-LDから製造国を抽出する"""
+        try:
+            scripts = self.page.query_selector_all('script[type="application/ld+json"]')
+
+            for script in scripts:
+                try:
+                    content = script.inner_text()
+                    data = json.loads(content)
+                    items = data if isinstance(data, list) else [data]
+
+                    for item in items:
+                        if not isinstance(item, dict):
+                            continue
+
+                        if item.get("@type") == "Product":
+                            # countryOfOriginを探す
+                            country = item.get("countryOfOrigin")
+                            if country:
+                                if isinstance(country, dict):
+                                    return country.get("name", "")
+                                return str(country)
+
+                            # additionalPropertyからCountryを探す
+                            additional_props = item.get("additionalProperty", [])
+                            for prop in additional_props:
+                                if isinstance(prop, dict):
+                                    name = prop.get("name", "").lower()
+                                    if name == "country":
+                                        return str(prop.get("value", ""))
+
+                except json.JSONDecodeError:
+                    continue
+
+            return None
+
+        except Exception as e:
+            logger.debug(f"JSON-LD製造国抽出エラー: {e}")
+            return None
 
     def _extract_description(self) -> None:
         """商品説明（英語）を抽出する"""
