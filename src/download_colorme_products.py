@@ -384,7 +384,8 @@ def main():
             row[14] = preserve_or_set(existing_row, 14, "", old_row_num, new_row_num)  # O: 取引通貨
 
             # スクレイピング結果があり、かつ数式でない場合のみ更新
-            supplier_url = row[5].strip() if row[5] and not row[5].startswith("=") else ""
+            supplier_url_raw = row[5]
+            supplier_url = str(supplier_url_raw).strip() if supplier_url_raw and not str(supplier_url_raw).startswith("=") else ""
             if supplier_url and supplier_url in price_data:
                 scraped = price_data[supplier_url]
                 if not scraped.error:
@@ -392,7 +393,8 @@ def main():
                     if not (row[11] and isinstance(row[11], str) and row[11].startswith("=")):
                         # 前回価格をM列に保存（M列が数式でない場合）
                         if not (row[12] and isinstance(row[12], str) and row[12].startswith("=")):
-                            row[12] = existing_row[11] if len(existing_row) > 11 else ""
+                            prev_val = existing_row[11] if len(existing_row) > 11 else ""
+                            row[12] = str(prev_val) if prev_val else ""
                         # 新価格をL列に設定
                         row[11] = str(scraped.price)
 
@@ -402,7 +404,8 @@ def main():
 
                     # N列が数式でない場合のみ価格変動率を計算
                     if not (row[13] and isinstance(row[13], str) and row[13].startswith("=")):
-                        prev_price_str = existing_row[11] if len(existing_row) > 11 else ""
+                        prev_price_raw = existing_row[11] if len(existing_row) > 11 else ""
+                        prev_price_str = str(prev_price_raw) if prev_price_raw else ""
                         if prev_price_str and not prev_price_str.startswith("="):
                             try:
                                 prev_price = float(prev_price_str)
@@ -470,12 +473,16 @@ def main():
 
             # BL-BU: SEO、フラグ、掲載期間（数式があれば保持）
             for i in range(63, 73):
-                row[i] = preserve_or_set(existing_row, i, existing_row[i] if len(existing_row) > i else "", old_row_num, new_row_num)
+                default_val = str(existing_row[i]) if len(existing_row) > i and existing_row[i] else ""
+                row[i] = preserve_or_set(existing_row, i, default_val, old_row_num, new_row_num)
 
             # BV-BZ: 更新制御（既存の設定を保持、数式があれば保持）
-            row[73] = preserve_or_set(existing_row, 73, existing_row[73] if len(existing_row) > 73 else "OFF", old_row_num, new_row_num)  # BV: 価格更新ON/OFF
-            row[74] = preserve_or_set(existing_row, 74, existing_row[74] if len(existing_row) > 74 else "OFF", old_row_num, new_row_num)  # BW: 在庫連動ON/OFF
-            row[75] = preserve_or_set(existing_row, 75, existing_row[75] if len(existing_row) > 75 else "変更しない", old_row_num, new_row_num)  # BX: 表示連動
+            bv_default = str(existing_row[73]) if len(existing_row) > 73 and existing_row[73] else "OFF"
+            row[73] = preserve_or_set(existing_row, 73, bv_default, old_row_num, new_row_num)  # BV: 価格更新ON/OFF
+            bw_default = str(existing_row[74]) if len(existing_row) > 74 and existing_row[74] else "OFF"
+            row[74] = preserve_or_set(existing_row, 74, bw_default, old_row_num, new_row_num)  # BW: 在庫連動ON/OFF
+            bx_default = str(existing_row[75]) if len(existing_row) > 75 and existing_row[75] else "変更しない"
+            row[75] = preserve_or_set(existing_row, 75, bx_default, old_row_num, new_row_num)  # BX: 表示連動
             row[76] = preserve_or_set(existing_row, 76, "ダウンロード済", old_row_num, new_row_num, preserve_existing=False)  # BY: 同期ステータス
             row[77] = preserve_or_set(existing_row, 77, now, old_row_num, new_row_num, preserve_existing=False)  # BZ: 同期日時
 
