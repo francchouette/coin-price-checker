@@ -225,7 +225,8 @@ def main():
         existing_formulas = sheet.get(f'A1:CB{len(existing) + 1}', value_render_option='FORMULA')
 
         existing_data = {}  # 商品ID -> 既存行データのマッピング（数式含む）
-        existing_row_map = {}  # 商品ID -> 行番号のマッピング
+        existing_row_map = {}  # 商品ID -> 行番号のマッピング（1-indexed、ヘッダー除く）
+        max_existing_row = 1  # 既存データの最大行番号
         if len(existing) > 1:
             logger.info(f"既存データ行数: {len(existing)}行, 数式データ行数: {len(existing_formulas) if existing_formulas else 0}行")
             for row_idx, row in enumerate(existing[1:], start=1):  # ヘッダーをスキップ
@@ -250,6 +251,7 @@ def main():
                                 value_row.append("")
                             existing_data[pid] = value_row
                         existing_row_map[pid] = row_idx
+                        max_existing_row = max(max_existing_row, row_idx)
 
                         # デバッグ: 最初の3件のみF,O,P,S,U-X列の内容を確認
                         if len(existing_data) <= 3:
@@ -258,9 +260,7 @@ def main():
                     except ValueError:
                         pass
             logger.info(f"既存データを取得: {len(existing_data)}件（数式を保持）")
-
-            # 既存データをクリア（2行目以降）
-            sheet.batch_clear([f'A2:CB{len(existing) + 1}'])
+            # 注意: 既存データをクリアしない - 各行を個別に更新する
 
         # 既存データからO列（取引通貨）とP列（為替種類）を収集
         # ※数式の場合は値を取得するためexistingから取得
@@ -299,8 +299,11 @@ def main():
                 logger.info(f"価格取得完了: {len([r for r in price_data.values() if not r.error])}件成功")
 
         # 商品データを行に変換
-        rows = []
+        # 既存行の更新と新規行の追加を分けて処理
+        update_rows = {}  # 行番号 -> 行データのマッピング（既存商品の更新用）
+        new_rows = []  # 新規商品用
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        next_new_row = max_existing_row + 1  # 新規商品を追加する開始行番号
 
         for product in products:
             product_id = product.get("id", 0)
@@ -344,10 +347,17 @@ def main():
 
             # 既存データがあれば仕入れ先情報を保持
             existing_row = existing_data.get(product_id, [])
+            is_existing = product_id in existing_row_map
 
             # 行番号の計算（数式調整用）
-            old_row_num = existing_row_map.get(product_id, 0) + 1  # 1-indexed（ヘッダー含む）
-            new_row_num = len(rows) + 2  # 現在書き込む行番号（ヘッダー+1）
+            if is_existing:
+                # 既存商品：同じ行番号を維持
+                old_row_num = existing_row_map[product_id] + 1  # 1-indexed（ヘッダー含む）
+                new_row_num = old_row_num  # 同じ行に上書き
+            else:
+                # 新規商品：末尾に追加
+                old_row_num = 0
+                new_row_num = next_new_row + len(new_rows) + 1  # ヘッダー含む
 
             # A-B: 操作項目（既存値を保持、なければデフォルト値）
             row[0] = preserve_or_set(existing_row, 0, "変更なし", old_row_num, new_row_num)  # A: 同期モード
@@ -475,12 +485,35 @@ def main():
             row[78] = preserve_or_set(existing_row, 78, make_date if make_date else "", old_row_num, new_row_num, preserve_existing=False)  # CA: 商品作成日時
             row[79] = preserve_or_set(existing_row, 79, update_date if update_date else "", old_row_num, new_row_num, preserve_existing=False)  # CB: 商品更新日時
 
-            rows.append(row)
+            # 既存商品か新規商品かで振り分け
+            if is_existing:
+                update_rows[existing_row_map[product_id]] = row
+            else:
+                new_rows.append(row)
 
         # バッチ書き込み
-        if rows:
-            sheet.update(f'A2:CB{len(rows) + 1}', rows, value_input_option='USER_ENTERED')
-            logger.info(f"シートに{len(rows)}件の商品を書き込みました")
+        updated_count = 0
+        added_count = 0
+
+        # 既存行の更新（各行を個別に更新）
+        if update_rows:
+            logger.info(f"既存商品を更新中: {len(update_rows)}件")
+            for row_num, row_data in update_rows.items():
+                sheet_row = row_num + 1  # 1-indexed（ヘッダー含む）
+                sheet.update(f'A{sheet_row}:CB{sheet_row}', [row_data], value_input_option='USER_ENTERED')
+                updated_count += 1
+            logger.info(f"既存商品の更新完了: {updated_count}件")
+
+        # 新規行の追加（末尾に一括追加）
+        if new_rows:
+            start_row = max_existing_row + 2  # ヘッダー含む
+            end_row = start_row + len(new_rows) - 1
+            logger.info(f"新規商品を追加中: {len(new_rows)}件 (行{start_row}〜{end_row})")
+            sheet.update(f'A{start_row}:CB{end_row}', new_rows, value_input_option='USER_ENTERED')
+            added_count = len(new_rows)
+            logger.info(f"新規商品の追加完了: {added_count}件")
+
+        logger.info(f"シート更新完了: 更新{updated_count}件, 追加{added_count}件")
 
     except Exception as e:
         logger.error(f"シート書き込みエラー: {e}")
