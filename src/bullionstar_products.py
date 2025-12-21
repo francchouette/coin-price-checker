@@ -824,6 +824,11 @@ def main():
             exchange_type=args.exchange_type
         )
 
+        # limitが指定されている場合、保存する商品もlimit件数に制限
+        if args.limit and args.limit < len(products):
+            products = products[:args.limit]
+            logger.info(f"保存対象を{args.limit}件に制限")
+
     if args.dry_run:
         logger.info("\n[ドライラン] スプレッドシートへの保存をスキップ")
     else:
