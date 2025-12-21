@@ -458,15 +458,14 @@ def main():
                         # 新価格をM列に設定
                         row[12] = str(scraped.price)
 
-                    # P列: 常にスクレイピング結果の通貨で更新（数式でない場合）
+                    # P列: スクレイピング結果の通貨で常に更新（数式があっても値で上書き）
                     old_currency = row[15]
-                    is_formula = row[15] and isinstance(row[15], str) and str(row[15]).startswith("=")
-                    if not is_formula:
-                        row[15] = scraped.currency
-                        if old_currency != scraped.currency:
+                    row[15] = scraped.currency
+                    if old_currency != scraped.currency:
+                        if old_currency and str(old_currency).startswith("="):
+                            logger.info(f"  商品ID {product_id}: 通貨更新（数式を値に置換） -> {scraped.currency}")
+                        else:
                             logger.info(f"  商品ID {product_id}: 通貨更新 {old_currency} -> {scraped.currency}")
-                    else:
-                        logger.info(f"  商品ID {product_id}: P列は数式のため通貨更新スキップ: {row[15]}")
 
                     # O列が数式でない場合のみ価格変動率を計算
                     if not (row[14] and isinstance(row[14], str) and row[14].startswith("=")):
