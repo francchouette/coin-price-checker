@@ -250,7 +250,10 @@ class BullionstarProductFetcher:
 
 def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
     """
-    商品をスプレッドシートに保存（追加モード）
+    商品をスプレッドシートに保存（差分追加モード）
+
+    既存のURLと比較して、新規商品のみを追加する。
+    URLをユニークキーとして重複を防止。
     """
     client = SpreadsheetClient()
     if not client.connect():
@@ -278,9 +281,19 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
             headers = Config.BULLIONSTAR_PRODUCT_HEADERS
             sheet.update('A1:G1', [headers])
             logger.info("ヘッダー行を追加")
+            existing_urls = set()
+        else:
+            # B列（URL）を既存URLセットとして取得（ヘッダー行を除く）
+            existing_urls = set(row[1] for row in existing_data[1:] if len(row) > 1 and row[1])
+            logger.info(f"既存商品数: {len(existing_urls)}件")
 
+        # 差分のみ抽出（URLが既存にないもの）
         new_rows = []
+        skipped_count = 0
         for product in products:
+            if product.url in existing_urls:
+                skipped_count += 1
+                continue
             new_rows.append([
                 product.name,
                 product.url,
@@ -293,9 +306,9 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
 
         if new_rows:
             sheet.append_rows(new_rows, value_input_option='RAW')
-            logger.info(f"スプレッドシートに {len(new_rows)} 件追加しました")
+            logger.info(f"スプレッドシートに {len(new_rows)} 件追加しました（スキップ: {skipped_count}件）")
         else:
-            logger.info("追加する商品はありませんでした")
+            logger.info(f"追加する新規商品はありませんでした（全{skipped_count}件が既存）")
 
         return True
 
