@@ -269,7 +269,6 @@ def row_to_update_data(row: list) -> dict:
 def main():
     """メイン処理"""
     parser = argparse.ArgumentParser(description="カラーミー商品同期")
-    parser.add_argument("--dry-run", action="store_true", help="ドライラン（更新しない）")
     parser.add_argument("--verbose", "-v", action="store_true", help="詳細ログ")
     args = parser.parse_args()
 
@@ -297,7 +296,7 @@ def main():
         sys.exit(1)
 
     # カラーミークライアント初期化
-    colorme = ColorMeClient(dry_run=args.dry_run)
+    colorme = ColorMeClient()
 
     # シートからデータを取得
     try:
@@ -352,11 +351,6 @@ def main():
         # 更新内容をログ出力
         update_keys = list(updates.keys())
         logger.info(f"  更新項目: {', '.join(update_keys)}")
-
-        if args.dry_run:
-            logger.info(f"  → [ドライラン] 更新スキップ")
-            success_count += 1
-            continue
 
         # API更新
         if colorme.update_product(product_id, updates):
