@@ -123,6 +123,12 @@ def fetch_exchange_rates(currencies: list[str], exchange_types: dict[str, str]) 
             if rate:
                 rates[f"{currency}_Wise"] = rate
                 logger.info(f"  Wise: 1 {currency} = {rate:.4f} JPY")
+            else:
+                # Wiseが取得できない場合は一般レートで代用（main.pyと同じロジック）
+                general_rate = exchange_client.get_rate(currency, "JPY")
+                if general_rate:
+                    rates[f"{currency}_Wise"] = general_rate
+                    logger.info(f"  Wise（代替）: 1 {currency} = {general_rate:.4f} JPY")
         else:
             # クレカレート（手数料込み）
             rate = exchange_client.get_credit_card_rate(currency, "JPY")
