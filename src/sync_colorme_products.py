@@ -364,12 +364,11 @@ def main():
             logger.info(f"  → 更新成功")
 
             # シートのステータスを更新
+            # ※A列（同期モード）は手動で変更する想定のため、自動リセットしない
             try:
-                # A列: 同期モードを「変更なし」に戻す
-                sheet.update_cell(row_num, ColIndex.SYNC_MODE + 1, "変更なし")
-                # BW列: 同期ステータス
+                # BZ列: 同期ステータス
                 sheet.update_cell(row_num, ColIndex.SYNC_STATUS + 1, "同期済み")
-                # BX列: 同期日時
+                # CA列: 同期日時
                 sheet.update_cell(row_num, ColIndex.SYNC_DATETIME + 1, now)
             except Exception as e:
                 logger.warning(f"  ステータス更新失敗: {e}")
