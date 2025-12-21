@@ -288,21 +288,34 @@ def main():
             logger.info(f"為替レート取得完了: {len(exchange_rates)}件")
 
         # 価格自動取得オプション: 既存データのF列URLから価格を取得
+        # ※F列はVLOOKUP数式の場合があるため、値として取得したexistingを使用
         price_data = {}
+        url_to_pid = {}  # URL -> 商品IDのマッピング（スクレイピング結果の紐付け用）
         if args.fetch_prices and existing_data:
-            # F列（仕入れ先商品URL）を収集
+            # F列（仕入れ先商品URL）を収集 - 値として取得したexistingから
             urls_to_fetch = []
             empty_url_count = 0
-            for pid, row in existing_data.items():
-                if len(row) > 5 and row[5]:  # F列: 仕入れ先商品URL
+            formula_url_count = 0
+            for row_idx, row in enumerate(existing[1:], start=1):  # ヘッダーをスキップ
+                if len(row) > 5 and row[5]:  # F列: 仕入れ先商品URL（計算後の値）
                     url = row[5].strip()
                     if url.startswith("http"):
                         urls_to_fetch.append(url)
+                        # 商品IDとの紐付け
+                        if len(row) > 2 and row[2]:
+                            try:
+                                pid = int(row[2])
+                                url_to_pid[url] = pid
+                            except ValueError:
+                                pass
+                    elif url.startswith("="):
+                        formula_url_count += 1
+                        logger.warning(f"  F列が数式のまま: 行{row_idx+1}, 値={url[:50]}")
                     else:
                         empty_url_count += 1
                 else:
                     empty_url_count += 1
-            logger.info(f"F列URL集計: URLあり={len(urls_to_fetch)}件, URLなし={empty_url_count}件")
+            logger.info(f"F列URL集計: URLあり={len(urls_to_fetch)}件, URLなし={empty_url_count}件, 数式のまま={formula_url_count}件")
 
             if urls_to_fetch:
                 # 重複を除いて価格取得
@@ -399,9 +412,17 @@ def main():
             row[14] = preserve_or_set(existing_row, 14, "", old_row_num, new_row_num)  # O: 取引通貨
 
             # スクレイピング結果があり、かつ数式でない場合のみ更新
-            supplier_url_raw = row[5]
-            supplier_url = str(supplier_url_raw).strip() if supplier_url_raw and not str(supplier_url_raw).startswith("=") else ""
-            if supplier_url and supplier_url in price_data:
+            # F列が数式（VLOOKUP等）の場合は、existingから計算後の値を取得
+            supplier_url = ""
+            if is_existing:
+                row_idx = existing_row_map[product_id]
+                if row_idx < len(existing) and len(existing[row_idx]) > 5:
+                    supplier_url = existing[row_idx][5].strip() if existing[row_idx][5] else ""
+            else:
+                supplier_url_raw = row[5]
+                supplier_url = str(supplier_url_raw).strip() if supplier_url_raw and not str(supplier_url_raw).startswith("=") else ""
+
+            if supplier_url and supplier_url.startswith("http") and supplier_url in price_data:
                 scraped = price_data[supplier_url]
                 if not scraped.error:
                     # L列が数式でない場合のみ更新
