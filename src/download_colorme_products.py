@@ -44,12 +44,14 @@ def preserve_or_set(existing_row: list, index: int, new_value: str, old_row_num:
     """
     if len(existing_row) > index:
         cell_value = existing_row[index]
-        if isinstance(cell_value, str) and cell_value.startswith("="):
+        # 文字列に変換して処理
+        cell_str = str(cell_value) if cell_value is not None else ""
+        if cell_str.startswith("="):
             # 数式の場合は行番号を調整
-            return adjust_formula_row(cell_value, old_row_num, new_row_num)
+            return adjust_formula_row(cell_str, old_row_num, new_row_num)
         elif preserve_existing and cell_value:
-            # 既存の値を保持（空でない場合）
-            return cell_value
+            # 既存の値を保持（空でない場合）- 文字列として返す
+            return cell_str
     return new_value
 
 
