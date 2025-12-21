@@ -168,7 +168,7 @@ class BullionstarScraper(BaseScraper):
             return None
 
     def _parse_offer_price(self, offer: dict) -> Optional[float]:
-        """オファーデータから価格を抽出する（JPY優先）"""
+        """オファーデータから価格を抽出する（全通貨対応）"""
         try:
             currency = offer.get("priceCurrency", "")
             price_str = offer.get("price", "")
@@ -176,12 +176,14 @@ class BullionstarScraper(BaseScraper):
             if not price_str:
                 return None
 
-            # 通貨がJPYの場合を優先
-            if currency == "JPY":
+            # サポートする通貨リスト
+            supported_currencies = ["JPY", "USD", "SGD", "EUR", "GBP"]
+
+            if currency in supported_currencies:
                 price = float(str(price_str).replace(",", ""))
                 if price > 0:
-                    self._detected_currency = "JPY"
-                    logger.info(f"JSON-LD価格検出: JPY {price}")
+                    self._detected_currency = currency
+                    logger.info(f"JSON-LD価格検出: {currency} {price}")
                     return price
 
             return None
