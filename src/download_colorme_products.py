@@ -458,12 +458,15 @@ def main():
                         # 新価格をM列に設定
                         row[12] = str(scraped.price)
 
-                    # P列が数式でない場合のみ更新
+                    # P列: 常にスクレイピング結果の通貨で更新（数式でない場合）
                     old_currency = row[15]
-                    if not (row[15] and isinstance(row[15], str) and row[15].startswith("=")):
+                    is_formula = row[15] and isinstance(row[15], str) and str(row[15]).startswith("=")
+                    if not is_formula:
                         row[15] = scraped.currency
                         if old_currency != scraped.currency:
                             logger.info(f"  商品ID {product_id}: 通貨更新 {old_currency} -> {scraped.currency}")
+                    else:
+                        logger.info(f"  商品ID {product_id}: P列は数式のため通貨更新スキップ: {row[15]}")
 
                     # O列が数式でない場合のみ価格変動率を計算
                     if not (row[14] and isinstance(row[14], str) and row[14].startswith("=")):
@@ -509,7 +512,9 @@ def main():
                     rate_key = f"{currency}_{exchange_type}"
                     if rate_key in exchange_rates:
                         row[17] = str(round(exchange_rates[rate_key], 4))  # R: 為替レート
-                        logger.debug(f"  商品ID {product_id}: {currency} -> {rate_key} = {row[17]}")
+                        logger.info(f"  商品ID {product_id}: 為替レート更新 {rate_key} = {row[17]}")
+                    else:
+                        logger.warning(f"  商品ID {product_id}: 為替レート見つからず {rate_key}, 利用可能: {list(exchange_rates.keys())}")
 
             # AD-AI: カラーミー価格情報（数式があれば保持、値はAPIから取得）
             row[29] = preserve_or_set(existing_row, 29, str(product.get("sales_price") or product.get("price") or 0), old_row_num, new_row_num, preserve_existing=False)  # AD: 販売価格（旧AC列）
