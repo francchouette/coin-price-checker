@@ -358,12 +358,14 @@ def main():
             category_id_big = category.get("id_big", 0) if isinstance(category, dict) else 0
             category_id_small = category.get("id_small", 0) if isinstance(category, dict) else 0
 
-            # グループID
+            # グループID（テキストとして扱うため先頭にシングルクォートを付ける）
             group_ids = product.get("group_ids") or []
-            if isinstance(group_ids, list):
-                group_ids_str = ",".join(str(g) for g in group_ids)
+            if isinstance(group_ids, list) and group_ids:
+                group_ids_str = "'" + ",".join(str(g) for g in group_ids)
+            elif group_ids:
+                group_ids_str = "'" + str(group_ids)
             else:
-                group_ids_str = str(group_ids)
+                group_ids_str = ""
 
             # 画像URL
             image_url = product.get("image_url", "") or ""
