@@ -292,17 +292,26 @@ def main():
         if args.fetch_prices and existing_data:
             # F列（仕入れ先商品URL）を収集
             urls_to_fetch = []
+            empty_url_count = 0
             for pid, row in existing_data.items():
                 if len(row) > 5 and row[5]:  # F列: 仕入れ先商品URL
                     url = row[5].strip()
                     if url.startswith("http"):
                         urls_to_fetch.append(url)
+                    else:
+                        empty_url_count += 1
+                else:
+                    empty_url_count += 1
+            logger.info(f"F列URL集計: URLあり={len(urls_to_fetch)}件, URLなし={empty_url_count}件")
 
             if urls_to_fetch:
                 # 重複を除いて価格取得
                 unique_urls = list(set(urls_to_fetch))
+                logger.info(f"  URL収集詳細: 全{len(urls_to_fetch)}件中、ユニーク{len(unique_urls)}件")
                 price_data = fetch_prices_from_urls(unique_urls)
-                logger.info(f"価格取得完了: {len([r for r in price_data.values() if not r.error])}件成功")
+                success_count = len([r for r in price_data.values() if not r.error])
+                fail_count = len([r for r in price_data.values() if r.error])
+                logger.info(f"価格取得完了: {success_count}件成功, {fail_count}件失敗")
 
         # 商品データを行に変換
         # 既存行の更新と新規行の追加を分けて処理
