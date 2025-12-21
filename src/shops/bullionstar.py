@@ -142,21 +142,29 @@ class BullionstarScraper(BaseScraper):
                     content = script.inner_text()
                     data = json.loads(content)
 
-                    # Productスキーマを探す
-                    if data.get("@type") == "Product":
-                        offers = data.get("offers", {})
+                    # JSON-LDが配列形式の場合（[{...}, {...}]）
+                    items = data if isinstance(data, list) else [data]
 
-                        # offersが配列の場合
-                        if isinstance(offers, list):
-                            for offer in offers:
-                                price = self._parse_offer_price(offer)
+                    for item in items:
+                        # 辞書でない場合はスキップ
+                        if not isinstance(item, dict):
+                            continue
+
+                        # Productスキーマを探す
+                        if item.get("@type") == "Product":
+                            offers = item.get("offers", {})
+
+                            # offersが配列の場合
+                            if isinstance(offers, list):
+                                for offer in offers:
+                                    price = self._parse_offer_price(offer)
+                                    if price:
+                                        return price
+                            # offersがオブジェクトの場合
+                            elif isinstance(offers, dict):
+                                price = self._parse_offer_price(offers)
                                 if price:
                                     return price
-                        # offersがオブジェクトの場合
-                        elif isinstance(offers, dict):
-                            price = self._parse_offer_price(offers)
-                            if price:
-                                return price
 
                 except json.JSONDecodeError:
                     continue
