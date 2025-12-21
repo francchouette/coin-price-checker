@@ -3,15 +3,6 @@ name: Sync ColorMe Products
 on:
   # 手動実行
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: 'テスト実行（実際に更新しない）'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'false'
-          - 'true'
 
 jobs:
   sync:
@@ -50,8 +41,4 @@ jobs:
           COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
           GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
         run: |
-          DRY_RUN_FLAG=""
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            DRY_RUN_FLAG="--dry-run"
-          fi
-          python -m src.sync_colorme_products $DRY_RUN_FLAG
+          python -m src.sync_colorme_products

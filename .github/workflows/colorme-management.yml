@@ -3,15 +3,6 @@ name: ColorMe Product Management
 on:
   # 手動実行
   workflow_dispatch:
-    inputs:
-      action:
-        description: '実行するアクション'
-        required: true
-        default: 'full-cycle-dry-run'
-        type: choice
-        options:
-          - 'full-cycle'
-          - 'full-cycle-dry-run'
 
 jobs:
   manage-products:
@@ -63,7 +54,6 @@ jobs:
           python -m src.download_colorme_products --fetch-prices
 
       - name: "[Full Cycle] Step 2: Sync products to ColorMe"
-        if: github.event.inputs.action == 'full-cycle'
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
@@ -72,17 +62,6 @@ jobs:
           echo "📤 [2/3] A列「更新」の商品をカラーミーに同期中..."
           echo "  → トリガー: A列（同期モード）= 更新"
           python -m src.sync_colorme_products --verbose
-
-      - name: "[Full Cycle Dry Run] Step 2: Sync test (no actual update)"
-        if: github.event.inputs.action == 'full-cycle-dry-run'
-        env:
-          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
-          GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
-        run: |
-          echo "🔍 [2/3] 同期テスト実行中（実際には更新しません）..."
-          echo "  → トリガー: A列（同期モード）= 更新"
-          python -m src.sync_colorme_products --dry-run --verbose
 
       - name: "[Full Cycle] Step 3: Summary"
         run: |
@@ -99,10 +78,5 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const action = '${{ github.event.inputs.action }}';
-            const actionLabel = {
-              'full-cycle': 'フルサイクル',
-              'full-cycle-dry-run': 'フルサイクル（テスト）'
-            }[action] || action;
-            const message = `❌ ColorMe Product Management (${actionLabel}) が失敗しました\n\nRepository: ${context.repo.owner}/${context.repo.repo}\nWorkflow: ${context.workflow}\nRun: ${context.runNumber}\n\nログ: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const message = `❌ ColorMe Product Management が失敗しました\n\nRepository: ${context.repo.owner}/${context.repo.repo}\nWorkflow: ${context.workflow}\nRun: ${context.runNumber}\n\nログ: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             console.log(message);

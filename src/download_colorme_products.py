@@ -408,7 +408,7 @@ def main():
 
             # A-B: 操作項目（既存値を保持、なければデフォルト値）
             row[0] = preserve_or_set(existing_row, 0, "変更なし", old_row_num, new_row_num)  # A: 同期モード
-            row[1] = display_state  # B: 掲載設定（日本語）- APIから取得
+            row[1] = preserve_or_set(existing_row, 1, display_state, old_row_num, new_row_num)  # B: 掲載設定（既存値を保持）
 
             # C-E: 識別情報
             row[2] = str(product_id)  # C: カラーミー商品ID
