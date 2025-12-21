@@ -90,7 +90,7 @@ jobs:
             ARGS="$ARGS --dry-run"
           fi
           if [ -n "${{ inputs.category }}" ]; then
-            ARGS="$ARGS --category '${{ inputs.category }}'"
+            ARGS="$ARGS --category \"${{ inputs.category }}\""
           fi
           if [ "${{ inputs.fetch_prices }}" == "true" ]; then
             ARGS="$ARGS --fetch-prices"
@@ -99,6 +99,6 @@ jobs:
             ARGS="$ARGS --limit ${{ inputs.limit }}"
           fi
           if [ -n "${{ inputs.exchange_type }}" ]; then
-            ARGS="$ARGS --exchange-type '${{ inputs.exchange_type }}'"
+            ARGS="$ARGS --exchange-type ${{ inputs.exchange_type }}"
           fi
           python -m src.bullionstar_products $ARGS
