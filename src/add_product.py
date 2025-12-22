@@ -626,6 +626,131 @@ class DescriptionGenerator:
         return "", ""
 
 
+# SEO項目生成用プロンプトテンプレート
+SEO_PROMPT = """あなたは貴金属コイン・地金のECサイトのSEO専門家です。
+
+以下の商品情報を元に、SEO最適化された項目を作成してください。
+
+## 入力情報
+- 商品名: {product_name}
+- 価格: {price}円
+- 仕入れサイト説明: {source_description}
+- 仕入れサイト仕様: {source_specs}
+
+## 出力項目
+
+### 1. ページタイトル（title タグ）
+- 80文字以内
+- 形式: 「[年号] [商品名] [国名] [重量] [素材]貨 | 世界の金貨・銀貨・インゴット専門店 | ワールドコインマーケット」
+- 例: 「2026 メイプルリーフ カナダ 1oz 金貨 | 世界の金貨・銀貨・インゴット専門店 | ワールドコインマーケット」
+- 商品名から年号、国名、重量、素材を抽出して構成
+
+### 2. メタディスクリプション（meta description）
+- 160文字以内
+- 形式: 「【新品】[年号]年版[商品名][重量]（[純度]）を販売中。世界の金、銀、地金型コイン、プレミアムコイン、インゴットを豊富に取り扱う専門店「ワールドコインマーケット」公式通販。長期的な資産形成はもちろん、趣味のコレクションにも。手元に残る確かな価値を、当店でお探しください。」
+- 例: 「【新品】2026年版メイプルリーフ金貨1オンス(純金)を販売中。世界の金、銀、地金型コイン、プレミアムコイン、インゴットを豊富に取り扱う専門店「ワールドコインマーケット」公式通販。長期的な資産形成はもちろん、趣味のコレクションにも。手元に残る確かな価値を、当店でお探しください。」
+
+### 3. メタキーワード（meta keywords）
+- カンマ区切りで10-15個
+- 商品名、素材、製造国、用途、関連ワード
+- 例: 「メイプルリーフ金貨,カナダ金貨,1オンス金貨,純金コイン,2026年金貨,投資用金貨,ゴールドコイン,地金型金貨,金貨購入,ワールドコインマーケット」
+
+## 重要な注意事項
+- 日本語で出力
+- キーワードを自然に含める
+- 誇張表現は避ける
+- 店舗名は「ワールドコインマーケット」を使用
+- 重量の表記: 1oz, 1/2oz, 1/4oz, 1/10oz などを使用
+- 素材の表記: 金貨、銀貨、プラチナ貨、インゴット など
+
+JSON形式で出力してください:
+{{
+    "page_title": "ページタイトル",
+    "meta_description": "メタディスクリプション",
+    "meta_keywords": "キーワード1,キーワード2,キーワード3,..."
+}}
+"""
+
+
+class SEOGenerator:
+    """SEO項目（ページタイトル、メタディスクリプション、メタキーワード）をAIで生成するクラス"""
+
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
+        self.client = None
+        if self.api_key:
+            try:
+                import anthropic
+                self.client = anthropic.Anthropic(api_key=self.api_key)
+                logger.info("SEO生成器: 初期化完了（APIキー設定済み）")
+            except ImportError:
+                logger.warning("anthropicライブラリがインストールされていません")
+        else:
+            logger.warning("SEO生成器: ANTHROPIC_API_KEYが設定されていません")
+
+    def generate(self, product_info: dict) -> tuple[str, str, str]:
+        """
+        SEO項目を生成する
+
+        Args:
+            product_info: スクレイピングで取得した商品情報
+                - name: 商品名
+                - price: 価格（日本円）
+                - description: 商品説明
+                - specs: 仕様
+
+        Returns:
+            tuple[str, str, str]: (ページタイトル, メタディスクリプション, メタキーワード)
+        """
+        if not self.client:
+            logger.warning("ANTHROPIC_API_KEYが設定されていないか、ライブラリがありません。SEO項目は空になります。")
+            return "", "", ""
+
+        prompt = SEO_PROMPT.format(
+            product_name=product_info.get("name", ""),
+            price=product_info.get("price", 0),
+            source_description=product_info.get("description", "")[:500],
+            source_specs=product_info.get("specs", "")
+        )
+
+        try:
+            logger.info("  Claude APIを呼び出し中（SEO生成）...")
+            response = self.client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=500,
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            response_text = response.content[0].text
+            logger.debug(f"  API応答（先頭200文字）: {response_text[:200]}")
+
+            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            if json_match:
+                try:
+                    data = json.loads(json_match.group())
+                    page_title = data.get("page_title", "")
+                    meta_desc = data.get("meta_description", "")
+                    meta_keywords = data.get("meta_keywords", "")
+                    if page_title:
+                        logger.info(f"  SEO生成成功: タイトル={page_title[:30]}...")
+                    else:
+                        logger.warning("  JSONは取得できたが、page_titleが空です")
+                    return page_title, meta_desc, meta_keywords
+                except json.JSONDecodeError as je:
+                    logger.error(f"  JSON解析エラー: {je}")
+                    logger.error(f"  解析対象: {json_match.group()[:200]}")
+            else:
+                logger.warning("  応答にJSONが含まれていません")
+                logger.warning(f"  応答内容: {response_text[:300]}")
+
+        except Exception as e:
+            logger.error(f"SEO生成エラー: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+        return "", "", ""
+
+
 class ImageAnalyzer:
     """AIを使って商品画像を解析・検証するクラス"""
 

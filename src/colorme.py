@@ -57,6 +57,11 @@ class ColorMeProduct:
     max_num: int = 0  # AO列: 最大購入数（0=無制限）
     expl: str = ""  # AP列: 商品説明
     simple_expl: str = ""  # AQ列: 簡易説明
+    smartphone_expl: str = ""  # スマホ説明
+    # SEO項目
+    page_title: str = ""  # ページタイトル
+    meta_description: str = ""  # メタディスクリプション
+    meta_keywords: str = ""  # メタキーワード
     # 画像URL（AR〜BA列: 最大10枚）
     image_urls: list[str] = field(default_factory=list)  # AR〜BA列: 画像URL1〜10
     sync_status: str = ""  # BB列: 同期ステータス

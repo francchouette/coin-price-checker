@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 # 列インデックス定義（A列=0から始まる）
 # ※2025-12: 操作項目列（価格更新ON/OFF等）をB列の直後に移動
+# ※2025-12: P-T列に5列追加（製造国、商品説明（英語）、仕様・スペック、発行年、発行数・限定数）
 class ColIndex:
     """新カラーミー商品管理シートの列インデックス"""
     # A-F: 操作項目
@@ -37,83 +38,90 @@ class ColIndex:
     PRODUCT_ID = 6         # G: カラーミー商品ID
     NAME = 7               # H: 商品名
     COLORME_URL = 8        # I: カラーミー商品URL
-    # J-T: 仕入れ先情報
+    # J-Y: 仕入れ先情報（5列追加により拡張）
     SUPPLIER_URL = 9       # J: 仕入れ先商品URL
     SUPPLIER_NAME = 10     # K: 仕入れ先商品名
     SUPPLIER_SITE = 11     # L: 仕入れ先サイト
     TOP_CATEGORY = 12      # M: 最上位カテゴリ
     PARENT_CATEGORY = 13   # N: 親カテゴリ
     CHILD_CATEGORY = 14    # O: 子カテゴリ
-    SUPPLIER_STOCK = 15    # P: 仕入れ先在庫状況
-    SUPPLIER_PRICE = 16    # Q: 仕入れ先価格（現地通貨）
-    PREV_PRICE = 17        # R: 前回仕入れ価格
-    PRICE_CHANGE_RATE = 18 # S: 価格変動率
-    CURRENCY = 19          # T: 取引通貨
-    # U-AG: 価格計算
-    EXCHANGE_TYPE = 20     # U: 為替種類
-    EXCHANGE_RATE = 21     # V: 為替レート
-    PURCHASE_PRICE_JPY = 22 # W: 仕入れ額(日本円)
-    QUANTITY = 23          # X: 枚数
-    PURCHASE_TOTAL = 24    # Y: 仕入れ合計
-    MARGIN_RATE = 25       # Z: 設定マージン率
-    MARGIN_AMOUNT = 26     # AA: 設定マージン額
-    SHIPPING = 27          # AB: 送料
-    FEE = 28               # AC: 手数料
-    TOTAL_COST = 29        # AD: 合計原価
-    PROPER_PRICE = 30      # AE: 適正価格
-    GROSS_PROFIT = 31      # AF: 粗利額
-    GROSS_PROFIT_RATE = 32 # AG: 粗利率
-    # AH-AM: カラーミー価格情報
-    SALES_PRICE = 33       # AH: 販売価格
-    REGULAR_PRICE = 34     # AI: 定価
-    MEMBERS_PRICE = 35     # AJ: 会員価格
-    COST = 36              # AK: 原価
-    TAX_INCLUDED_PRICE = 37 # AL: 消費税込販売価格
-    TAX_AMOUNT = 38        # AM: 消費税額
-    # AN-AQ: カテゴリー・グループ
-    CATEGORY_ID_BIG = 39   # AN: 大カテゴリーID
-    CATEGORY_ID_SMALL = 40 # AO: 小カテゴリーID
-    GROUP_IDS = 41         # AP: グループID
-    MODEL_NUMBER = 42      # AQ: 型番
-    # AR-AX: 在庫管理
-    STOCKS = 43            # AR: 在庫数
-    STOCK_MANAGED = 44     # AS: 在庫管理
-    FEW_NUM = 45           # AT: 残りわずか数
-    SOLDOUT_DISPLAY = 46   # AU: 売切れ表示
-    MIN_NUM = 47           # AV: 最小購入数
-    MAX_NUM = 48           # AW: 最大購入数
-    UNIT = 49              # AX: 単位
-    # AY-BB: 送料・配送
-    DELIVERY_CHARGE = 50   # AY: 個別送料
-    COOL_CHARGE = 51       # AZ: クール便料金
-    WEIGHT = 52            # BA: 重量(g)
-    NO_DELIVERY = 53       # BB: 配送不要
-    # BC-BF: 商品説明
-    EXPL = 54              # BC: 商品説明
-    SIMPLE_EXPL = 55       # BD: 簡易説明
-    MOBILE_EXPL = 56       # BE: スマホ説明
-    MEMO = 57              # BF: 備考
-    # BG-BP: 画像
-    MAIN_IMAGE = 58        # BG: メイン画像URL
-    THUMBNAIL = 59         # BH: サムネイルURL
-    IMAGE_URL_START = 60   # BI: 画像URL1（BI-BP）
-    # BQ-BS: SEO
-    PAGE_TITLE = 68        # BQ: ページタイトル
-    META_DESC = 69         # BR: メタディスクリプション
-    META_KEYWORDS = 70     # BS: メタキーワード
-    # BT-BX: フラグ
-    REDUCED_TAX = 71       # BT: 軽減税率対象
-    DIGITAL_CONTENT = 72   # BU: デジタルコンテンツ
-    SUBSCRIPTION = 73      # BV: 定期購入
-    DISPLAY_ORDER = 74     # BW: 表示順
-    DISABLED_PAYMENTS = 75 # BX: 利用不可決済
-    # BY-BZ: 掲載期間
-    START_DATE = 76        # BY: 掲載開始日時
-    END_DATE = 77          # BZ: 掲載終了日時
-    # CA-CC: システム情報
-    SYNC_DATETIME = 78     # CA: 同期日時
-    CREATED_DATE = 79      # CB: 商品作成日時
-    UPDATED_DATE = 80      # CC: 商品更新日時
+    # P-T: 新規追加5列
+    COUNTRY = 15           # P: 製造国
+    DESCRIPTION_EN = 16    # Q: 商品説明（英語）
+    SPECS = 17             # R: 仕様・スペック
+    MINT_YEAR = 18         # S: 発行年
+    MINTAGE = 19           # T: 発行数・限定数
+    # U-Y: 仕入れ先価格情報
+    SUPPLIER_STOCK = 20    # U: 仕入れ先在庫状況
+    SUPPLIER_PRICE = 21    # V: 仕入れ先価格（現地通貨）
+    PREV_PRICE = 22        # W: 前回仕入れ価格
+    PRICE_CHANGE_RATE = 23 # X: 価格変動率
+    CURRENCY = 24          # Y: 取引通貨
+    # Z-AL: 価格計算
+    EXCHANGE_TYPE = 25     # Z: 為替種類
+    EXCHANGE_RATE = 26     # AA: 為替レート
+    PURCHASE_PRICE_JPY = 27 # AB: 仕入れ額(日本円)
+    QUANTITY = 28          # AC: 枚数
+    PURCHASE_TOTAL = 29    # AD: 仕入れ合計
+    MARGIN_RATE = 30       # AE: 設定マージン率
+    MARGIN_AMOUNT = 31     # AF: 設定マージン額
+    SHIPPING = 32          # AG: 送料
+    FEE = 33               # AH: 手数料
+    TOTAL_COST = 34        # AI: 合計原価
+    PROPER_PRICE = 35      # AJ: 適正価格
+    GROSS_PROFIT = 36      # AK: 粗利額
+    GROSS_PROFIT_RATE = 37 # AL: 粗利率
+    # AM-AR: カラーミー価格情報
+    SALES_PRICE = 38       # AM: 販売価格
+    REGULAR_PRICE = 39     # AN: 定価
+    MEMBERS_PRICE = 40     # AO: 会員価格
+    COST = 41              # AP: 原価
+    TAX_INCLUDED_PRICE = 42 # AQ: 消費税込販売価格
+    TAX_AMOUNT = 43        # AR: 消費税額
+    # AS-AV: カテゴリー・グループ
+    CATEGORY_ID_BIG = 44   # AS: 大カテゴリーID
+    CATEGORY_ID_SMALL = 45 # AT: 小カテゴリーID
+    GROUP_IDS = 46         # AU: グループID
+    MODEL_NUMBER = 47      # AV: 型番
+    # AW-BC: 在庫管理
+    STOCKS = 48            # AW: 在庫数
+    STOCK_MANAGED = 49     # AX: 在庫管理
+    FEW_NUM = 50           # AY: 残りわずか数
+    SOLDOUT_DISPLAY = 51   # AZ: 売切れ表示
+    MIN_NUM = 52           # BA: 最小購入数
+    MAX_NUM = 53           # BB: 最大購入数
+    UNIT = 54              # BC: 単位
+    # BD-BG: 送料・配送
+    DELIVERY_CHARGE = 55   # BD: 個別送料
+    COOL_CHARGE = 56       # BE: クール便料金
+    WEIGHT = 57            # BF: 重量(g)
+    NO_DELIVERY = 58       # BG: 配送不要
+    # BH-BK: 商品説明
+    EXPL = 59              # BH: 商品説明
+    SIMPLE_EXPL = 60       # BI: 簡易説明
+    MOBILE_EXPL = 61       # BJ: スマホ説明
+    MEMO = 62              # BK: 備考
+    # BL-BU: 画像
+    MAIN_IMAGE = 63        # BL: メイン画像URL
+    THUMBNAIL = 64         # BM: サムネイルURL
+    IMAGE_URL_START = 65   # BN: 画像URL1（BN-BU）
+    # BV-BX: SEO
+    PAGE_TITLE = 73        # BV: ページタイトル
+    META_DESC = 74         # BW: メタディスクリプション
+    META_KEYWORDS = 75     # BX: メタキーワード
+    # BY-CC: フラグ
+    REDUCED_TAX = 76       # BY: 軽減税率対象
+    DIGITAL_CONTENT = 77   # BZ: デジタルコンテンツ
+    SUBSCRIPTION = 78      # CA: 定期購入
+    DISPLAY_ORDER = 79     # CB: 表示順
+    DISABLED_PAYMENTS = 80 # CC: 利用不可決済
+    # CD-CE: 掲載期間
+    START_DATE = 81        # CD: 掲載開始日時
+    END_DATE = 82          # CE: 掲載終了日時
+    # CF-CH: システム情報
+    SYNC_DATETIME = 83     # CF: 同期日時
+    CREATED_DATE = 84      # CG: 商品作成日時
+    UPDATED_DATE = 85      # CH: 商品更新日時
 
 
 def parse_int(value: str, default: int = 0) -> int:
@@ -137,7 +145,7 @@ def row_to_update_data(row: list) -> dict:
         row: シートの行データ
 
     Returns:
-        dict: API更新用のデータ
+        dict: API更新用のデータ（操作フラグ含む）
     """
     def get_cell(index: int, default: str = "") -> str:
         return row[index].strip() if len(row) > index and row[index] else default
@@ -147,31 +155,43 @@ def row_to_update_data(row: list) -> dict:
     if product_id <= 0:
         return {}
 
+    # 操作フラグを取得
+    price_update_enabled = get_cell(ColIndex.PRICE_UPDATE).upper() == "ON"  # C列: 価格更新ON/OFF
+    stock_sync_enabled = get_cell(ColIndex.STOCK_SYNC).upper() == "ON"      # D列: 在庫連動ON/OFF
+    display_sync_mode = get_cell(ColIndex.DISPLAY_SYNC)                     # E列: 表示連動
+    supplier_stock = get_cell(ColIndex.SUPPLIER_STOCK)                      # U列: 仕入れ先在庫状況
+
+    # 在庫状況をブール値に変換（"Out of Stock" の場合のみ在庫なし）
+    is_in_stock = supplier_stock.lower() != "out of stock"
+
     # 更新データを構築
     updates = {}
+    log_parts = []  # ログ用の更新内容
 
     # 商品名
     name = get_cell(ColIndex.NAME)
     if name:
         updates["name"] = name
 
-    # 価格情報
-    sales_price = parse_int(get_cell(ColIndex.SALES_PRICE))
-    if sales_price > 0:
-        updates["price"] = sales_price
-        updates["sales_price"] = sales_price
+    # 価格情報（C列がONの場合のみ更新）
+    if price_update_enabled:
+        sales_price = parse_int(get_cell(ColIndex.SALES_PRICE))
+        if sales_price > 0:
+            updates["price"] = sales_price
+            updates["sales_price"] = sales_price
+            log_parts.append(f"価格: {sales_price:,}円")
 
-    regular_price = parse_int(get_cell(ColIndex.REGULAR_PRICE))
-    if regular_price > 0 and "price" not in updates:
-        updates["price"] = regular_price
+        regular_price = parse_int(get_cell(ColIndex.REGULAR_PRICE))
+        if regular_price > 0 and "price" not in updates:
+            updates["price"] = regular_price
 
-    members_price = parse_int(get_cell(ColIndex.MEMBERS_PRICE))
-    if members_price > 0:
-        updates["members_price"] = members_price
+        members_price = parse_int(get_cell(ColIndex.MEMBERS_PRICE))
+        if members_price > 0:
+            updates["members_price"] = members_price
 
-    cost = parse_int(get_cell(ColIndex.COST))
-    if cost > 0:
-        updates["cost"] = cost
+        cost = parse_int(get_cell(ColIndex.COST))
+        if cost > 0:
+            updates["cost"] = cost
 
     # カテゴリー
     category_id_big = parse_int(get_cell(ColIndex.CATEGORY_ID_BIG))
@@ -187,21 +207,56 @@ def row_to_update_data(row: list) -> dict:
     if model_number:
         updates["model_number"] = model_number
 
-    # 掲載設定（日本語からAPIの値に変換）
-    display_state_ja = get_cell(ColIndex.DISPLAY_STATE)
+    # 在庫連動（D列がONの場合）
+    if stock_sync_enabled:
+        # 仕入れ先の在庫状態に連動
+        # - 在庫あり: AW列の在庫数を使用
+        # - 在庫なし: 0に設定
+        if is_in_stock:
+            stocks = parse_int(get_cell(ColIndex.STOCKS), 10)  # デフォルト10
+            updates["stocks"] = stocks
+            log_parts.append(f"在庫: {stocks}（在庫あり連動）")
+        else:
+            updates["stocks"] = 0
+            log_parts.append("在庫: 0（在庫なし連動）")
+    else:
+        # 在庫連動OFFの場合はAW列の値をそのまま使用
+        stocks = parse_int(get_cell(ColIndex.STOCKS), -1)
+        if stocks >= 0:
+            updates["stocks"] = stocks
+
+    # 表示連動（E列の値に応じて処理）
     display_state_map = {
         "掲載する": "showing",
         "掲載しない": "hidden",
         "会員のみ表示": "showing_for_members",
         "会員のみ購入可": "sale_for_members",
     }
-    if display_state_ja in display_state_map:
-        updates["display_state"] = display_state_map[display_state_ja]
 
-    # 在庫数
-    stocks = parse_int(get_cell(ColIndex.STOCKS), -1)
-    if stocks >= 0:
-        updates["stocks"] = stocks
+    if display_sync_mode == "連動":
+        # 在庫に連動（在庫あり=表示、なし=非表示）
+        if is_in_stock:
+            updates["display_state"] = "showing"
+            log_parts.append("表示: 掲載する（在庫連動）")
+        else:
+            updates["display_state"] = "hidden"
+            log_parts.append("表示: 掲載しない（在庫連動）")
+    elif display_sync_mode == "表示":
+        updates["display_state"] = "showing"
+        log_parts.append("表示: 掲載する")
+    elif display_sync_mode == "非表示":
+        updates["display_state"] = "hidden"
+        log_parts.append("表示: 掲載しない")
+    elif display_sync_mode == "変更しない" or not display_sync_mode:
+        # E列が「変更しない」または空欄の場合はB列の値を使用
+        display_state_ja = get_cell(ColIndex.DISPLAY_STATE)
+        if display_state_ja in display_state_map:
+            updates["display_state"] = display_state_map[display_state_ja]
+    else:
+        # その他の値はB列の掲載設定を使用
+        display_state_ja = get_cell(ColIndex.DISPLAY_STATE)
+        if display_state_ja in display_state_map:
+            updates["display_state"] = display_state_map[display_state_ja]
 
     # 在庫管理
     stock_managed_str = get_cell(ColIndex.STOCK_MANAGED)
@@ -250,7 +305,15 @@ def row_to_update_data(row: list) -> dict:
         "product_id": product_id,
         "name": name,
         "updates": updates,
-        "row": row
+        "row": row,
+        "log_parts": log_parts,
+        "flags": {
+            "price_update": price_update_enabled,
+            "stock_sync": stock_sync_enabled,
+            "display_sync": display_sync_mode,
+            "is_in_stock": is_in_stock,
+            "supplier_stock": supplier_stock,
+        }
     }
 
 
@@ -329,14 +392,29 @@ def main():
         product_name = target.get("name", "不明")[:30]
         row_num = target["row_num"]
         updates = target["updates"]
+        log_parts = target.get("log_parts", [])
+        flags = target.get("flags", {})
 
         logger.info(f"処理中: {product_name} (ID: {product_id}, 行: {row_num})")
+
+        # フラグ情報をログ出力
+        flag_info = []
+        if flags.get("price_update"):
+            flag_info.append("価格更新ON")
+        if flags.get("stock_sync"):
+            flag_info.append(f"在庫連動ON({flags.get('supplier_stock', '')})")
+        if flags.get("display_sync"):
+            flag_info.append(f"表示連動={flags.get('display_sync')}")
+        if flag_info:
+            logger.info(f"  フラグ: {', '.join(flag_info)}")
 
         if not updates:
             logger.warning(f"  → 更新項目なし")
             continue
 
         # 更新内容をログ出力
+        if log_parts:
+            logger.info(f"  連動更新: {', '.join(log_parts)}")
         update_keys = list(updates.keys())
         logger.info(f"  更新項目: {', '.join(update_keys)}")
 
