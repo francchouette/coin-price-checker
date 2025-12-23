@@ -655,7 +655,8 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     # C. カラーミー商品名（AH列: 1列）- 自動生成
                     cm_product_name,  # AH: CM商品名（自動生成）
                     # D. 価格計算（AI-AT列: 12列）
-                    "",  # AI: 為替レート(CM)
+                    # AI列: 為替レート(CM) - JPYなら1、それ以外はP列の為替レート
+                    "1" if product.currency == "JPY" else (str(product.exchange_rate) if product.exchange_rate else ""),  # AI: 為替レート(CM)
                     "",  # AJ: 仕入れ額(日本円)
                     "",  # AK: 枚数
                     "",  # AL: 仕入れ合計
