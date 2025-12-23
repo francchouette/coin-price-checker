@@ -109,6 +109,17 @@ class BullionstarProduct:
     image_url7: str = ""               # BO列: 画像URL7
     image_url8: str = ""               # BP列: 画像URL8
 
+    # 内部処理用フィールド（スプレッドシートには直接保存されない）
+    fetched_at: str = ""               # 取得日時（内部処理用）
+    last_price_updated: str = ""       # 最終価格更新日時（内部処理用）
+    # 商品仕入れ先一覧同期用（旧構造互換）
+    image_url9: str = ""               # 画像URL9（商品仕入れ先一覧用）
+    image_url10: str = ""              # 画像URL10（商品仕入れ先一覧用）
+    description_ja: str = ""           # 商品説明（日本語）
+    colorme_id: str = ""               # カラーミー商品ID
+    memo: str = ""                     # 備考
+    price_change_rate: str = ""        # 価格変動率（文字列）
+
 
 # 販売拠点定義（APIエンドポイント用）
 # 注: これは商品取得用であり、H列（製造国）には使用しない
