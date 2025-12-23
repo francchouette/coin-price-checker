@@ -479,15 +479,15 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
             sheet = client._spreadsheet.add_worksheet(
                 title=sheet_name,
                 rows=10000,
-                cols=90  # 82列 + 余裕
+                cols=85  # 81列 + 余裕
             )
-            sheet.update('A1:CD1', [headers])
+            sheet.update('A1:CC1', [headers])
             logger.info(f"シート '{sheet_name}' を作成しました")
 
         # 既存データを取得
         existing_data = sheet.get_all_values()
         if not existing_data:
-            sheet.update('A1:CD1', [headers])
+            sheet.update('A1:CC1', [headers])
             logger.info("ヘッダー行を追加")
             existing_data = [headers]
 
@@ -609,7 +609,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     except Exception as e:
                         logger.debug(f"  商品説明生成エラー: {e}")
 
-                # SEO項目を自動生成（BS-BU列）
+                # SEO項目を自動生成（BQ-BS列）
                 page_title = ""
                 meta_description = ""
                 meta_keywords = ""
