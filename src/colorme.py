@@ -420,6 +420,39 @@ class ColorMeClient:
         """
         return self.update_product(product_id, {"price": new_price})
 
+    def delete_product(self, product_id: int) -> bool:
+        """
+        商品を削除する
+
+        Args:
+            product_id: 商品ID
+
+        Returns:
+            bool: 削除成功時True
+        """
+        if not self.access_token:
+            logger.error("カラーミーアクセストークンが設定されていません")
+            return False
+
+        # ドライランモードの場合は実際の削除をスキップ
+        if self.dry_run:
+            logger.info(f"[ドライラン] 商品削除スキップ: 商品ID {product_id}")
+            return True
+
+        try:
+            response = requests.delete(
+                f"{self.API_BASE}/products/{product_id}.json",
+                headers=self._headers(),
+                timeout=10
+            )
+            response.raise_for_status()
+            logger.info(f"商品削除成功: 商品ID {product_id}")
+            return True
+
+        except requests.RequestException as e:
+            logger.error(f"商品削除エラー (ID: {product_id}): {e}")
+            return False
+
     def update_products_batch(
         self,
         products: list[ColorMeProduct],

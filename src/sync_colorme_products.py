@@ -174,24 +174,16 @@ def row_to_update_data(row: list) -> dict:
         updates["name"] = name
 
     # 価格情報（C列がONの場合のみ更新）
+    # AJ列（適正価格）の値を販売価格、定価、会員価格、原価に一括適用
     if price_update_enabled:
-        sales_price = parse_int(get_cell(ColIndex.SALES_PRICE))
-        if sales_price > 0:
-            updates["price"] = sales_price
-            updates["sales_price"] = sales_price
-            log_parts.append(f"価格: {sales_price:,}円")
-
-        regular_price = parse_int(get_cell(ColIndex.REGULAR_PRICE))
-        if regular_price > 0 and "price" not in updates:
-            updates["price"] = regular_price
-
-        members_price = parse_int(get_cell(ColIndex.MEMBERS_PRICE))
-        if members_price > 0:
-            updates["members_price"] = members_price
-
-        cost = parse_int(get_cell(ColIndex.COST))
-        if cost > 0:
-            updates["cost"] = cost
+        proper_price = parse_int(get_cell(ColIndex.PROPER_PRICE))  # AJ列: 適正価格
+        if proper_price > 0:
+            # AJ列の適正価格を全ての価格フィールドに適用
+            updates["price"] = proper_price         # 定価
+            updates["sales_price"] = proper_price   # 販売価格
+            updates["members_price"] = proper_price # 会員価格
+            updates["cost"] = proper_price          # 原価
+            log_parts.append(f"価格: {proper_price:,}円（適正価格から一括更新）")
 
     # カテゴリー
     category_id_big = parse_int(get_cell(ColIndex.CATEGORY_ID_BIG))
@@ -210,10 +202,13 @@ def row_to_update_data(row: list) -> dict:
     # 在庫連動（D列がONの場合）
     if stock_sync_enabled:
         # 仕入れ先の在庫状態に連動
-        # - 在庫あり: AW列の在庫数を使用
+        # - 在庫あり: AW列の在庫数を使用（0以下の場合はデフォルト10）
         # - 在庫なし: 0に設定
         if is_in_stock:
             stocks = parse_int(get_cell(ColIndex.STOCKS), 10)  # デフォルト10
+            # In Stockなのに在庫0以下の場合はデフォルト値を使用
+            if stocks <= 0:
+                stocks = 10
             updates["stocks"] = stocks
             log_parts.append(f"在庫: {stocks}（在庫あり連動）")
         else:
@@ -361,26 +356,72 @@ def main():
         logger.info("データがありません")
         return
 
-    # 更新対象を抽出
+    # 更新対象と削除対象を抽出
     update_targets = []
+    delete_targets = []
     for row_num, row in enumerate(all_data[1:], start=2):  # ヘッダーをスキップ
         if len(row) <= ColIndex.SYNC_MODE:
             continue
 
         sync_mode = row[ColIndex.SYNC_MODE].strip()
-        if sync_mode != "更新":
-            continue
 
-        data = row_to_update_data(row)
-        if data and data.get("product_id", 0) > 0:
-            data["row_num"] = row_num
-            update_targets.append(data)
+        if sync_mode == "更新":
+            data = row_to_update_data(row)
+            if data and data.get("product_id", 0) > 0:
+                data["row_num"] = row_num
+                update_targets.append(data)
+        elif sync_mode == "削除":
+            # 削除対象を抽出
+            product_id = parse_int(row[ColIndex.PRODUCT_ID].strip() if len(row) > ColIndex.PRODUCT_ID else "")
+            product_name = row[ColIndex.NAME].strip() if len(row) > ColIndex.NAME else ""
+            if product_id > 0:
+                delete_targets.append({
+                    "product_id": product_id,
+                    "name": product_name,
+                    "row_num": row_num
+                })
 
     logger.info(f"更新対象: {len(update_targets)}件")
+    logger.info(f"削除対象: {len(delete_targets)}件")
 
-    if not update_targets:
-        logger.info("更新対象の商品がありません")
+    if not update_targets and not delete_targets:
+        logger.info("更新・削除対象の商品がありません")
         return
+
+    # 削除実行（行番号が大きい順に処理して、行削除時のずれを防ぐ）
+    delete_success_count = 0
+    delete_fail_count = 0
+    deleted_rows = []  # 削除成功した行番号を記録
+
+    if delete_targets:
+        logger.info("=== 削除処理開始 ===")
+        # 行番号が大きい順にソート（後ろから削除することで行番号のずれを防ぐ）
+        delete_targets_sorted = sorted(delete_targets, key=lambda x: x["row_num"], reverse=True)
+
+        for target in delete_targets_sorted:
+            product_id = target["product_id"]
+            product_name = target.get("name", "不明")[:30]
+            row_num = target["row_num"]
+
+            logger.info(f"削除中: {product_name} (ID: {product_id}, 行: {row_num})")
+
+            if colorme.delete_product(product_id):
+                delete_success_count += 1
+                deleted_rows.append(row_num)
+                logger.info(f"  → 削除成功")
+            else:
+                delete_fail_count += 1
+                logger.error(f"  → 削除失敗")
+
+        # 削除成功した行をシートから削除（行番号が大きい順に削除済み）
+        if deleted_rows:
+            logger.info(f"シートから{len(deleted_rows)}行を削除中...")
+            for row_num in deleted_rows:
+                try:
+                    sheet.delete_rows(row_num)
+                    logger.info(f"  行{row_num}を削除しました")
+                except Exception as e:
+                    logger.warning(f"  行{row_num}の削除に失敗: {e}")
 
     # 更新実行
     success_count = 0
@@ -445,11 +486,15 @@ def main():
 
     # 結果サマリー
     logger.info("=== 結果 ===")
-    logger.info(f"成功: {success_count}件")
-    logger.info(f"失敗: {fail_count}件")
+    if delete_targets:
+        logger.info(f"削除成功: {delete_success_count}件")
+        logger.info(f"削除失敗: {delete_fail_count}件")
+    if update_targets:
+        logger.info(f"更新成功: {success_count}件")
+        logger.info(f"更新失敗: {fail_count}件")
 
-    if fail_count > 0:
-        logger.warning("一部の商品の更新に失敗しました")
+    if fail_count > 0 or delete_fail_count > 0:
+        logger.warning("一部の商品の処理に失敗しました")
         sys.exit(1)
 
     logger.info("=== カラーミー商品同期完了 ===")
