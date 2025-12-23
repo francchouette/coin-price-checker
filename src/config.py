@@ -251,16 +251,16 @@ class Config:
         "備考",                    # BF列: 備考（手入力）
 
         # === 画像URL（BG-BP列: 10列）===
-        "メイン画像URL",           # BG列: メイン画像
-        "サムネイルURL",           # BH列: サムネイル画像
-        "画像URL1",                # BI列
-        "画像URL2",                # BJ列
-        "画像URL3",                # BK列
-        "画像URL4",                # BL列
-        "画像URL5",                # BM列
-        "画像URL6",                # BN列
-        "画像URL7",                # BO列
-        "画像URL8",                # BP列
+        "画像URL1",                # BG列
+        "画像URL2",                # BH列
+        "画像URL3",                # BI列
+        "画像URL4",                # BJ列
+        "画像URL5",                # BK列
+        "画像URL6",                # BL列
+        "画像URL7",                # BM列
+        "画像URL8",                # BN列
+        "画像URL9",                # BO列
+        "画像URL10",               # BP列
 
         # === SEO項目（BQ-BS列: 3列）===
         "ページタイトル",          # BQ列: page_title（AIで生成）

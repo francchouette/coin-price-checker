@@ -124,16 +124,16 @@ COL_CM_SMARTPHONE_EXPL = 56  # BE列: スマホ説明
 COL_CM_MEMO = 57           # BF列: 備考
 
 # === BG-BP列: 画像URL（10列）===
-COL_MAIN_IMAGE = 58        # BG列: メイン画像URL
-COL_THUMBNAIL = 59         # BH列: サムネイルURL
-COL_IMAGE_1 = 60           # BI列: 画像URL1
-COL_IMAGE_2 = 61           # BJ列: 画像URL2
-COL_IMAGE_3 = 62           # BK列: 画像URL3
-COL_IMAGE_4 = 63           # BL列: 画像URL4
-COL_IMAGE_5 = 64           # BM列: 画像URL5
-COL_IMAGE_6 = 65           # BN列: 画像URL6
-COL_IMAGE_7 = 66           # BO列: 画像URL7
-COL_IMAGE_8 = 67           # BP列: 画像URL8
+COL_IMAGE_1 = 58           # BG列: 画像URL1
+COL_IMAGE_2 = 59           # BH列: 画像URL2
+COL_IMAGE_3 = 60           # BI列: 画像URL3
+COL_IMAGE_4 = 61           # BJ列: 画像URL4
+COL_IMAGE_5 = 62           # BK列: 画像URL5
+COL_IMAGE_6 = 63           # BL列: 画像URL6
+COL_IMAGE_7 = 64           # BM列: 画像URL7
+COL_IMAGE_8 = 65           # BN列: 画像URL8
+COL_IMAGE_9 = 66           # BO列: 画像URL9
+COL_IMAGE_10 = 67          # BP列: 画像URL10
 
 # === BQ-BS列: SEO項目（3列）===
 COL_CM_PAGE_TITLE = 68     # BQ列: ページタイトル
@@ -416,14 +416,10 @@ def register_adopted_products(
                     if page_title:
                         logger.info(f"  SEO項目: AI生成成功")
 
-            # 画像URL取得（BG-BP列: メイン画像URL、サムネイルURL、画像URL1-8）
+            # 画像URL取得（BG-BP列: 画像URL1-10）
             image_urls = []
-            # メイン画像URL（BG列）
-            main_img = get_cell_value(row, COL_MAIN_IMAGE)
-            if main_img and main_img not in image_urls:
-                image_urls.append(main_img)
-            # 画像URL1-8（BI-BP列）
-            for i in range(8):
+            # 画像URL1-10（BG-BP列）
+            for i in range(10):
                 img_url = get_cell_value(row, COL_IMAGE_1 + i) if COL_IMAGE_1 + i < len(row) else ""
                 if img_url and img_url not in image_urls:
                     image_urls.append(img_url)

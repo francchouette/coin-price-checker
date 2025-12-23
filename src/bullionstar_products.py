@@ -22,7 +22,7 @@ Bullionstarの全商品ページURLとカテゴリー情報を取得し、
 - AR-AX列: 在庫管理（7列）
 - AY-BB列: 送料・配送（4列）
 - BC-BF列: 商品説明（4列）
-- BG-BP列: 画像URL（10列）メイン画像URL / サムネイルURL / 画像URL1-8
+- BG-BP列: 画像URL（10列）画像URL1-10
 - BQ-BS列: SEO項目（3列）
 - BT-BX列: フラグ・設定（5列）
 - BY-BZ列: 掲載期間（2列）
@@ -98,27 +98,27 @@ class BullionstarProduct:
     price_jpy: float = 0.0             # W列: 仕入れ額(日本円)
 
     # 画像URL（BG-BP列: 10列）
-    main_image_url: str = ""           # BG列: メイン画像URL
-    thumbnail_url: str = ""            # BH列: サムネイルURL
-    image_url1: str = ""               # BI列: 画像URL1
-    image_url2: str = ""               # BJ列: 画像URL2
-    image_url3: str = ""               # BK列: 画像URL3
-    image_url4: str = ""               # BL列: 画像URL4
-    image_url5: str = ""               # BM列: 画像URL5
-    image_url6: str = ""               # BN列: 画像URL6
-    image_url7: str = ""               # BO列: 画像URL7
-    image_url8: str = ""               # BP列: 画像URL8
+    image_url1: str = ""               # BG列: 画像URL1
+    image_url2: str = ""               # BH列: 画像URL2
+    image_url3: str = ""               # BI列: 画像URL3
+    image_url4: str = ""               # BJ列: 画像URL4
+    image_url5: str = ""               # BK列: 画像URL5
+    image_url6: str = ""               # BL列: 画像URL6
+    image_url7: str = ""               # BM列: 画像URL7
+    image_url8: str = ""               # BN列: 画像URL8
+    image_url9: str = ""               # BO列: 画像URL9
+    image_url10: str = ""              # BP列: 画像URL10
 
     # 内部処理用フィールド（スプレッドシートには直接保存されない）
     fetched_at: str = ""               # 取得日時（内部処理用）
     last_price_updated: str = ""       # 最終価格更新日時（内部処理用）
-    # 商品仕入れ先一覧同期用（旧構造互換）
-    image_url9: str = ""               # 画像URL9（商品仕入れ先一覧用）
-    image_url10: str = ""              # 画像URL10（商品仕入れ先一覧用）
     description_ja: str = ""           # 商品説明（日本語）
     colorme_id: str = ""               # カラーミー商品ID
     memo: str = ""                     # 備考
     price_change_rate: str = ""        # 価格変動率（文字列）
+    # 互換性フィールド（旧構造）
+    main_image_url: str = ""           # 互換性用: メイン画像URL
+    thumbnail_url: str = ""            # 互換性用: サムネイルURL
 
 
 # 販売拠点定義（APIエンドポイント用）
@@ -706,16 +706,16 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     "",                                             # BF: 備考
 
                     # === 画像URL（BG-BP列: 10列）===
-                    product.main_image_url,                         # BG: メイン画像URL
-                    product.thumbnail_url,                          # BH: サムネイルURL
-                    product.image_url1,                             # BI: 画像URL1
-                    product.image_url2,                             # BJ: 画像URL2
-                    product.image_url3,                             # BK: 画像URL3
-                    product.image_url4,                             # BL: 画像URL4
-                    product.image_url5,                             # BM: 画像URL5
-                    product.image_url6,                             # BN: 画像URL6
-                    product.image_url7,                             # BO: 画像URL7
-                    product.image_url8,                             # BP: 画像URL8
+                    product.image_url1,                             # BG: 画像URL1
+                    product.image_url2,                             # BH: 画像URL2
+                    product.image_url3,                             # BI: 画像URL3
+                    product.image_url4,                             # BJ: 画像URL4
+                    product.image_url5,                             # BK: 画像URL5
+                    product.image_url6,                             # BL: 画像URL6
+                    product.image_url7,                             # BM: 画像URL7
+                    product.image_url8,                             # BN: 画像URL8
+                    product.image_url9,                             # BO: 画像URL9
+                    product.image_url10,                            # BP: 画像URL10
 
                     # === SEO項目（BQ-BS列: 3列）===
                     page_title,                                     # BQ: ページタイトル（自動生成）
