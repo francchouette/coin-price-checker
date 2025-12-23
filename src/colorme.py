@@ -428,7 +428,7 @@ class ColorMeClient:
             product_id: 商品ID
 
         Returns:
-            bool: 削除成功時True
+            bool: 削除成功時True（404の場合も成功とみなす）
         """
         if not self.access_token:
             logger.error("カラーミーアクセストークンが設定されていません")
@@ -450,6 +450,10 @@ class ColorMeClient:
             return True
 
         except requests.RequestException as e:
+            # 404エラーの場合は既に削除済みとみなして成功扱い
+            if hasattr(e, 'response') and e.response is not None and e.response.status_code == 404:
+                logger.info(f"商品は既に削除されています: 商品ID {product_id}")
+                return True
             logger.error(f"商品削除エラー (ID: {product_id}): {e}")
             return False
 
