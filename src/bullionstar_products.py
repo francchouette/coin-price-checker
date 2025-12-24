@@ -4,7 +4,7 @@ Bullionstar 商品ページ一覧取得スクリプト
 Bullionstarの全商品ページURLとカテゴリー情報を取得し、
 スプレッドシートの「ブリオンスター商品ページ一覧」シートに保存する。
 
-取得情報（81列: A-CC）:
+取得情報（83列: A-CE）:
 - A-C列: 管理列（採用フラグ、カラーミー登録状況、仕入れ先商品ID）
 - D-P列: 仕入れ先商品情報（13列）
   - D: カラーミー商品URL（登録後自動設定）
@@ -18,15 +18,18 @@ Bullionstarの全商品ページURLとカテゴリー情報を取得し、
   - T-W: 取引通貨 / 為替種類 / 為替レート / 仕入れ額(日本円)
   - X-AG: 枚数 / 仕入れ合計 / マージン / 送料 / 諸経費 / 合計原価 / 適正価格 / 粗利
 - AH-AM列: カラーミー価格情報（6列）
-- AN-AQ列: カテゴリー・グループ（4列）
-- AR-AX列: 在庫管理（7列）
-- AY-BB列: 送料・配送（4列）
-- BC-BF列: 商品説明（4列）
-- BG-BP列: 画像URL（10列）画像URL1-10
-- BQ-BS列: SEO項目（3列）
-- BT-BX列: フラグ・設定（5列）
-- BY-BZ列: 掲載期間（2列）
-- CA-CC列: システム情報（3列）
+- AN-AS列: カテゴリー・グループ（6列）
+  - AN: 大カテゴリーID / AO: 大カテゴリー名称
+  - AP: 小カテゴリーID / AQ: 小カテゴリー名称
+  - AR: グループID / AS: グループ名
+- AT-AZ列: 在庫管理（7列）
+- BA-BD列: 送料・配送（4列）
+- BE-BH列: 商品説明（4列）
+- BI-BR列: 画像URL（10列）画像URL1-10
+- BS-BU列: SEO項目（3列）
+- BV-BZ列: フラグ・設定（5列）
+- CA-CB列: 掲載期間（2列）
+- CC-CE列: システム情報（3列）
 
 次回実行時は上書きせず、差分のみ追加。既存商品は価格情報を更新。
 
@@ -61,11 +64,13 @@ JST = timezone(timedelta(hours=9))
 
 @dataclass
 class BullionstarProduct:
-    """Bullionstar商品データ（81列対応: A-CC）
+    """Bullionstar商品データ（83列対応: A-CE）
 
     列構造:
     - A-C列: 管理列（採用フラグ、登録状況、仕入れ先商品ID）
-    - D-CC列: 商品情報・カラーミー登録用項目
+    - D-CE列: 商品情報・カラーミー登録用項目
+    - AN-AS列: カテゴリー・グループ（6列）ID・名称
+    - AT列: 型番
     """
     # 必須フィールド
     name: str                          # F列: 仕入れ先商品名
@@ -89,7 +94,7 @@ class BullionstarProduct:
     mintage: str = ""                  # O列: 発行数・限定数
     in_stock: Optional[bool] = None    # P列: 仕入れ先在庫状況
 
-    # 価格情報（Q-T列）
+    # 価格情報（Q-W列）
     price: Optional[float] = None      # Q列: 仕入れ先価格（現地通貨）
     prev_price: float = 0.0            # R列: 前回仕入れ価格
     currency: str = ""                 # T列: 取引通貨
@@ -97,20 +102,20 @@ class BullionstarProduct:
     exchange_rate: float = 0.0         # V列: 為替レート
     price_jpy: float = 0.0             # W列: 仕入れ額(日本円)
 
-    # 画像URL（BG-BP列: 10列）
-    image_url1: str = ""               # BG列: 画像URL1
-    image_url2: str = ""               # BH列: 画像URL2
-    image_url3: str = ""               # BI列: 画像URL3
-    image_url4: str = ""               # BJ列: 画像URL4
-    image_url5: str = ""               # BK列: 画像URL5
-    image_url6: str = ""               # BL列: 画像URL6
-    image_url7: str = ""               # BM列: 画像URL7
-    image_url8: str = ""               # BN列: 画像URL8
-    image_url9: str = ""               # BO列: 画像URL9
-    image_url10: str = ""              # BP列: 画像URL10
+    # 画像URL（BJ-BS列: 10列）
+    image_url1: str = ""               # BJ列: 画像URL1
+    image_url2: str = ""               # BK列: 画像URL2
+    image_url3: str = ""               # BL列: 画像URL3
+    image_url4: str = ""               # BM列: 画像URL4
+    image_url5: str = ""               # BN列: 画像URL5
+    image_url6: str = ""               # BO列: 画像URL6
+    image_url7: str = ""               # BP列: 画像URL7
+    image_url8: str = ""               # BQ列: 画像URL8
+    image_url9: str = ""               # BR列: 画像URL9
+    image_url10: str = ""              # BS列: 画像URL10
 
-    # AQ列: 型番（AI生成）
-    model_number: str = ""             # AQ列: 型番
+    # AT列: 型番（AI生成）
+    model_number: str = ""             # AT列: 型番
 
     # 内部処理用フィールド（スプレッドシートには直接保存されない）
     fetched_at: str = ""               # 取得日時（内部処理用）
@@ -438,15 +443,18 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
     """
     商品をスプレッドシートに保存（差分追加・価格更新モード）
 
-    - 新規商品: 81列のデータを追加（C列にBS-XXXXXXを自動採番）
+    - 新規商品: 83列のデータを追加（C列にBS-XXXXXXを自動採番）
     - 既存商品: 価格関連列（P-W列）を更新
     - E列（URL）をユニークキーとして使用
 
-    列構造（81列: A-CC）:
+    列構造（83列: A-CE）:
     - A-C列: 管理列（採用フラグ、登録状況、仕入れ先商品ID）
     - D-P列: 仕入れ先商品情報（13列）
     - Q-AG列: 価格情報（17列）
-    - AH-CC列: カラーミー登録用項目
+    - AH-AM列: CM商品名、画像URL等
+    - AN-AS列: カテゴリー・グループ（ID・名称: 6列）
+    - AT列: 型番
+    - AU-CE列: カラーミー登録用項目
     """
     client = SpreadsheetClient()
     if not client.connect():
@@ -461,11 +469,31 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
 
     # カテゴリー判定器を初期化（カラーミーAPIが必要）
     category_detector = None
+    categories = []
+    groups = []
+    # カテゴリー・グループ名称引き用辞書
+    category_name_map = {}  # {(id_big, id_small): (name_big, name_small)}
+    group_name_map = {}     # {group_id: group_name}
     try:
         colorme_client = ColorMeClient()
         categories = colorme_client.get_categories()
         groups = colorme_client.get_groups()
         category_detector = CategoryDetector(categories, groups, colorme_client)
+
+        # カテゴリー名称マップを構築
+        for cat in categories:
+            id_big = cat.get("id_big", 0)
+            id_small = cat.get("id_small", 0)
+            name_big = cat.get("name_big", "")
+            name_small = cat.get("name_small", "")
+            category_name_map[(id_big, id_small)] = (name_big, name_small)
+
+        # グループ名称マップを構築
+        for grp in groups:
+            grp_id = grp.get("id", 0)
+            grp_name = grp.get("name", "")
+            group_name_map[grp_id] = grp_name
+
         logger.info(f"カテゴリー判定器: {len(categories)}カテゴリー, {len(groups)}グループ")
     except Exception as e:
         logger.warning(f"カテゴリー判定器の初期化に失敗: {e}")
@@ -485,13 +513,13 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 rows=10000,
                 cols=85  # 81列 + 余裕
             )
-            sheet.update('A1:CC1', [headers])
+            sheet.update('A1:CE1', [headers])
             logger.info(f"シート '{sheet_name}' を作成しました")
 
         # 既存データを取得
         existing_data = sheet.get_all_values()
         if not existing_data:
-            sheet.update('A1:CC1', [headers])
+            sheet.update('A1:CE1', [headers])
             logger.info("ヘッダー行を追加")
             existing_data = [headers]
 
@@ -558,28 +586,54 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 else:
                     skipped_count += 1
 
-                # AN-AQ列: カテゴリー・グループ・型番が空の場合のみAI生成（価格有無に関わらず実行）
-                # AN列(40), AO列(41), AP列(42), AQ列(43) - 1-indexed
+                # AN-AT列: カテゴリー・グループ・型番が空の場合のみAI生成（価格有無に関わらず実行）
+                # AN列(40): 大カテゴリーID, AO列(41): 大カテゴリー名称
+                # AP列(42): 小カテゴリーID, AQ列(43): 小カテゴリー名称
+                # AR列(44): グループID, AS列(45): グループ名
+                # AT列(46): 型番
                 existing_cat_big = existing_row[39] if len(existing_row) > 39 else ""
-                existing_cat_small = existing_row[40] if len(existing_row) > 40 else ""
-                existing_group_ids = existing_row[41] if len(existing_row) > 41 else ""
-                existing_model_number = existing_row[42] if len(existing_row) > 42 else ""
+                existing_cat_big_name = existing_row[40] if len(existing_row) > 40 else ""
+                existing_cat_small = existing_row[41] if len(existing_row) > 41 else ""
+                existing_cat_small_name = existing_row[42] if len(existing_row) > 42 else ""
+                existing_group_ids = existing_row[43] if len(existing_row) > 43 else ""
+                existing_group_names = existing_row[44] if len(existing_row) > 44 else ""
+                existing_model_number = existing_row[45] if len(existing_row) > 45 else ""
 
-                # カテゴリー・グループ自動判定（AN-AP列）
+                # カテゴリー・グループ自動判定（AN-AS列: 6列）
                 if category_detector and (not existing_cat_big or not existing_cat_small):
                     try:
                         cat_big, cat_small, group_ids = category_detector.detect(product.name, product.url)
                         if cat_big and not existing_cat_big:
-                            update_cells.append((row_idx, 40, str(cat_big)))  # AN列
+                            update_cells.append((row_idx, 40, str(cat_big)))  # AN列: 大カテゴリーID
+                            # AO列: 大カテゴリー名称を取得
+                            if not existing_cat_big_name:
+                                cat_big_name = ""
+                                for (id_big, id_small), (name_big, name_small) in category_name_map.items():
+                                    if id_big == cat_big:
+                                        cat_big_name = name_big
+                                        break
+                                if cat_big_name:
+                                    update_cells.append((row_idx, 41, cat_big_name))  # AO列
                         if cat_small and not existing_cat_small:
-                            update_cells.append((row_idx, 41, str(cat_small)))  # AO列
+                            update_cells.append((row_idx, 42, str(cat_small)))  # AP列: 小カテゴリーID
+                            # AQ列: 小カテゴリー名称を取得
+                            if not existing_cat_small_name and cat_big:
+                                cat_small_name = category_name_map.get((cat_big, cat_small), ("", ""))[1]
+                                if cat_small_name:
+                                    update_cells.append((row_idx, 43, cat_small_name))  # AQ列
                         if group_ids and not existing_group_ids:
-                            update_cells.append((row_idx, 42, ",".join(str(g) for g in group_ids)))  # AP列
+                            update_cells.append((row_idx, 44, ",".join(str(g) for g in group_ids)))  # AR列: グループID
+                            # AS列: グループ名称を取得
+                            if not existing_group_names:
+                                group_names = [group_name_map.get(g, "") for g in group_ids]
+                                group_names = [n for n in group_names if n]  # 空文字を除外
+                                if group_names:
+                                    update_cells.append((row_idx, 45, ",".join(group_names)))  # AS列
                         logger.debug(f"  既存商品カテゴリー更新: 大={cat_big}, 小={cat_small}, グループ={group_ids}")
                     except Exception as e:
                         logger.debug(f"  既存商品カテゴリー判定エラー: {e}")
 
-                # 型番自動生成（AQ列）
+                # 型番自動生成（AT列）
                 if model_number_generator.client and not existing_model_number:
                     try:
                         model_info = {
@@ -589,12 +643,12 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                         }
                         model_number = model_number_generator.generate(model_info, quantity=1)
                         if model_number:
-                            update_cells.append((row_idx, 43, model_number))  # AQ列
+                            update_cells.append((row_idx, 46, model_number))  # AT列
                             logger.debug(f"  既存商品型番更新: {model_number}")
                     except Exception as e:
                         logger.debug(f"  既存商品型番生成エラー: {e}")
             else:
-                # 新規商品: 81列のデータを作成
+                # 新規商品: 83列のデータを作成
                 supplier_id = generate_supplier_id(existing_ids)
                 existing_ids.add(supplier_id)
 
@@ -613,20 +667,36 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 if not cm_product_name:
                     cm_product_name = ""  # 生成失敗時は空欄
 
-                # カテゴリー・グループ自動判定（AN-AP列）
+                # カテゴリー・グループ自動判定（AN-AS列: 6列）
                 category_big = ""
+                category_big_name = ""
                 category_small = ""
+                category_small_name = ""
                 group_ids_str = ""
+                group_names_str = ""
                 if category_detector:
                     try:
                         cat_big, cat_small, group_ids = category_detector.detect(product.name, product.url)
                         if cat_big:
                             category_big = str(cat_big)
-                        if cat_small:
-                            category_small = str(cat_small)
+                            # カテゴリー名称を取得
+                            if cat_small:
+                                names = category_name_map.get((cat_big, cat_small), ("", ""))
+                                category_big_name = names[0]
+                                category_small_name = names[1]
+                                category_small = str(cat_small)
+                            else:
+                                # 小カテゴリーがない場合、大カテゴリーのみの名称を検索
+                                for (id_big, id_small), (name_big, name_small) in category_name_map.items():
+                                    if id_big == cat_big:
+                                        category_big_name = name_big
+                                        break
                         if group_ids:
                             group_ids_str = ",".join(str(g) for g in group_ids)
-                        logger.debug(f"  カテゴリー自動判定: 大={category_big}, 小={category_small}, グループ={group_ids_str}")
+                            # グループ名称を取得
+                            group_names = [group_name_map.get(g, "") for g in group_ids]
+                            group_names_str = ",".join(n for n in group_names if n)
+                        logger.debug(f"  カテゴリー自動判定: 大={category_big}({category_big_name}), 小={category_small}({category_small_name}), グループ={group_ids_str}({group_names_str})")
                     except Exception as e:
                         logger.debug(f"  カテゴリー判定エラー: {e}")
 
@@ -687,7 +757,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 if not model_number:
                     model_number = supplier_id
 
-                # 81列構造（A-CC）: 新列順
+                # 83列構造（A-CE）: カテゴリー名称追加による新列順
                 new_row = [
                     # === 管理列（A-C列: 3列）===
                     product.adopted_flag,                           # A: 採用フラグ
@@ -737,65 +807,69 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     "",                                             # AL: 消費税込販売価格
                     "",                                             # AM: 消費税額
 
-                    # === カテゴリー・グループ（AN-AQ列: 4列）===
+                    # === カテゴリー・グループ（AN-AS列: 6列）===
                     category_big,                                   # AN: 大カテゴリーID（自動判定）
-                    category_small,                                 # AO: 小カテゴリーID（自動判定）
-                    group_ids_str,                                  # AP: グループID（自動判定）
-                    model_number,                                   # AQ: 型番（AI生成、失敗時は仕入れ先商品ID）
+                    category_big_name,                              # AO: 大カテゴリー名称
+                    category_small,                                 # AP: 小カテゴリーID（自動判定）
+                    category_small_name,                            # AQ: 小カテゴリー名称
+                    group_ids_str,                                  # AR: グループID（自動判定）
+                    group_names_str,                                # AS: グループ名
 
-                    # === 在庫管理（AR-AX列: 7列）===
-                    "",                                             # AR: 在庫数
-                    "",                                             # AS: 在庫管理
-                    "",                                             # AT: 残りわずか数
-                    "",                                             # AU: 売切れ表示
-                    "",                                             # AV: 最小購入数
-                    "",                                             # AW: 最大購入数
-                    "",                                             # AX: 単位
+                    # === 型番（AT列: 1列）===
+                    model_number,                                   # AT: 型番（AI生成、失敗時は仕入れ先商品ID）
 
-                    # === 送料・配送（AY-BB列: 4列）===
-                    "",                                             # AY: 個別送料
-                    "",                                             # AZ: クール便料金
-                    "",                                             # BA: 重量(g)
-                    "",                                             # BB: 配送不要
+                    # === 在庫管理（AU-BA列: 7列）===
+                    "",                                             # AU: 在庫数
+                    "",                                             # AV: 在庫管理
+                    "",                                             # AW: 残りわずか数
+                    "",                                             # AX: 売切れ表示
+                    "",                                             # AY: 最小購入数
+                    "",                                             # AZ: 最大購入数
+                    "",                                             # BA: 単位
 
-                    # === 商品説明（BC-BF列: 4列）===
-                    cm_description,                                 # BC: 商品説明（自動生成）
-                    cm_simple_description,                          # BD: 簡易説明（自動生成）
-                    "",                                             # BE: スマホ説明
-                    "",                                             # BF: 備考
+                    # === 送料・配送（BB-BE列: 4列）===
+                    "",                                             # BB: 個別送料
+                    "",                                             # BC: クール便料金
+                    "",                                             # BD: 重量(g)
+                    "",                                             # BE: 配送不要
 
-                    # === 画像URL（BG-BP列: 10列）===
-                    product.image_url1,                             # BG: 画像URL1
-                    product.image_url2,                             # BH: 画像URL2
-                    product.image_url3,                             # BI: 画像URL3
-                    product.image_url4,                             # BJ: 画像URL4
-                    product.image_url5,                             # BK: 画像URL5
-                    product.image_url6,                             # BL: 画像URL6
-                    product.image_url7,                             # BM: 画像URL7
-                    product.image_url8,                             # BN: 画像URL8
-                    product.image_url9,                             # BO: 画像URL9
-                    product.image_url10,                            # BP: 画像URL10
+                    # === 商品説明（BF-BI列: 4列）===
+                    cm_description,                                 # BF: 商品説明（自動生成）
+                    cm_simple_description,                          # BG: 簡易説明（自動生成）
+                    "",                                             # BH: スマホ説明
+                    "",                                             # BI: 備考
 
-                    # === SEO項目（BQ-BS列: 3列）===
-                    page_title,                                     # BQ: ページタイトル（自動生成）
-                    meta_description,                               # BR: メタディスクリプション（自動生成）
-                    meta_keywords,                                  # BS: メタキーワード（自動生成）
+                    # === 画像URL（BJ-BS列: 10列）===
+                    product.image_url1,                             # BJ: 画像URL1
+                    product.image_url2,                             # BK: 画像URL2
+                    product.image_url3,                             # BL: 画像URL3
+                    product.image_url4,                             # BM: 画像URL4
+                    product.image_url5,                             # BN: 画像URL5
+                    product.image_url6,                             # BO: 画像URL6
+                    product.image_url7,                             # BP: 画像URL7
+                    product.image_url8,                             # BQ: 画像URL8
+                    product.image_url9,                             # BR: 画像URL9
+                    product.image_url10,                            # BS: 画像URL10
 
-                    # === フラグ・設定（BT-BX列: 5列）===
-                    "",                                             # BT: 軽減税率対象
-                    "",                                             # BU: デジタルコンテンツ
-                    "",                                             # BV: 定期購入
-                    "",                                             # BW: 表示順
-                    "",                                             # BX: 利用不可決済
+                    # === SEO項目（BT-BV列: 3列）===
+                    page_title,                                     # BT: ページタイトル（自動生成）
+                    meta_description,                               # BU: メタディスクリプション（自動生成）
+                    meta_keywords,                                  # BV: メタキーワード（自動生成）
 
-                    # === 掲載期間（BY-BZ列: 2列）===
-                    "",                                             # BY: 掲載開始日時
-                    "",                                             # BZ: 掲載終了日時
+                    # === フラグ・設定（BW-CA列: 5列）===
+                    "",                                             # BW: 軽減税率対象
+                    "",                                             # BX: デジタルコンテンツ
+                    "",                                             # BY: 定期購入
+                    "",                                             # BZ: 表示順
+                    "",                                             # CA: 利用不可決済
 
-                    # === システム情報（CA-CC列: 3列）===
-                    "",                                             # CA: 同期日時
-                    "",                                             # CB: 商品作成日時
-                    "",                                             # CC: 商品更新日時
+                    # === 掲載期間（CB-CC列: 2列）===
+                    "",                                             # CB: 掲載開始日時
+                    "",                                             # CC: 掲載終了日時
+
+                    # === システム情報（CD-CE列: 2列）※元は3列だが調整===
+                    "",                                             # CD: 同期日時
+                    "",                                             # CE: 商品更新日時
                 ]
                 new_rows.append(new_row)
 

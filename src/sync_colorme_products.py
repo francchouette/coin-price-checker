@@ -25,8 +25,9 @@ logger = logging.getLogger(__name__)
 # 列インデックス定義（A列=0から始まる）
 # ※2025-12: 操作項目列（価格更新ON/OFF等）をB列の直後に移動
 # ※2025-12: P-T列に5列追加（製造国、商品説明（英語）、仕様・スペック、発行年、発行数・限定数）
+# ※2025-12: AS-AX列をカテゴリー・グループ（ID・名称）6列に拡張、型番をAY列に移動（86列→88列）
 class ColIndex:
-    """新カラーミー商品管理シートの列インデックス"""
+    """新カラーミー商品管理シートの列インデックス（88列: A-CJ）"""
     # A-F: 操作項目
     SYNC_MODE = 0          # A: 同期モード
     DISPLAY_STATE = 1      # B: 掲載設定
@@ -78,50 +79,53 @@ class ColIndex:
     COST = 41              # AP: 原価
     TAX_INCLUDED_PRICE = 42 # AQ: 消費税込販売価格
     TAX_AMOUNT = 43        # AR: 消費税額
-    # AS-AV: カテゴリー・グループ
-    CATEGORY_ID_BIG = 44   # AS: 大カテゴリーID
-    CATEGORY_ID_SMALL = 45 # AT: 小カテゴリーID
-    GROUP_IDS = 46         # AU: グループID
-    MODEL_NUMBER = 47      # AV: 型番
-    # AW-BC: 在庫管理
-    STOCKS = 48            # AW: 在庫数
-    STOCK_MANAGED = 49     # AX: 在庫管理
-    FEW_NUM = 50           # AY: 残りわずか数
-    SOLDOUT_DISPLAY = 51   # AZ: 売切れ表示
-    MIN_NUM = 52           # BA: 最小購入数
-    MAX_NUM = 53           # BB: 最大購入数
-    UNIT = 54              # BC: 単位
-    # BD-BG: 送料・配送
-    DELIVERY_CHARGE = 55   # BD: 個別送料
-    COOL_CHARGE = 56       # BE: クール便料金
-    WEIGHT = 57            # BF: 重量(g)
-    NO_DELIVERY = 58       # BG: 配送不要
-    # BH-BK: 商品説明
-    EXPL = 59              # BH: 商品説明
-    SIMPLE_EXPL = 60       # BI: 簡易説明
-    MOBILE_EXPL = 61       # BJ: スマホ説明
-    MEMO = 62              # BK: 備考
-    # BL-BU: 画像
-    MAIN_IMAGE = 63        # BL: メイン画像URL
-    THUMBNAIL = 64         # BM: サムネイルURL
-    IMAGE_URL_START = 65   # BN: 画像URL1（BN-BU）
-    # BV-BX: SEO
-    PAGE_TITLE = 73        # BV: ページタイトル
-    META_DESC = 74         # BW: メタディスクリプション
-    META_KEYWORDS = 75     # BX: メタキーワード
-    # BY-CC: フラグ
-    REDUCED_TAX = 76       # BY: 軽減税率対象
-    DIGITAL_CONTENT = 77   # BZ: デジタルコンテンツ
-    SUBSCRIPTION = 78      # CA: 定期購入
-    DISPLAY_ORDER = 79     # CB: 表示順
-    DISABLED_PAYMENTS = 80 # CC: 利用不可決済
-    # CD-CE: 掲載期間
-    START_DATE = 81        # CD: 掲載開始日時
-    END_DATE = 82          # CE: 掲載終了日時
-    # CF-CH: システム情報
-    SYNC_DATETIME = 83     # CF: 同期日時
-    CREATED_DATE = 84      # CG: 商品作成日時
-    UPDATED_DATE = 85      # CH: 商品更新日時
+    # AS-AX: カテゴリー・グループ（6列: ID・名称）
+    CATEGORY_ID_BIG = 44       # AS: 大カテゴリーID
+    CATEGORY_NAME_BIG = 45     # AT: 大カテゴリー名称
+    CATEGORY_ID_SMALL = 46     # AU: 小カテゴリーID
+    CATEGORY_NAME_SMALL = 47   # AV: 小カテゴリー名称
+    GROUP_IDS = 48             # AW: グループID
+    GROUP_NAMES = 49           # AX: グループ名
+    # AY: 型番（1列）
+    MODEL_NUMBER = 50      # AY: 型番
+    # AZ-BF: 在庫管理（7列）
+    STOCKS = 51            # AZ: 在庫数
+    STOCK_MANAGED = 52     # BA: 在庫管理
+    FEW_NUM = 53           # BB: 残りわずか数
+    SOLDOUT_DISPLAY = 54   # BC: 売切れ表示
+    MIN_NUM = 55           # BD: 最小購入数
+    MAX_NUM = 56           # BE: 最大購入数
+    UNIT = 57              # BF: 単位
+    # BG-BJ: 送料・配送（4列）
+    DELIVERY_CHARGE = 58   # BG: 個別送料
+    COOL_CHARGE = 59       # BH: クール便料金
+    WEIGHT = 60            # BI: 重量(g)
+    NO_DELIVERY = 61       # BJ: 配送不要
+    # BK-BN: 商品説明（4列）
+    EXPL = 62              # BK: 商品説明
+    SIMPLE_EXPL = 63       # BL: 簡易説明
+    MOBILE_EXPL = 64       # BM: スマホ説明
+    MEMO = 65              # BN: 備考
+    # BO-BX: 画像（10列）
+    MAIN_IMAGE = 66        # BO: メイン画像URL
+    THUMBNAIL = 67         # BP: サムネイルURL
+    IMAGE_URL_START = 68   # BQ: 画像URL1（BQ-BX）
+    # BY-CA: SEO（3列）
+    PAGE_TITLE = 76        # BY: ページタイトル
+    META_DESC = 77         # BZ: メタディスクリプション
+    META_KEYWORDS = 78     # CA: メタキーワード
+    # CB-CF: フラグ（5列）
+    REDUCED_TAX = 79       # CB: 軽減税率対象
+    DIGITAL_CONTENT = 80   # CC: デジタルコンテンツ
+    SUBSCRIPTION = 81      # CD: 定期購入
+    DISPLAY_ORDER = 82     # CE: 表示順
+    DISABLED_PAYMENTS = 83 # CF: 利用不可決済
+    # CG-CH: 掲載期間（2列）
+    START_DATE = 84        # CG: 掲載開始日時
+    END_DATE = 85          # CH: 掲載終了日時
+    # CI-CJ: システム情報（2列）※最後の列を削除して調整
+    SYNC_DATETIME = 86     # CI: 同期日時
+    CREATED_DATE = 87      # CJ: 商品作成日時
 
 
 def parse_int(value: str, default: int = 0) -> int:

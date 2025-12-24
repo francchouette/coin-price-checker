@@ -1,19 +1,22 @@
 """
 採用商品カラーミー登録スクリプト
 
-ブリオンスター商品ページ一覧（81列: A-CC）で A列=「採用」かつ B列≠「登録済」の商品を
+ブリオンスター商品ページ一覧（83列: A-CE）で A列=「採用」かつ B列≠「登録済」の商品を
 カラーミーAPIで自動登録し、登録完了後に以下を実行する：
 
 1. B列（カラーミー登録状況）を「登録済」に更新
 2. D列（カラーミー商品URL）を更新
-3. CA列（同期日時）を更新
+3. CC列（同期日時）を更新
 4. 商品仕入れ先一覧シートに同期
 
-シート構造（81列: A-CC）:
+シート構造（83列: A-CE）:
 - A-C列: 管理列（採用フラグ、登録状況、仕入れ先商品ID）
 - D-P列: 仕入れ先商品情報（13列）
 - Q-AG列: 価格情報（17列）
-- AH-CC列: カラーミー登録用項目
+- AH-AM列: CM商品名、画像URL等
+- AN-AS列: カテゴリー・グループ（ID・名称: 6列）
+- AT列: 型番
+- AU-CE列: カラーミー登録用項目
 
 トリガー:
 - A列を「採用」に変更後、このスクリプトを実行
@@ -47,7 +50,7 @@ logger = logging.getLogger(__name__)
 JST = timezone(timedelta(hours=9))
 
 # ブリオンスター商品ページ一覧の列インデックス（0-based）
-# 81列構造 (A-CC)
+# 83列構造 (A-CE)
 
 # === A-C列: 管理列（3列）===
 COL_ADOPTED_FLAG = 0       # A列: 採用フラグ
@@ -96,65 +99,69 @@ COL_CM_COST = 36           # AK列: 原価
 COL_CM_TAX_INCLUDED = 37   # AL列: 消費税込販売価格
 COL_CM_TAX_AMOUNT = 38     # AM列: 消費税額
 
-# === AN-AQ列: カテゴリー・グループ（4列）===
-COL_CM_CATEGORY_BIG = 39   # AN列: 大カテゴリーID
-COL_CM_CATEGORY_SMALL = 40 # AO列: 小カテゴリーID
-COL_CM_GROUP_ID = 41       # AP列: グループID
-COL_CM_MODEL_NUMBER = 42   # AQ列: 型番
+# === AN-AS列: カテゴリー・グループ（6列）===
+COL_CM_CATEGORY_BIG = 39       # AN列: 大カテゴリーID
+COL_CM_CATEGORY_BIG_NAME = 40  # AO列: 大カテゴリー名称
+COL_CM_CATEGORY_SMALL = 41     # AP列: 小カテゴリーID
+COL_CM_CATEGORY_SMALL_NAME = 42  # AQ列: 小カテゴリー名称
+COL_CM_GROUP_ID = 43           # AR列: グループID
+COL_CM_GROUP_NAME = 44         # AS列: グループ名
 
-# === AR-AX列: 在庫管理（7列）===
-COL_CM_STOCK = 43          # AR列: 在庫数
-COL_CM_STOCK_MANAGED = 44  # AS列: 在庫管理
-COL_CM_FEW_NUM = 45        # AT列: 残りわずか数
-COL_CM_SOLDOUT_DISPLAY = 46  # AU列: 売切れ表示
-COL_CM_MIN_NUM = 47        # AV列: 最小購入数
-COL_CM_MAX_NUM = 48        # AW列: 最大購入数
-COL_CM_UNIT = 49           # AX列: 単位
+# === AT列: 型番（1列）===
+COL_CM_MODEL_NUMBER = 45   # AT列: 型番
 
-# === AY-BB列: 送料・配送（4列）===
-COL_CM_DELIVERY_CHARGE = 50  # AY列: 個別送料
-COL_CM_COOL_CHARGE = 51    # AZ列: クール便料金
-COL_CM_WEIGHT = 52         # BA列: 重量(g)
-COL_CM_NO_DELIVERY = 53    # BB列: 配送不要
+# === AU-BA列: 在庫管理（7列）===
+COL_CM_STOCK = 46          # AU列: 在庫数
+COL_CM_STOCK_MANAGED = 47  # AV列: 在庫管理
+COL_CM_FEW_NUM = 48        # AW列: 残りわずか数
+COL_CM_SOLDOUT_DISPLAY = 49  # AX列: 売切れ表示
+COL_CM_MIN_NUM = 50        # AY列: 最小購入数
+COL_CM_MAX_NUM = 51        # AZ列: 最大購入数
+COL_CM_UNIT = 52           # BA列: 単位
 
-# === BC-BF列: 商品説明（4列）===
-COL_CM_EXPL = 54           # BC列: 商品説明
-COL_CM_SIMPLE_EXPL = 55    # BD列: 簡易説明
-COL_CM_SMARTPHONE_EXPL = 56  # BE列: スマホ説明
-COL_CM_MEMO = 57           # BF列: 備考
+# === BB-BE列: 送料・配送（4列）===
+COL_CM_DELIVERY_CHARGE = 53  # BB列: 個別送料
+COL_CM_COOL_CHARGE = 54    # BC列: クール便料金
+COL_CM_WEIGHT = 55         # BD列: 重量(g)
+COL_CM_NO_DELIVERY = 56    # BE列: 配送不要
 
-# === BG-BP列: 画像URL（10列）===
-COL_IMAGE_1 = 58           # BG列: 画像URL1
-COL_IMAGE_2 = 59           # BH列: 画像URL2
-COL_IMAGE_3 = 60           # BI列: 画像URL3
-COL_IMAGE_4 = 61           # BJ列: 画像URL4
-COL_IMAGE_5 = 62           # BK列: 画像URL5
-COL_IMAGE_6 = 63           # BL列: 画像URL6
-COL_IMAGE_7 = 64           # BM列: 画像URL7
-COL_IMAGE_8 = 65           # BN列: 画像URL8
-COL_IMAGE_9 = 66           # BO列: 画像URL9
-COL_IMAGE_10 = 67          # BP列: 画像URL10
+# === BF-BI列: 商品説明（4列）===
+COL_CM_EXPL = 57           # BF列: 商品説明
+COL_CM_SIMPLE_EXPL = 58    # BG列: 簡易説明
+COL_CM_SMARTPHONE_EXPL = 59  # BH列: スマホ説明
+COL_CM_MEMO = 60           # BI列: 備考
 
-# === BQ-BS列: SEO項目（3列）===
-COL_CM_PAGE_TITLE = 68     # BQ列: ページタイトル
-COL_CM_META_DESC = 69      # BR列: メタディスクリプション
-COL_CM_META_KEYWORDS = 70  # BS列: メタキーワード
+# === BJ-BS列: 画像URL（10列）===
+COL_IMAGE_1 = 61           # BJ列: 画像URL1
+COL_IMAGE_2 = 62           # BK列: 画像URL2
+COL_IMAGE_3 = 63           # BL列: 画像URL3
+COL_IMAGE_4 = 64           # BM列: 画像URL4
+COL_IMAGE_5 = 65           # BN列: 画像URL5
+COL_IMAGE_6 = 66           # BO列: 画像URL6
+COL_IMAGE_7 = 67           # BP列: 画像URL7
+COL_IMAGE_8 = 68           # BQ列: 画像URL8
+COL_IMAGE_9 = 69           # BR列: 画像URL9
+COL_IMAGE_10 = 70          # BS列: 画像URL10
 
-# === BT-BX列: フラグ・設定（5列）===
-COL_CM_REDUCED_TAX = 71    # BT列: 軽減税率対象
-COL_CM_DIGITAL = 72        # BU列: デジタルコンテンツ
-COL_CM_SUBSCRIPTION = 73   # BV列: 定期購入
-COL_CM_SORT = 74           # BW列: 表示順
-COL_CM_DISABLED_PAYMENT = 75  # BX列: 利用不可決済
+# === BT-BV列: SEO項目（3列）===
+COL_CM_PAGE_TITLE = 71     # BT列: ページタイトル
+COL_CM_META_DESC = 72      # BU列: メタディスクリプション
+COL_CM_META_KEYWORDS = 73  # BV列: メタキーワード
 
-# === BY-BZ列: 掲載期間（2列）===
-COL_CM_START_DATE = 76     # BY列: 掲載開始日時
-COL_CM_END_DATE = 77       # BZ列: 掲載終了日時
+# === BW-CA列: フラグ・設定（5列）===
+COL_CM_REDUCED_TAX = 74    # BW列: 軽減税率対象
+COL_CM_DIGITAL = 75        # BX列: デジタルコンテンツ
+COL_CM_SUBSCRIPTION = 76   # BY列: 定期購入
+COL_CM_SORT = 77           # BZ列: 表示順
+COL_CM_DISABLED_PAYMENT = 78  # CA列: 利用不可決済
 
-# === CA-CC列: システム情報（3列）===
-COL_CM_SYNC_AT = 78        # CA列: 同期日時
-COL_CM_CREATED_AT = 79     # CB列: 商品作成日時
-COL_CM_UPDATED_AT = 80     # CC列: 商品更新日時
+# === CB-CC列: 掲載期間（2列）===
+COL_CM_START_DATE = 79     # CB列: 掲載開始日時
+COL_CM_END_DATE = 80       # CC列: 掲載終了日時
+
+# === CD-CE列: システム情報（2列）===
+COL_CM_SYNC_AT = 81        # CD列: 同期日時
+COL_CM_CREATED_AT = 82     # CE列: 商品作成日時
 
 # デフォルトのカテゴリーID（貴金属コイン）
 DEFAULT_CATEGORY_BIG = 174936    # 大カテゴリー: 金貨・銀貨・プラチナコイン
@@ -229,10 +236,28 @@ def register_adopted_products(
     categories = []
     groups = []
     category_detector = None
+    # カテゴリー・グループ名称引き用辞書
+    category_name_map = {}  # {(id_big, id_small): (name_big, name_small)}
+    group_name_map = {}     # {group_id: group_name}
     try:
         categories = colorme_client.get_categories()
         groups = colorme_client.get_groups()
         category_detector = CategoryDetector(categories, groups, colorme_client)
+
+        # カテゴリー名称マップを構築
+        for cat in categories:
+            id_big = cat.get("id_big", 0)
+            id_small = cat.get("id_small", 0)
+            name_big = cat.get("name_big", "")
+            name_small = cat.get("name_small", "")
+            category_name_map[(id_big, id_small)] = (name_big, name_small)
+
+        # グループ名称マップを構築
+        for grp in groups:
+            grp_id = grp.get("id", 0)
+            grp_name = grp.get("name", "")
+            group_name_map[grp_id] = grp_name
+
         logger.info(f"カテゴリー: {len(categories)}件, グループ: {len(groups)}件 を取得")
     except Exception as e:
         logger.warning(f"カテゴリー/グループ取得エラー: {e}")
@@ -490,8 +515,8 @@ def register_adopted_products(
                 logger.info(f"  登録成功: カラーミー商品ID={new_product_id}")
 
                 # スプレッドシート更新
-                # 81列構造: B列=登録状況, D列=カラーミー商品URL, CA列=同期日時
-                # カテゴリー・グループ: AN-AP列, 商品説明: BC-BD列, SEO: BQ-BS列
+                # 83列構造: B列=登録状況, D列=カラーミー商品URL, CD列=同期日時
+                # カテゴリー・グループ: AN-AS列(6列), 型番: AT列, 商品説明: BF-BG列, SEO: BT-BV列
                 timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
                 colorme_url = f"https://yokohamacoin.shop-pro.jp/?pid={new_product_id}"
                 batch_data = [
@@ -504,61 +529,87 @@ def register_adopted_products(
                         'values': [[colorme_url]]
                     },
                     {
-                        'range': f"CA{row_idx}",  # CA列: 同期日時
+                        'range': f"CD{row_idx}",  # CD列: 同期日時
                         'values': [[timestamp]]
                     }
                 ]
 
-                # カテゴリー・グループ情報をスプレッドシートに保存（AN-AP列）
+                # カテゴリー・グループ情報をスプレッドシートに保存（AN-AS列: 6列）
                 if category_big:
                     batch_data.append({
                         'range': f"AN{row_idx}",  # AN列: 大カテゴリーID
                         'values': [[str(category_big)]]
                     })
+                    # AO列: 大カテゴリー名称を取得して保存
+                    cat_big_name = ""
+                    for (id_big, id_small), (name_big, name_small) in category_name_map.items():
+                        if id_big == category_big:
+                            cat_big_name = name_big
+                            break
+                    if cat_big_name:
+                        batch_data.append({
+                            'range': f"AO{row_idx}",  # AO列: 大カテゴリー名称
+                            'values': [[cat_big_name]]
+                        })
                 if category_small:
                     batch_data.append({
-                        'range': f"AO{row_idx}",  # AO列: 小カテゴリーID
+                        'range': f"AP{row_idx}",  # AP列: 小カテゴリーID
                         'values': [[str(category_small)]]
                     })
+                    # AQ列: 小カテゴリー名称を取得して保存
+                    cat_small_name = category_name_map.get((category_big, category_small), ("", ""))[1]
+                    if cat_small_name:
+                        batch_data.append({
+                            'range': f"AQ{row_idx}",  # AQ列: 小カテゴリー名称
+                            'values': [[cat_small_name]]
+                        })
                 if group_ids:
                     batch_data.append({
-                        'range': f"AP{row_idx}",  # AP列: グループID
+                        'range': f"AR{row_idx}",  # AR列: グループID
                         'values': [[",".join(str(g) for g in group_ids)]]
                     })
+                    # AS列: グループ名を取得して保存
+                    group_names = [group_name_map.get(g, "") for g in group_ids]
+                    group_names = [n for n in group_names if n]  # 空文字を除外
+                    if group_names:
+                        batch_data.append({
+                            'range': f"AS{row_idx}",  # AS列: グループ名
+                            'values': [[",".join(group_names)]]
+                        })
 
-                # 型番をスプレッドシートに保存（AQ列）- AI生成された場合のみ
+                # 型番をスプレッドシートに保存（AT列）- AI生成された場合のみ
                 if model_number and not existing_model_number:
                     batch_data.append({
-                        'range': f"AQ{row_idx}",  # AQ列: 型番
+                        'range': f"AT{row_idx}",  # AT列: 型番
                         'values': [[model_number]]
                     })
 
-                # 商品説明をスプレッドシートに保存（BC-BD列）
+                # 商品説明をスプレッドシートに保存（BF-BG列）
                 if description and not existing_cm_expl:
                     batch_data.append({
-                        'range': f"BC{row_idx}",  # BC列: 商品説明
+                        'range': f"BF{row_idx}",  # BF列: 商品説明
                         'values': [[description]]
                     })
                 if simple_description and not existing_simple_expl:
                     batch_data.append({
-                        'range': f"BD{row_idx}",  # BD列: 簡易説明
+                        'range': f"BG{row_idx}",  # BG列: 簡易説明
                         'values': [[simple_description]]
                     })
 
-                # SEO項目をスプレッドシートに保存（BQ-BS列）
+                # SEO項目をスプレッドシートに保存（BT-BV列）
                 if page_title and not existing_page_title:
                     batch_data.append({
-                        'range': f"BQ{row_idx}",  # BQ列: ページタイトル
+                        'range': f"BT{row_idx}",  # BT列: ページタイトル
                         'values': [[page_title]]
                     })
                 if meta_description and not existing_meta_desc:
                     batch_data.append({
-                        'range': f"BR{row_idx}",  # BR列: メタディスクリプション
+                        'range': f"BU{row_idx}",  # BU列: メタディスクリプション
                         'values': [[meta_description]]
                     })
                 if meta_keywords and not existing_meta_keywords:
                     batch_data.append({
-                        'range': f"BS{row_idx}",  # BS列: メタキーワード
+                        'range': f"BV{row_idx}",  # BV列: メタキーワード
                         'values': [[meta_keywords]]
                     })
 

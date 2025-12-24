@@ -283,7 +283,8 @@ def main():
         existing = sheet.get_all_values()
         # 数式として取得（数式を保持するため）
         # ※2025-12: 5列追加（P-T: 製造国〜発行数）により、CC→CH列に変更
-        existing_formulas = sheet.get(f'A1:CH{len(existing) + 1}', value_render_option='FORMULA')
+        # ※2025-12: カテゴリー・グループ名称2列追加により、CH→CJ列に変更（86列→88列）
+        existing_formulas = sheet.get(f'A1:CJ{len(existing) + 1}', value_render_option='FORMULA')
 
         existing_data = {}  # 商品ID -> 既存行データのマッピング（数式含む）
         existing_row_map = {}  # 商品ID -> 行番号のマッピング（1-indexed、ヘッダー除く）
@@ -300,17 +301,17 @@ def main():
                         # ※2025-12: 5列追加により 81列→86列
                         if existing_formulas and row_idx < len(existing_formulas):
                             formula_row = list(existing_formulas[row_idx])
-                            # 数式データが短い場合は値データで補完（86列まで）
-                            while len(formula_row) < 86:
+                            # 数式データが短い場合は値データで補完（88列まで）
+                            while len(formula_row) < 88:
                                 if len(row) > len(formula_row):
                                     formula_row.append(row[len(formula_row)])
                                 else:
                                     formula_row.append("")
                             existing_data[pid] = formula_row
                         else:
-                            # 値データを使用（86列まで拡張）
+                            # 値データを使用（88列まで拡張）
                             value_row = list(row)
-                            while len(value_row) < 86:
+                            while len(value_row) < 88:
                                 value_row.append("")
                             existing_data[pid] = value_row
                         existing_row_map[pid] = row_idx
@@ -449,10 +450,11 @@ def main():
             }
             display_state = display_state_map.get(display_state_api, display_state_api)
 
-            # 86列分のデータを作成（A-CH列: 操作項目を先頭に配置）
+            # 88列分のデータを作成（A-CJ列: 操作項目を先頭に配置）
             # ※2025-12: C-F列に価格更新ON/OFF等の操作列を移動
             # ※2025-12: 5列追加（P-T: 製造国〜発行数）により 81列→86列
-            row = [""] * 86
+            # ※2025-12: カテゴリー・グループ名称2列追加により 86列→88列
+            row = [""] * 88
 
             # 既存データがあれば仕入れ先情報を保持
             existing_row = existing_data.get(product_id, [])
@@ -620,57 +622,61 @@ def main():
             row[42] = preserve_or_set(existing_row, 42, "", old_row_num, new_row_num)  # AQ: 消費税込販売価格
             row[43] = preserve_or_set(existing_row, 43, "", old_row_num, new_row_num)  # AR: 消費税額
 
-            # AS-AV: カテゴリー・グループ（数式があれば保持）
+            # AS-AX: カテゴリー・グループ（6列: ID・名称）
             # ※2025-12: 5列追加により AN→AS(44)
+            # ※2025-12: カテゴリー・グループ名称2列追加（AS-AX: 6列）
             row[44] = preserve_or_set(existing_row, 44, str(category_id_big) if category_id_big else "", old_row_num, new_row_num)  # AS: 大カテゴリーID
-            row[45] = preserve_or_set(existing_row, 45, str(category_id_small) if category_id_small else "", old_row_num, new_row_num)  # AT: 小カテゴリーID
-            row[46] = preserve_or_set(existing_row, 46, group_ids_str, old_row_num, new_row_num)  # AU: グループID
-            row[47] = preserve_or_set(existing_row, 47, product.get("model_number", "") or "", old_row_num, new_row_num)  # AV: 型番
+            row[45] = preserve_or_set(existing_row, 45, "", old_row_num, new_row_num)  # AT: 大カテゴリー名称（API取得不可、手動または別途設定）
+            row[46] = preserve_or_set(existing_row, 46, str(category_id_small) if category_id_small else "", old_row_num, new_row_num)  # AU: 小カテゴリーID
+            row[47] = preserve_or_set(existing_row, 47, "", old_row_num, new_row_num)  # AV: 小カテゴリー名称（API取得不可、手動または別途設定）
+            row[48] = preserve_or_set(existing_row, 48, group_ids_str, old_row_num, new_row_num)  # AW: グループID
+            row[49] = preserve_or_set(existing_row, 49, "", old_row_num, new_row_num)  # AX: グループ名（API取得不可、手動または別途設定）
 
-            # AW-BC: 在庫管理（数式があれば保持、APIから取得した値で更新）
-            # ※2025-12: 5列追加により AR→AW(48)
-            row[48] = preserve_or_set(existing_row, 48, str(product.get("stocks") or 0), old_row_num, new_row_num, preserve_existing=False)  # AW: 在庫数
-            row[49] = preserve_or_set(existing_row, 49, "する" if product.get("stock_managed", True) else "しない", old_row_num, new_row_num, preserve_existing=False)  # AX: 在庫管理
-            row[50] = preserve_or_set(existing_row, 50, str(product.get("few_num") or 0), old_row_num, new_row_num, preserve_existing=False)  # AY: 残りわずか数
+            # AY: 型番（1列）
+            row[50] = preserve_or_set(existing_row, 50, product.get("model_number", "") or "", old_row_num, new_row_num)  # AY: 型番
+
+            # AZ-BF: 在庫管理（7列）
+            # ※2025-12: カテゴリー名称2列追加により AW→AZ(51)
+            row[51] = preserve_or_set(existing_row, 51, str(product.get("stocks") or 0), old_row_num, new_row_num, preserve_existing=False)  # AZ: 在庫数
+            row[52] = preserve_or_set(existing_row, 52, "する" if product.get("stock_managed", True) else "しない", old_row_num, new_row_num, preserve_existing=False)  # BA: 在庫管理
+            row[53] = preserve_or_set(existing_row, 53, str(product.get("few_num") or 0), old_row_num, new_row_num, preserve_existing=False)  # BB: 残りわずか数
             soldout_display = product.get("soldout_display", True)
-            row[51] = preserve_or_set(existing_row, 51, "表示" if soldout_display else "非表示", old_row_num, new_row_num, preserve_existing=False)  # AZ: 売切れ表示
-            row[52] = preserve_or_set(existing_row, 52, str(product.get("min_num") or 1), old_row_num, new_row_num, preserve_existing=False)  # BA: 最小購入数
-            row[53] = preserve_or_set(existing_row, 53, str(product.get("max_num") or 0), old_row_num, new_row_num, preserve_existing=False)  # BB: 最大購入数
-            row[54] = preserve_or_set(existing_row, 54, product.get("unit", "") or "", old_row_num, new_row_num, preserve_existing=False)  # BC: 単位
+            row[54] = preserve_or_set(existing_row, 54, "表示" if soldout_display else "非表示", old_row_num, new_row_num, preserve_existing=False)  # BC: 売切れ表示
+            row[55] = preserve_or_set(existing_row, 55, str(product.get("min_num") or 1), old_row_num, new_row_num, preserve_existing=False)  # BD: 最小購入数
+            row[56] = preserve_or_set(existing_row, 56, str(product.get("max_num") or 0), old_row_num, new_row_num, preserve_existing=False)  # BE: 最大購入数
+            row[57] = preserve_or_set(existing_row, 57, product.get("unit", "") or "", old_row_num, new_row_num, preserve_existing=False)  # BF: 単位
 
-            # BD-BG: 送料・配送（数式があれば保持）
-            # ※2025-12: 5列追加により AY→BD(55)
-            row[55] = preserve_or_set(existing_row, 55, str(product.get("delivery_charge") or 0), old_row_num, new_row_num)  # BD: 個別送料
-            row[56] = preserve_or_set(existing_row, 56, "", old_row_num, new_row_num)  # BE: クール便料金
-            row[57] = preserve_or_set(existing_row, 57, "", old_row_num, new_row_num)  # BF: 重量(g)
-            row[58] = preserve_or_set(existing_row, 58, "", old_row_num, new_row_num)  # BG: 配送不要
+            # BG-BJ: 送料・配送（4列）
+            # ※2025-12: カテゴリー名称2列追加により BD→BG(58)
+            row[58] = preserve_or_set(existing_row, 58, str(product.get("delivery_charge") or 0), old_row_num, new_row_num)  # BG: 個別送料
+            row[59] = preserve_or_set(existing_row, 59, "", old_row_num, new_row_num)  # BH: クール便料金
+            row[60] = preserve_or_set(existing_row, 60, "", old_row_num, new_row_num)  # BI: 重量(g)
+            row[61] = preserve_or_set(existing_row, 61, "", old_row_num, new_row_num)  # BJ: 配送不要
 
-            # BH-BK: 商品説明（数式があれば保持）
-            # ※2025-12: 5列追加により BC→BH(59)
-            row[59] = preserve_or_set(existing_row, 59, product.get("expl", "") or "", old_row_num, new_row_num)  # BH: 商品説明
-            row[60] = preserve_or_set(existing_row, 60, product.get("simple_expl", "") or "", old_row_num, new_row_num)  # BI: 簡易説明
-            row[61] = preserve_or_set(existing_row, 61, "", old_row_num, new_row_num)  # BJ: スマホ説明
-            row[62] = preserve_or_set(existing_row, 62, "", old_row_num, new_row_num)  # BK: 備考
+            # BK-BN: 商品説明（4列）
+            # ※2025-12: カテゴリー名称2列追加により BH→BK(62)
+            row[62] = preserve_or_set(existing_row, 62, product.get("expl", "") or "", old_row_num, new_row_num)  # BK: 商品説明
+            row[63] = preserve_or_set(existing_row, 63, product.get("simple_expl", "") or "", old_row_num, new_row_num)  # BL: 簡易説明
+            row[64] = preserve_or_set(existing_row, 64, "", old_row_num, new_row_num)  # BM: スマホ説明
+            row[65] = preserve_or_set(existing_row, 65, "", old_row_num, new_row_num)  # BN: 備考
 
-            # BL-BU: 画像URL1〜10（数式があれば保持）
-            # ※2025-12: 5列追加により BG→BL(63)、画像列を「画像URL1〜10」形式に変更
+            # BO-BX: 画像URL1〜10（10列）
+            # ※2025-12: カテゴリー名称2列追加により BL→BO(66)
             for i in range(10):
                 img_url = image_urls[i] if i < len(image_urls) else ""
-                row[63 + i] = preserve_or_set(existing_row, 63 + i, img_url, old_row_num, new_row_num)  # BL-BU: 画像URL1-10
+                row[66 + i] = preserve_or_set(existing_row, 66 + i, img_url, old_row_num, new_row_num)  # BO-BX: 画像URL1-10
 
-            # BV-CC: SEO、フラグ、掲載期間（数式があれば保持）
-            # ※2025-12: 5列追加により BQ→BV(73)
-            for i in range(73, 83):
+            # BY-CF: SEO、フラグ、掲載期間（8列）
+            # ※2025-12: カテゴリー名称2列追加により BV→BY(76)
+            for i in range(76, 86):
                 default_val = str(existing_row[i]) if len(existing_row) > i and existing_row[i] else ""
                 row[i] = preserve_or_set(existing_row, i, default_val, old_row_num, new_row_num)
 
-            # CF-CH: システム情報
-            # ※2025-12: 5列追加により CA→CF(83)
-            row[83] = preserve_or_set(existing_row, 83, now, old_row_num, new_row_num, preserve_existing=False)  # CF: 同期日時
+            # CI-CJ: システム情報（2列）
+            # ※2025-12: カテゴリー名称2列追加により CF→CI(86)
+            row[86] = preserve_or_set(existing_row, 86, now, old_row_num, new_row_num, preserve_existing=False)  # CI: 同期日時
             make_date = product.get("make_date", "")
-            update_date = product.get("update_date", "")
-            row[84] = preserve_or_set(existing_row, 84, make_date if make_date else "", old_row_num, new_row_num, preserve_existing=False)  # CG: 商品作成日時
-            row[85] = preserve_or_set(existing_row, 85, update_date if update_date else "", old_row_num, new_row_num, preserve_existing=False)  # CH: 商品更新日時
+            row[87] = preserve_or_set(existing_row, 87, make_date if make_date else "", old_row_num, new_row_num, preserve_existing=False)  # CJ: 商品作成日時
 
             # 既存商品か新規商品かで振り分け
             if is_existing:
@@ -684,13 +690,14 @@ def main():
 
         # 既存行の更新（batch_updateで一括処理）
         # ※2025-12: 5列追加により CC→CH列に変更
+        # ※2025-12: カテゴリー名称2列追加により CH→CJ列に変更（86列→88列）
         if update_rows:
             logger.info(f"既存商品を更新中: {len(update_rows)}件")
             batch_data = []
             for row_num, row_data in update_rows.items():
                 sheet_row = row_num + 1  # 1-indexed（ヘッダー含む）
                 batch_data.append({
-                    'range': f'A{sheet_row}:CH{sheet_row}',
+                    'range': f'A{sheet_row}:CJ{sheet_row}',
                     'values': [row_data]
                 })
             # batch_updateで一括更新（1回のAPI呼び出し）
@@ -700,11 +707,12 @@ def main():
 
         # 新規行の追加（末尾に一括追加）
         # ※2025-12: 5列追加により CC→CH列に変更
+        # ※2025-12: カテゴリー名称2列追加により CH→CJ列に変更（86列→88列）
         if new_rows:
             start_row = max_existing_row + 2  # ヘッダー含む
             end_row = start_row + len(new_rows) - 1
             logger.info(f"新規商品を追加中: {len(new_rows)}件 (行{start_row}〜{end_row})")
-            sheet.update(values=new_rows, range_name=f'A{start_row}:CH{end_row}', value_input_option='USER_ENTERED')
+            sheet.update(values=new_rows, range_name=f'A{start_row}:CJ{end_row}', value_input_option='USER_ENTERED')
             added_count = len(new_rows)
             logger.info(f"新規商品の追加完了: {added_count}件")
 
