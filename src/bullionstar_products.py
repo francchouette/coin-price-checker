@@ -799,22 +799,22 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     # === 価格情報（Q-AG列: 17列）===
                     str(product.price) if product.price else "",    # Q: 仕入れ先価格（現地通貨）
                     "",                                             # R: 前回仕入れ価格
-                    "",                                             # S: 価格変動率
+                    "",                                             # S: 価格変動率（計算式）
                     product.currency,                               # T: 取引通貨
                     product.exchange_type,                          # U: 為替種類
                     # V列: 為替レート - JPYなら1、それ以外は取得した為替レート
                     "1" if product.currency == "JPY" else (str(product.exchange_rate) if product.exchange_rate else ""),
                     str(int(product.price_jpy)) if product.price_jpy else "",  # W: 仕入れ額(日本円)
-                    "",                                             # X: 枚数
-                    "",                                             # Y: 仕入れ合計
-                    "",                                             # Z: 設定マージン率
-                    "",                                             # AA: 設定マージン額
-                    "",                                             # AB: 送料
-                    "",                                             # AC: 諸経費
-                    "",                                             # AD: 合計原価
-                    "",                                             # AE: 適正価格
-                    "",                                             # AF: 粗利額
-                    "",                                             # AG: 粗利率
+                    "1",                                            # X: 枚数（デフォルト1）
+                    "",                                             # Y: 仕入れ合計（計算式）
+                    "1.1",                                          # Z: 設定マージン率（デフォルト1.1）
+                    "",                                             # AA: 設定マージン額（手入力）
+                    "",                                             # AB: 送料（手入力）
+                    "",                                             # AC: 諸経費（手入力）
+                    "",                                             # AD: 合計原価（計算式）
+                    "",                                             # AE: 適正価格（計算式）
+                    "",                                             # AF: 粗利額（計算式）
+                    "",                                             # AG: 粗利率（計算式）
 
                     # === カラーミー価格情報（AH-AM列: 6列）===
                     "",                                             # AH: 販売価格
@@ -836,19 +836,19 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     model_number,                                   # AT: 型番（AI生成、失敗時は仕入れ先商品ID）
 
                     # === 在庫管理（AU-BA列: 7列）===
-                    "",                                             # AU: 在庫数
-                    "",                                             # AV: 在庫管理
-                    "",                                             # AW: 残りわずか数
-                    "",                                             # AX: 売切れ表示
-                    "",                                             # AY: 最小購入数
-                    "",                                             # AZ: 最大購入数
-                    "",                                             # BA: 単位
+                    "10",                                           # AU: 在庫数（デフォルト10）
+                    "する",                                         # AV: 在庫管理（デフォルト「する」）
+                    "3",                                            # AW: 残りわずか数（デフォルト3）
+                    "表示",                                         # AX: 売切れ表示（デフォルト「表示」）
+                    "1",                                            # AY: 最小購入数（デフォルト1）
+                    "0",                                            # AZ: 最大購入数（デフォルト0=無制限）
+                    "",                                             # BA: 単位（手入力、空欄可）
 
                     # === 送料・配送（BB-BE列: 4列）===
-                    "",                                             # BB: 個別送料
-                    "",                                             # BC: クール便料金
-                    "",                                             # BD: 重量(g)
-                    "",                                             # BE: 配送不要
+                    "0",                                            # BB: 個別送料（デフォルト0）
+                    "",                                             # BC: クール便料金（手入力）
+                    "",                                             # BD: 重量(g)（手入力）
+                    "",                                             # BE: 配送不要（手入力）
 
                     # === 商品説明（BF-BI列: 4列）===
                     cm_description,                                 # BF: 商品説明（自動生成）
@@ -874,11 +874,11 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     meta_keywords,                                  # BV: メタキーワード（自動生成）
 
                     # === フラグ・設定（BW-CA列: 5列）===
-                    "",                                             # BW: 軽減税率対象
-                    "",                                             # BX: デジタルコンテンツ
-                    "",                                             # BY: 定期購入
-                    "",                                             # BZ: 表示順
-                    "",                                             # CA: 利用不可決済
+                    "対象外",                                       # BW: 軽減税率対象（デフォルト「対象外」）
+                    "対象外",                                       # BX: デジタルコンテンツ（デフォルト「対象外」）
+                    "対象外",                                       # BY: 定期購入（デフォルト「対象外」）
+                    "0",                                            # BZ: 表示順（デフォルト0）
+                    "",                                             # CA: 利用不可決済（手入力）
 
                     # === 掲載期間（CB-CC列: 2列）===
                     "",                                             # CB: 掲載開始日時
