@@ -21,11 +21,6 @@ on:
           - Supplies
           - Bullion Savings Program
           - Auctions
-      dry_run:
-        description: 'ドライラン（スプレッドシートに保存しない）'
-        required: false
-        default: false
-        type: boolean
       fetch_prices:
         description: '価格・在庫もスクレイピングで取得（時間がかかります）'
         required: false
@@ -36,14 +31,6 @@ on:
         required: false
         default: ''
         type: string
-      exchange_type:
-        description: '為替種類（日本円換算に使用）'
-        required: false
-        default: 'クレカ'
-        type: choice
-        options:
-          - 'クレカ'
-          - 'Wise'
       register_adopted:
         description: '採用商品をカラーミーに登録（A列=採用の商品）'
         required: false
@@ -109,9 +96,6 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           ARGS="-v"
-          if [ "${{ inputs.dry_run }}" == "true" ]; then
-            ARGS="$ARGS --dry-run"
-          fi
           if [ -n "${{ inputs.category }}" ]; then
             ARGS="$ARGS --category \"${{ inputs.category }}\""
           fi
@@ -120,9 +104,6 @@ jobs:
           fi
           if [ -n "${{ inputs.limit }}" ]; then
             ARGS="$ARGS --limit ${{ inputs.limit }}"
-          fi
-          if [ -n "${{ inputs.exchange_type }}" ]; then
-            ARGS="$ARGS --exchange-type ${{ inputs.exchange_type }}"
           fi
           python -m src.bullionstar_products $ARGS
 
