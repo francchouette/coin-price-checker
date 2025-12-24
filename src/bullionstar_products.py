@@ -608,28 +608,47 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 existing_model_number = existing_row[45] if len(existing_row) > 45 else ""
 
                 # カテゴリー・グループ自動判定（AN-AS列: 6列）
-                if category_detector and (not existing_cat_big or not existing_cat_small):
+                # IDまたは名称が空の場合に更新を試みる
+                needs_category_update = (
+                    not existing_cat_big or not existing_cat_big_name or
+                    not existing_group_ids or not existing_group_names
+                )
+                if category_detector and needs_category_update:
                     try:
                         cat_big, cat_small, group_ids = category_detector.detect(product.name, product.url)
-                        if cat_big and not existing_cat_big:
-                            update_cells.append((row_idx, 40, str(cat_big)))  # AN列: 大カテゴリーID
-                            # AO列: 大カテゴリー名称を取得（単一IDでルックアップ）
+                        # 大カテゴリーID/名称の更新
+                        if cat_big:
+                            if not existing_cat_big:
+                                update_cells.append((row_idx, 40, str(cat_big)))  # AN列: 大カテゴリーID
+                            # AO列: 大カテゴリー名称を取得（IDがあれば名称も設定）
                             if not existing_cat_big_name:
-                                cat_big_name = category_name_map.get(cat_big, "")
+                                # 既存のカテゴリーIDまたは新規判定のIDを使用
+                                lookup_id = int(existing_cat_big) if existing_cat_big else cat_big
+                                cat_big_name = category_name_map.get(lookup_id, "")
                                 if cat_big_name:
                                     update_cells.append((row_idx, 41, cat_big_name))  # AO列
-                        if cat_small and not existing_cat_small:
-                            update_cells.append((row_idx, 42, str(cat_small)))  # AP列: 小カテゴリーID
-                            # AQ列: 小カテゴリー名称を取得（単一IDでルックアップ）
+                        # 小カテゴリーID/名称の更新
+                        if cat_small:
+                            if not existing_cat_small:
+                                update_cells.append((row_idx, 42, str(cat_small)))  # AP列: 小カテゴリーID
+                            # AQ列: 小カテゴリー名称を取得
                             if not existing_cat_small_name:
-                                cat_small_name = category_name_map.get(cat_small, "")
+                                lookup_id = int(existing_cat_small) if existing_cat_small else cat_small
+                                cat_small_name = category_name_map.get(lookup_id, "")
                                 if cat_small_name:
                                     update_cells.append((row_idx, 43, cat_small_name))  # AQ列
-                        if group_ids and not existing_group_ids:
-                            update_cells.append((row_idx, 44, ",".join(str(g) for g in group_ids)))  # AR列: グループID
-                            # AS列: グループ名称を取得
+                        # グループID/名称の更新
+                        if group_ids:
+                            if not existing_group_ids:
+                                update_cells.append((row_idx, 44, ",".join(str(g) for g in group_ids)))  # AR列: グループID
+                            # AS列: グループ名称を取得（IDがあれば名称も設定）
                             if not existing_group_names:
-                                group_names = [group_name_map.get(g, "") for g in group_ids]
+                                # 既存のグループIDまたは新規判定のIDを使用
+                                if existing_group_ids:
+                                    lookup_ids = [int(g.strip()) for g in existing_group_ids.split(",") if g.strip()]
+                                else:
+                                    lookup_ids = group_ids
+                                group_names = [group_name_map.get(g, "") for g in lookup_ids]
                                 group_names = [n for n in group_names if n]  # 空文字を除外
                                 if group_names:
                                     update_cells.append((row_idx, 45, ",".join(group_names)))  # AS列
