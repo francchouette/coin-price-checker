@@ -699,6 +699,14 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     update_cells.append((row_idx, 33, f'=IF(AE{row_idx}=0,"",AF{row_idx}/AE{row_idx}*100)'))
                 if not existing_ah:
                     update_cells.append((row_idx, 34, f'=AE{row_idx}'))
+                # AI列(35): 定価 = AE
+                existing_ai = existing_row[34] if len(existing_row) > 34 else ""
+                if not existing_ai:
+                    update_cells.append((row_idx, 35, f'=AE{row_idx}'))
+                # AJ列(36): 会員価格 = AE
+                existing_aj = existing_row[35] if len(existing_row) > 35 else ""
+                if not existing_aj:
+                    update_cells.append((row_idx, 36, f'=AE{row_idx}'))
                 if not existing_ak:
                     update_cells.append((row_idx, 37, f'=AD{row_idx}'))
                 if not existing_al:
@@ -947,6 +955,10 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 row[32] = f'=IF(AE{row_num}=0,"",AF{row_num}/AE{row_num}*100)'
                 # AH列(index 33): 販売価格 = AE
                 row[33] = f'=AE{row_num}'
+                # AI列(index 34): 定価 = AE
+                row[34] = f'=AE{row_num}'
+                # AJ列(index 35): 会員価格 = AE
+                row[35] = f'=AE{row_num}'
                 # AK列(index 36): 原価 = AD
                 row[36] = f'=AD{row_num}'
                 # AL列(index 37): 消費税込販売価格 = AH*1.1
