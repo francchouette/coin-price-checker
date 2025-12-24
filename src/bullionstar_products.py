@@ -692,7 +692,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 if not existing_ad:
                     update_cells.append((row_idx, 30, f'=Y{row_idx}+AB{row_idx}+AC{row_idx}'))
                 if not existing_ae:
-                    update_cells.append((row_idx, 31, f'=ROUNDUP(AD{row_idx}*Z{row_idx}+AA{row_idx},-2)'))
+                    update_cells.append((row_idx, 31, f'=ROUNDUP(AD{row_idx}/(2-Z{row_idx})+AB{row_idx}+AC{row_idx},-2)'))
                 if not existing_af:
                     update_cells.append((row_idx, 32, f'=AE{row_idx}-AD{row_idx}'))
                 if not existing_ag:
@@ -947,8 +947,8 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 row[24] = f'=W{row_num}*X{row_num}'
                 # AD列(index 29): 合計原価 = Y+AB+AC
                 row[29] = f'=Y{row_num}+AB{row_num}+AC{row_num}'
-                # AE列(index 30): 適正価格 = ROUNDUP(AD*Z+AA, -2) ※100円単位切り上げ
-                row[30] = f'=ROUNDUP(AD{row_num}*Z{row_num}+AA{row_num},-2)'
+                # AE列(index 30): 適正価格 = ROUNDUP(AD/(2-Z)+AB+AC, -2) ※100円単位切り上げ
+                row[30] = f'=ROUNDUP(AD{row_num}/(2-Z{row_num})+AB{row_num}+AC{row_num},-2)'
                 # AF列(index 31): 粗利額 = AE-AD
                 row[31] = f'=AE{row_num}-AD{row_num}'
                 # AG列(index 32): 粗利率 = AF/AE*100
