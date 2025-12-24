@@ -388,13 +388,15 @@ def main():
         logger.info("更新・削除対象の商品がありません")
         return
 
-    # 削除実行（行番号が大きい順に処理して、行削除時のずれを防ぐ）
+    # 削除処理（カラーミーAPIは商品削除をサポートしていないため、非表示+在庫0に設定）
+    # ※商品の完全削除は管理画面から手動で行う必要があります
     delete_success_count = 0
     delete_fail_count = 0
-    deleted_rows = []  # 削除成功した行番号を記録
+    deleted_rows = []  # 処理成功した行番号を記録
 
     if delete_targets:
-        logger.info("=== 削除処理開始 ===")
+        logger.info("=== 削除処理開始（非表示+在庫0に設定）===")
+        logger.info("  ※カラーミーAPIは商品削除をサポートしていないため、非表示にします")
         # 行番号が大きい順にソート（後ろから削除することで行番号のずれを防ぐ）
         delete_targets_sorted = sorted(delete_targets, key=lambda x: x["row_num"], reverse=True)
 
@@ -403,17 +405,22 @@ def main():
             product_name = target.get("name", "不明")[:30]
             row_num = target["row_num"]
 
-            logger.info(f"削除中: {product_name} (ID: {product_id}, 行: {row_num})")
+            logger.info(f"非表示化中: {product_name} (ID: {product_id}, 行: {row_num})")
 
-            if colorme.delete_product(product_id):
+            # 非表示 + 在庫0 に設定
+            updates = {
+                "display_state": "hidden",
+                "stocks": 0
+            }
+            if colorme.update_product(product_id, updates):
                 delete_success_count += 1
                 deleted_rows.append(row_num)
-                logger.info(f"  → 削除成功")
+                logger.info(f"  → 非表示化成功")
             else:
                 delete_fail_count += 1
-                logger.error(f"  → 削除失敗")
+                logger.error(f"  → 非表示化失敗")
 
-        # 削除成功した行をシートから削除（行番号が大きい順に削除済み）
+        # 処理成功した行をシートから削除（行番号が大きい順に削除済み）
         if deleted_rows:
             logger.info(f"シートから{len(deleted_rows)}行を削除中...")
             for row_num in deleted_rows:
