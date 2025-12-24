@@ -472,7 +472,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
     categories = []
     groups = []
     # カテゴリー・グループ名称引き用辞書
-    category_name_map = {}  # {(id_big, id_small): (name_big, name_small)}
+    category_name_map = {}  # {category_id: category_name}
     group_name_map = {}     # {group_id: group_name}
     try:
         colorme_client = ColorMeClient()
@@ -480,21 +480,29 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
         groups = colorme_client.get_groups()
         category_detector = CategoryDetector(categories, groups, colorme_client)
 
-        # カテゴリー名称マップを構築
-        for cat in categories:
-            id_big = cat.get("id_big", 0)
-            id_small = cat.get("id_small", 0)
-            name_big = cat.get("name_big", "")
-            name_small = cat.get("name_small", "")
-            category_name_map[(id_big, id_small)] = (name_big, name_small)
+        # CategoryDetectorの固定カテゴリーID → 名称マップを構築
+        # （カラーミーAPIから取得したカテゴリーとは別に管理）
+        category_name_map = {
+            2961572: "金貨・金地金",      # gold
+            2961573: "銀貨・銀地金",      # silver
+        }
 
-        # グループ名称マップを構築
+        # グループ名称マップを構築（CategoryDetector.GROUP_MASTERから）
+        for _, info in CategoryDetector.GROUP_MASTER.items():
+            grp_id = info.get("id", 0)
+            grp_name = info.get("name", "")
+            if grp_id and grp_name:
+                group_name_map[grp_id] = grp_name
+
+        # カラーミーAPIから取得したグループ名称も追加（上書きしない）
         for grp in groups:
             grp_id = grp.get("id", 0)
             grp_name = grp.get("name", "")
-            group_name_map[grp_id] = grp_name
+            if grp_id and grp_name and grp_id not in group_name_map:
+                group_name_map[grp_id] = grp_name
 
         logger.info(f"カテゴリー判定器: {len(categories)}カテゴリー, {len(groups)}グループ")
+        logger.info(f"カテゴリー名称マップ: {len(category_name_map)}件, グループ名称マップ: {len(group_name_map)}件")
     except Exception as e:
         logger.warning(f"カテゴリー判定器の初期化に失敗: {e}")
         logger.warning("カテゴリー・グループ自動判定は無効化されます")
@@ -605,20 +613,16 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                         cat_big, cat_small, group_ids = category_detector.detect(product.name, product.url)
                         if cat_big and not existing_cat_big:
                             update_cells.append((row_idx, 40, str(cat_big)))  # AN列: 大カテゴリーID
-                            # AO列: 大カテゴリー名称を取得
+                            # AO列: 大カテゴリー名称を取得（単一IDでルックアップ）
                             if not existing_cat_big_name:
-                                cat_big_name = ""
-                                for (id_big, id_small), (name_big, name_small) in category_name_map.items():
-                                    if id_big == cat_big:
-                                        cat_big_name = name_big
-                                        break
+                                cat_big_name = category_name_map.get(cat_big, "")
                                 if cat_big_name:
                                     update_cells.append((row_idx, 41, cat_big_name))  # AO列
                         if cat_small and not existing_cat_small:
                             update_cells.append((row_idx, 42, str(cat_small)))  # AP列: 小カテゴリーID
-                            # AQ列: 小カテゴリー名称を取得
-                            if not existing_cat_small_name and cat_big:
-                                cat_small_name = category_name_map.get((cat_big, cat_small), ("", ""))[1]
+                            # AQ列: 小カテゴリー名称を取得（単一IDでルックアップ）
+                            if not existing_cat_small_name:
+                                cat_small_name = category_name_map.get(cat_small, "")
                                 if cat_small_name:
                                     update_cells.append((row_idx, 43, cat_small_name))  # AQ列
                         if group_ids and not existing_group_ids:
@@ -668,6 +672,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     cm_product_name = ""  # 生成失敗時は空欄
 
                 # カテゴリー・グループ自動判定（AN-AS列: 6列）
+                # 注: CategoryDetectorは大カテゴリーIDのみを返す（小カテゴリーは常に0）
                 category_big = ""
                 category_big_name = ""
                 category_small = ""
@@ -679,18 +684,11 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                         cat_big, cat_small, group_ids = category_detector.detect(product.name, product.url)
                         if cat_big:
                             category_big = str(cat_big)
-                            # カテゴリー名称を取得
+                            # カテゴリー名称を取得（単一IDでルックアップ）
+                            category_big_name = category_name_map.get(cat_big, "")
                             if cat_small:
-                                names = category_name_map.get((cat_big, cat_small), ("", ""))
-                                category_big_name = names[0]
-                                category_small_name = names[1]
                                 category_small = str(cat_small)
-                            else:
-                                # 小カテゴリーがない場合、大カテゴリーのみの名称を検索
-                                for (id_big, id_small), (name_big, name_small) in category_name_map.items():
-                                    if id_big == cat_big:
-                                        category_big_name = name_big
-                                        break
+                                category_small_name = category_name_map.get(cat_small, "")
                         if group_ids:
                             group_ids_str = ",".join(str(g) for g in group_ids)
                             # グループ名称を取得
