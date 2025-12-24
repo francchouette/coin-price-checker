@@ -82,7 +82,7 @@ class BullionstarProduct:
 
     # 管理列（A-C列）
     adopted_flag: str = "検討中"        # A列: 採用フラグ（デフォルト「検討中」）
-    colorme_registration: str = ""     # B列: カラーミー登録状況
+    colorme_registration: str = "未登録"  # B列: カラーミー登録状況（デフォルト「未登録」）
     supplier_id: str = ""              # C列: 仕入れ先商品ID (BS-XXXXXX)
 
     # 仕入れ先商品情報（D-P列）
