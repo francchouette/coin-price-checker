@@ -54,6 +54,16 @@ on:
         required: false
         default: ''
         type: string
+      upload_images:
+        description: '登録した商品の画像をアップロード'
+        required: false
+        default: false
+        type: boolean
+      upload_limit:
+        description: '画像アップロード件数制限（空欄で全件）'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   fetch-products:
@@ -87,9 +97,10 @@ jobs:
           pip install -r requirements.txt
 
       - name: Install Playwright browsers
-        if: ${{ inputs.fetch_prices == true }}
+        if: ${{ inputs.fetch_prices == true || inputs.upload_images == true }}
         run: |
           playwright install chromium
+          playwright install-deps chromium
 
       - name: Fetch Bullionstar products
         env:
@@ -120,9 +131,24 @@ jobs:
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           ARGS=""
           if [ -n "${{ inputs.register_limit }}" ]; then
             ARGS="$ARGS --limit ${{ inputs.register_limit }}"
           fi
           python -m src.register_adopted_products $ARGS
+
+      - name: Upload images for registered products
+        if: ${{ inputs.upload_images == true }}
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
+          COLORME_LOGIN_ID: ${{ secrets.COLORME_LOGIN_ID }}
+          COLORME_PASSWORD: ${{ secrets.COLORME_PASSWORD }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.upload_limit }}" ]; then
+            ARGS="$ARGS --max-per-run ${{ inputs.upload_limit }}"
+          fi
+          python -m src.upload_bullionstar_images $ARGS
