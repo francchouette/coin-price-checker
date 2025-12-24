@@ -44,6 +44,16 @@ on:
         options:
           - 'クレカ'
           - 'Wise'
+      register_adopted:
+        description: '採用商品をカラーミーに登録（A列=採用の商品）'
+        required: false
+        default: false
+        type: boolean
+      register_limit:
+        description: '登録件数制限（空欄で全件）'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   fetch-products:
@@ -104,3 +114,15 @@ jobs:
             ARGS="$ARGS --exchange-type ${{ inputs.exchange_type }}"
           fi
           python -m src.bullionstar_products $ARGS
+
+      - name: Register adopted products to ColorMe
+        if: ${{ inputs.register_adopted == true }}
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.register_limit }}" ]; then
+            ARGS="$ARGS --limit ${{ inputs.register_limit }}"
+          fi
+          python -m src.register_adopted_products $ARGS
