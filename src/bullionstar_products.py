@@ -684,9 +684,15 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 existing_al = existing_row[37] if len(existing_row) > 37 else ""
                 existing_am = existing_row[38] if len(existing_row) > 38 else ""
 
-                # デフォルト値を追加（空の列のみ）- AB列、AC列
+                # デフォルト値を追加（空の列のみ）- A列、B列、AB列、AC列
+                existing_a = existing_row[0] if len(existing_row) > 0 else ""
+                existing_b = existing_row[1] if len(existing_row) > 1 else ""
                 existing_ab = existing_row[27] if len(existing_row) > 27 else ""
                 existing_ac = existing_row[28] if len(existing_row) > 28 else ""
+                if not existing_a:
+                    update_cells.append((row_idx, 1, "検討中"))  # A列: 採用フラグ
+                if not existing_b:
+                    update_cells.append((row_idx, 2, "未登録"))  # B列: カラーミー登録状況
                 if not existing_ab:
                     update_cells.append((row_idx, 28, "100"))  # AB列: 送料
                 if not existing_ac:
