@@ -547,6 +547,55 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
         update_cells = []  # (row, col, value) のリスト
         skipped_count = 0
         updated_count = 0
+        processed_count = 0
+        BATCH_SAVE_INTERVAL = 50  # 50件ごとに中間保存
+
+        def save_batch(sheet, new_rows_batch, update_cells_batch, existing_data_len, start_row_offset):
+            """バッチ保存を実行"""
+            saved_new = 0
+            saved_update = 0
+
+            # 新規行を追加
+            if new_rows_batch:
+                start_row = existing_data_len + start_row_offset + 1
+                for i, row in enumerate(new_rows_batch):
+                    row_num = start_row + i
+                    row[18] = f'=IF(R{row_num}="","",IF(R{row_num}=0,"",(Q{row_num}-R{row_num})/R{row_num}*100))'
+                    row[24] = f'=W{row_num}*X{row_num}'
+                    row[29] = f'=Y{row_num}+AB{row_num}+AC{row_num}'
+                    row[30] = f'=ROUNDUP(AD{row_num}/(2-Z{row_num})+AB{row_num}+AC{row_num},-2)'
+                    row[31] = f'=AE{row_num}-AD{row_num}'
+                    row[32] = f'=IF(AE{row_num}=0,"",AF{row_num}/AE{row_num}*100)'
+                    row[33] = f'=AE{row_num}'
+                    row[34] = f'=AE{row_num}'
+                    row[35] = f'=AE{row_num}'
+                    row[36] = f'=AD{row_num}'
+                    row[37] = f'=AH{row_num}*1.1'
+                    row[38] = f'=AH{row_num}*0.1'
+                sheet.append_rows(new_rows_batch, value_input_option='USER_ENTERED')
+                saved_new = len(new_rows_batch)
+
+            # 既存行を更新
+            if update_cells_batch:
+                batch_data = []
+                for row_idx, col_idx, value in update_cells_batch:
+                    col_letter = chr(ord('A') + col_idx - 1) if col_idx <= 26 else \
+                                chr(ord('A') + (col_idx - 1) // 26 - 1) + chr(ord('A') + (col_idx - 1) % 26)
+                    cell_ref = f"{col_letter}{row_idx}"
+                    batch_data.append({'range': cell_ref, 'values': [[value]]})
+
+                batch_size = 100
+                for i in range(0, len(batch_data), batch_size):
+                    batch_chunk = batch_data[i:i + batch_size]
+                    sheet.batch_update(batch_chunk, value_input_option='USER_ENTERED')
+                    if i + batch_size < len(batch_data):
+                        time.sleep(1)
+                saved_update = len(update_cells_batch)
+
+            return saved_new, saved_update
+
+        total_new_saved = 0
+        total_update_saved = 0
 
         for product in products:
             if product.url in existing_by_url:
@@ -947,71 +996,41 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 ]
                 new_rows.append(new_row)
 
-        # 新規行を追加（計算式を含むためUSER_ENTEREDを使用）
-        if new_rows:
-            # 追加開始行を計算（ヘッダー行 + 既存データ行数 + 1）
-            start_row = len(existing_data) + 1
+            # 50件ごとに中間保存
+            processed_count += 1
+            if processed_count % BATCH_SAVE_INTERVAL == 0:
+                logger.info(f"中間保存中... ({processed_count}/{len(products)}件処理済み)")
+                saved_new, saved_update = save_batch(
+                    sheet, new_rows, update_cells,
+                    len(existing_data), total_new_saved
+                )
+                total_new_saved += saved_new
+                total_update_saved += saved_update
+                # リストをクリアして次のバッチへ
+                new_rows = []
+                update_cells = []
+                logger.info(f"  中間保存完了: 新規{saved_new}件, 更新{saved_update}件")
 
-            # 各行に計算式を埋め込む
-            for i, row in enumerate(new_rows):
-                row_num = start_row + i
-                # S列(index 18): 価格変動率 = (Q-R)/R*100（前回価格がある場合）
-                row[18] = f'=IF(R{row_num}="","",IF(R{row_num}=0,"",(Q{row_num}-R{row_num})/R{row_num}*100))'
-                # Y列(index 24): 仕入れ合計 = W*X
-                row[24] = f'=W{row_num}*X{row_num}'
-                # AD列(index 29): 合計原価 = Y+AB+AC
-                row[29] = f'=Y{row_num}+AB{row_num}+AC{row_num}'
-                # AE列(index 30): 適正価格 = ROUNDUP(AD/(2-Z)+AB+AC, -2) ※100円単位切り上げ
-                row[30] = f'=ROUNDUP(AD{row_num}/(2-Z{row_num})+AB{row_num}+AC{row_num},-2)'
-                # AF列(index 31): 粗利額 = AE-AD
-                row[31] = f'=AE{row_num}-AD{row_num}'
-                # AG列(index 32): 粗利率 = AF/AE*100
-                row[32] = f'=IF(AE{row_num}=0,"",AF{row_num}/AE{row_num}*100)'
-                # AH列(index 33): 販売価格 = AE
-                row[33] = f'=AE{row_num}'
-                # AI列(index 34): 定価 = AE
-                row[34] = f'=AE{row_num}'
-                # AJ列(index 35): 会員価格 = AE
-                row[35] = f'=AE{row_num}'
-                # AK列(index 36): 原価 = AD
-                row[36] = f'=AD{row_num}'
-                # AL列(index 37): 消費税込販売価格 = AH*1.1
-                row[37] = f'=AH{row_num}*1.1'
-                # AM列(index 38): 消費税額 = AH*0.1
-                row[38] = f'=AH{row_num}*0.1'
+        # 残りを保存
+        if new_rows or update_cells:
+            logger.info(f"最終保存中... (残り{len(new_rows)}新規, {len(update_cells)}更新)")
+            saved_new, saved_update = save_batch(
+                sheet, new_rows, update_cells,
+                len(existing_data), total_new_saved
+            )
+            total_new_saved += saved_new
+            total_update_saved += saved_update
 
-            sheet.append_rows(new_rows, value_input_option='USER_ENTERED')
-            logger.info(f"新規追加: {len(new_rows)}件（計算式含む）")
-
-        # 既存行を更新（バッチ更新でAPI制限を回避）
-        if update_cells:
-            # gspreadのbatch_update形式に変換
-            batch_data = []
-            for row_idx, col_idx, value in update_cells:
-                # 列番号をA1形式に変換（1=A, 2=B, ...）
-                col_letter = chr(ord('A') + col_idx - 1) if col_idx <= 26 else \
-                            chr(ord('A') + (col_idx - 1) // 26 - 1) + chr(ord('A') + (col_idx - 1) % 26)
-                cell_ref = f"{col_letter}{row_idx}"
-                batch_data.append({
-                    'range': cell_ref,
-                    'values': [[value]]
-                })
-
-            # バッチ更新を実行（100件ずつ分割してAPI制限を回避）
-            # USER_ENTEREDを使用して数式も正しく処理
-            batch_size = 100
-            for i in range(0, len(batch_data), batch_size):
-                batch_chunk = batch_data[i:i + batch_size]
-                sheet.batch_update(batch_chunk, value_input_option='USER_ENTERED')
-                if i + batch_size < len(batch_data):
-                    time.sleep(1)  # API制限対策で1秒待機
-
+        # 結果サマリー
+        if total_new_saved > 0:
+            logger.info(f"新規追加: {total_new_saved}件（計算式含む）")
+        if total_update_saved > 0:
             logger.info(f"価格更新: {updated_count}件（計算式含む）")
 
         if skipped_count > 0:
             logger.info(f"スキップ（価格情報なし）: {skipped_count}件")
 
-        if not new_rows and not update_cells:
+        if total_new_saved == 0 and total_update_saved == 0:
             logger.info("追加・更新する商品はありませんでした")
 
         # 注: 商品仕入れ先一覧への同期は初期登録時に行う
