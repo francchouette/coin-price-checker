@@ -670,6 +670,41 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                             logger.debug(f"  既存商品型番更新: {model_number}")
                     except Exception as e:
                         logger.debug(f"  既存商品型番生成エラー: {e}")
+
+                # 計算式列が空の場合に数式を追加（S, Y, AD-AM列）
+                # 既存の値をチェック（数式か値かに関わらず、空の場合のみ設定）
+                existing_s = existing_row[18] if len(existing_row) > 18 else ""
+                existing_y = existing_row[24] if len(existing_row) > 24 else ""
+                existing_ad = existing_row[29] if len(existing_row) > 29 else ""
+                existing_ae = existing_row[30] if len(existing_row) > 30 else ""
+                existing_af = existing_row[31] if len(existing_row) > 31 else ""
+                existing_ag = existing_row[32] if len(existing_row) > 32 else ""
+                existing_ah = existing_row[33] if len(existing_row) > 33 else ""
+                existing_ak = existing_row[36] if len(existing_row) > 36 else ""
+                existing_al = existing_row[37] if len(existing_row) > 37 else ""
+                existing_am = existing_row[38] if len(existing_row) > 38 else ""
+
+                # 計算式を追加（空の列のみ）- update_cellsに追加（後でbatch_updateで処理）
+                if not existing_s:
+                    update_cells.append((row_idx, 19, f'=IF(R{row_idx}="","",IF(R{row_idx}=0,"",(Q{row_idx}-R{row_idx})/R{row_idx}*100))'))
+                if not existing_y:
+                    update_cells.append((row_idx, 25, f'=W{row_idx}*X{row_idx}'))
+                if not existing_ad:
+                    update_cells.append((row_idx, 30, f'=Y{row_idx}+AB{row_idx}+AC{row_idx}'))
+                if not existing_ae:
+                    update_cells.append((row_idx, 31, f'=AD{row_idx}*Z{row_idx}+AA{row_idx}'))
+                if not existing_af:
+                    update_cells.append((row_idx, 32, f'=AE{row_idx}-AD{row_idx}'))
+                if not existing_ag:
+                    update_cells.append((row_idx, 33, f'=IF(AE{row_idx}=0,"",AF{row_idx}/AE{row_idx}*100)'))
+                if not existing_ah:
+                    update_cells.append((row_idx, 34, f'=AE{row_idx}'))
+                if not existing_ak:
+                    update_cells.append((row_idx, 37, f'=AD{row_idx}'))
+                if not existing_al:
+                    update_cells.append((row_idx, 38, f'=AH{row_idx}*1.1'))
+                if not existing_am:
+                    update_cells.append((row_idx, 39, f'=AH{row_idx}*0.1'))
             else:
                 # 新規商品: 83列のデータを作成
                 supplier_id = generate_supplier_id(existing_ids)
@@ -890,10 +925,37 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 ]
                 new_rows.append(new_row)
 
-        # 新規行を追加
+        # 新規行を追加（計算式を含むためUSER_ENTEREDを使用）
         if new_rows:
-            sheet.append_rows(new_rows, value_input_option='RAW')
-            logger.info(f"新規追加: {len(new_rows)}件")
+            # 追加開始行を計算（ヘッダー行 + 既存データ行数 + 1）
+            start_row = len(existing_data) + 1
+
+            # 各行に計算式を埋め込む
+            for i, row in enumerate(new_rows):
+                row_num = start_row + i
+                # S列(index 18): 価格変動率 = (Q-R)/R*100（前回価格がある場合）
+                row[18] = f'=IF(R{row_num}="","",IF(R{row_num}=0,"",(Q{row_num}-R{row_num})/R{row_num}*100))'
+                # Y列(index 24): 仕入れ合計 = W*X
+                row[24] = f'=W{row_num}*X{row_num}'
+                # AD列(index 29): 合計原価 = Y+AB+AC
+                row[29] = f'=Y{row_num}+AB{row_num}+AC{row_num}'
+                # AE列(index 30): 適正価格 = AD*Z+AA
+                row[30] = f'=AD{row_num}*Z{row_num}+AA{row_num}'
+                # AF列(index 31): 粗利額 = AE-AD
+                row[31] = f'=AE{row_num}-AD{row_num}'
+                # AG列(index 32): 粗利率 = AF/AE*100
+                row[32] = f'=IF(AE{row_num}=0,"",AF{row_num}/AE{row_num}*100)'
+                # AH列(index 33): 販売価格 = AE
+                row[33] = f'=AE{row_num}'
+                # AK列(index 36): 原価 = AD
+                row[36] = f'=AD{row_num}'
+                # AL列(index 37): 消費税込販売価格 = AH*1.1
+                row[37] = f'=AH{row_num}*1.1'
+                # AM列(index 38): 消費税額 = AH*0.1
+                row[38] = f'=AH{row_num}*0.1'
+
+            sheet.append_rows(new_rows, value_input_option='USER_ENTERED')
+            logger.info(f"新規追加: {len(new_rows)}件（計算式含む）")
 
         # 既存行を更新（バッチ更新でAPI制限を回避）
         if update_cells:
@@ -910,14 +972,15 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 })
 
             # バッチ更新を実行（100件ずつ分割してAPI制限を回避）
+            # USER_ENTEREDを使用して数式も正しく処理
             batch_size = 100
             for i in range(0, len(batch_data), batch_size):
                 batch_chunk = batch_data[i:i + batch_size]
-                sheet.batch_update(batch_chunk, value_input_option='RAW')
+                sheet.batch_update(batch_chunk, value_input_option='USER_ENTERED')
                 if i + batch_size < len(batch_data):
                     time.sleep(1)  # API制限対策で1秒待機
 
-            logger.info(f"価格更新: {updated_count}件")
+            logger.info(f"価格更新: {updated_count}件（計算式含む）")
 
         if skipped_count > 0:
             logger.info(f"スキップ（価格情報なし）: {skipped_count}件")
