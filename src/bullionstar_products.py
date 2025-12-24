@@ -50,7 +50,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.config import Config
 from src.spreadsheet import SpreadsheetClient
 from src.exchange_rate import ExchangeRateClient, WiseRateClient
-from src.add_product import JapaneseProductNameGenerator, CategoryDetector, DescriptionGenerator, SEOGenerator
+from src.add_product import JapaneseProductNameGenerator, CategoryDetector, DescriptionGenerator, SEOGenerator, ModelNumberGenerator
 from src.colorme import ColorMeClient
 
 logger = logging.getLogger(__name__)
@@ -108,6 +108,9 @@ class BullionstarProduct:
     image_url8: str = ""               # BN列: 画像URL8
     image_url9: str = ""               # BO列: 画像URL9
     image_url10: str = ""              # BP列: 画像URL10
+
+    # AQ列: 型番（AI生成）
+    model_number: str = ""             # AQ列: 型番
 
     # 内部処理用フィールド（スプレッドシートには直接保存されない）
     fetched_at: str = ""               # 取得日時（内部処理用）
@@ -454,6 +457,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
     name_generator = JapaneseProductNameGenerator()
     description_generator = DescriptionGenerator()
     seo_generator = SEOGenerator()
+    model_number_generator = ModelNumberGenerator()
 
     # カテゴリー判定器を初期化（カラーミーAPIが必要）
     category_detector = None
@@ -553,6 +557,42 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     updated_count += 1
                 else:
                     skipped_count += 1
+
+                # AN-AQ列: カテゴリー・グループ・型番が空の場合のみAI生成（価格有無に関わらず実行）
+                # AN列(40), AO列(41), AP列(42), AQ列(43) - 1-indexed
+                existing_cat_big = existing_row[39] if len(existing_row) > 39 else ""
+                existing_cat_small = existing_row[40] if len(existing_row) > 40 else ""
+                existing_group_ids = existing_row[41] if len(existing_row) > 41 else ""
+                existing_model_number = existing_row[42] if len(existing_row) > 42 else ""
+
+                # カテゴリー・グループ自動判定（AN-AP列）
+                if category_detector and (not existing_cat_big or not existing_cat_small):
+                    try:
+                        cat_big, cat_small, group_ids = category_detector.detect(product.name, product.url)
+                        if cat_big and not existing_cat_big:
+                            update_cells.append((row_idx, 40, str(cat_big)))  # AN列
+                        if cat_small and not existing_cat_small:
+                            update_cells.append((row_idx, 41, str(cat_small)))  # AO列
+                        if group_ids and not existing_group_ids:
+                            update_cells.append((row_idx, 42, ",".join(str(g) for g in group_ids)))  # AP列
+                        logger.debug(f"  既存商品カテゴリー更新: 大={cat_big}, 小={cat_small}, グループ={group_ids}")
+                    except Exception as e:
+                        logger.debug(f"  既存商品カテゴリー判定エラー: {e}")
+
+                # 型番自動生成（AQ列）
+                if model_number_generator.client and not existing_model_number:
+                    try:
+                        model_info = {
+                            "name": product.name,
+                            "specs": product.specs or "",
+                            "description": product.description_en or "",
+                        }
+                        model_number = model_number_generator.generate(model_info, quantity=1)
+                        if model_number:
+                            update_cells.append((row_idx, 43, model_number))  # AQ列
+                            logger.debug(f"  既存商品型番更新: {model_number}")
+                    except Exception as e:
+                        logger.debug(f"  既存商品型番生成エラー: {e}")
             else:
                 # 新規商品: 81列のデータを作成
                 supplier_id = generate_supplier_id(existing_ids)
@@ -573,13 +613,13 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 if not cm_product_name:
                     cm_product_name = ""  # 生成失敗時は空欄
 
-                # カテゴリー・グループ自動判定（BA-BD列）
+                # カテゴリー・グループ自動判定（AN-AP列）
                 category_big = ""
                 category_small = ""
                 group_ids_str = ""
                 if category_detector:
                     try:
-                        cat_big, cat_small, group_ids = category_detector.detect(product_info)
+                        cat_big, cat_small, group_ids = category_detector.detect(product.name, product.url)
                         if cat_big:
                             category_big = str(cat_big)
                         if cat_small:
@@ -627,6 +667,25 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                             logger.debug(f"  SEO項目: 自動生成")
                     except Exception as e:
                         logger.debug(f"  SEO生成エラー: {e}")
+
+                # 型番を自動生成（AQ列）
+                model_number = ""
+                if model_number_generator.client:
+                    try:
+                        model_info = {
+                            "name": product.name,
+                            "specs": product.specs or "",
+                            "description": product.description_en or "",
+                        }
+                        model_number = model_number_generator.generate(model_info, quantity=1)
+                        if model_number:
+                            logger.debug(f"  型番: AI生成 → {model_number}")
+                    except Exception as e:
+                        logger.debug(f"  型番生成エラー: {e}")
+
+                # フォールバック: AI生成失敗時は仕入れ先商品IDを使用
+                if not model_number:
+                    model_number = supplier_id
 
                 # 81列構造（A-CC）: 新列順
                 new_row = [
@@ -682,7 +741,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     category_big,                                   # AN: 大カテゴリーID（自動判定）
                     category_small,                                 # AO: 小カテゴリーID（自動判定）
                     group_ids_str,                                  # AP: グループID（自動判定）
-                    supplier_id,                                    # AQ: 型番（=仕入れ先商品ID）
+                    model_number,                                   # AQ: 型番（AI生成、失敗時は仕入れ先商品ID）
 
                     # === 在庫管理（AR-AX列: 7列）===
                     "",                                             # AR: 在庫数

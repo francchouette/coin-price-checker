@@ -39,7 +39,7 @@ from src.config import Config
 from src.spreadsheet import SpreadsheetClient
 from src.colorme import ColorMeClient, ColorMeProduct
 from src.sync_supplier_list import sync_registered_products_to_supplier_list
-from src.add_product import CategoryDetector, DescriptionGenerator, SEOGenerator, JapaneseProductNameGenerator
+from src.add_product import CategoryDetector, DescriptionGenerator, SEOGenerator, JapaneseProductNameGenerator, ModelNumberGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -238,10 +238,11 @@ def register_adopted_products(
         logger.warning(f"カテゴリー/グループ取得エラー: {e}")
         logger.warning("カテゴリー自動判定は無効化されます")
 
-    # AI生成器を初期化（商品説明・SEO・商品名）
+    # AI生成器を初期化（商品説明・SEO・商品名・型番）
     description_generator = DescriptionGenerator()
     seo_generator = SEOGenerator()
     name_generator = JapaneseProductNameGenerator()
+    model_number_generator = ModelNumberGenerator()
 
     try:
         # ブリオンスター商品ページ一覧シートを取得
@@ -416,6 +417,29 @@ def register_adopted_products(
                     if page_title:
                         logger.info(f"  SEO項目: AI生成成功")
 
+            # 型番生成（AQ列）- 既存値があればそれを使用、なければAI生成
+            existing_model_number = get_cell_value(row, COL_CM_MODEL_NUMBER)
+            model_number = ""
+
+            if existing_model_number:
+                model_number = existing_model_number
+                logger.info(f"  型番: 既存値を使用 → {model_number}")
+            else:
+                # ModelNumberGeneratorでAI生成
+                quantity = int(get_cell_float(row, COL_QUANTITY, 1.0)) or 1
+                product_info_for_model = {
+                    "name": product_name,
+                    "specs": specs,
+                    "description": desc_en or "",
+                }
+                model_number = model_number_generator.generate(product_info_for_model, quantity)
+                if model_number:
+                    logger.info(f"  型番: AI生成成功 → {model_number}")
+                else:
+                    # フォールバック: 仕入れ先商品IDを使用
+                    model_number = supplier_id
+                    logger.info(f"  型番: フォールバック（仕入れ先ID使用） → {model_number}")
+
             # 画像URL取得（BG-BP列: 画像URL1-10）
             image_urls = []
             # 画像URL1-10（BG-BP列）
@@ -450,7 +474,7 @@ def register_adopted_products(
                 meta_description=meta_description,  # メタディスクリプション（SEO）
                 meta_keywords=meta_keywords,  # メタキーワード（SEO）
                 image_urls=image_urls[:10],
-                model_number=supplier_id,  # 型番に仕入れ先商品IDを設定
+                model_number=model_number,  # 型番（AI生成または仕入れ先ID）
             )
 
             if dry_run:
@@ -500,6 +524,13 @@ def register_adopted_products(
                     batch_data.append({
                         'range': f"AP{row_idx}",  # AP列: グループID
                         'values': [[",".join(str(g) for g in group_ids)]]
+                    })
+
+                # 型番をスプレッドシートに保存（AQ列）- AI生成された場合のみ
+                if model_number and not existing_model_number:
+                    batch_data.append({
+                        'range': f"AQ{row_idx}",  # AQ列: 型番
+                        'values': [[model_number]]
                     })
 
                 # 商品説明をスプレッドシートに保存（BC-BD列）
