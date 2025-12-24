@@ -1235,16 +1235,21 @@ def fetch_bullionstar_products(limit: Optional[int] = None) -> list[BullionstarP
 def fetch_prices_for_products(
     products: list[BullionstarProduct],
     limit: Optional[int] = None,
-    exchange_type: str = "クレカ"
+    exchange_type: str = "クレカ",
+    save_callback=None,
+    batch_size: int = 50
 ) -> list[BullionstarProduct]:
     """
     商品リストの価格・在庫・画像・仕様情報をスクレイピングで取得し、
-    日本円換算価格も計算する
+    日本円換算価格も計算する。
+    batch_size件ごとにsave_callbackを呼び出して中間保存する。
 
     Args:
         products: 商品リスト
         limit: 取得件数制限（Noneで全件）
         exchange_type: 為替種類（"クレカ" または "Wise"）
+        save_callback: 中間保存用コールバック関数（商品リストを受け取る）
+        batch_size: 中間保存の間隔（デフォルト50件）
 
     Returns:
         価格・画像・仕様情報・日本円換算価格が付加された商品リスト
@@ -1258,6 +1263,8 @@ def fetch_prices_for_products(
 
     target_products = products[:limit] if limit else products
     logger.info(f"価格・画像取得開始: {len(target_products)}件")
+    if save_callback:
+        logger.info(f"  → {batch_size}件ごとに中間保存します")
 
     timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
     success_count = 0
@@ -1363,6 +1370,16 @@ def fetch_prices_for_products(
 
                 success_count += 1
 
+                # 中間保存（batch_size件ごと）
+                if save_callback and success_count % batch_size == 0:
+                    logger.info(f"\n{'='*40}")
+                    logger.info(f"中間保存: {success_count}/{len(target_products)}件完了")
+                    logger.info(f"{'='*40}")
+                    # ここまでに処理した商品を保存
+                    processed_products = target_products[:i+1]
+                    save_callback(processed_products)
+                    logger.info(f"中間保存完了")
+
                 # レート制限対策
                 time.sleep(random.uniform(1.0, 2.0))
 
@@ -1375,6 +1392,14 @@ def fetch_prices_for_products(
         browser.close()
 
     logger.info(f"価格・画像取得完了: 成功={success_count}件, 失敗={error_count}件")
+
+    # 最終保存（残りの商品）
+    if save_callback and success_count % batch_size != 0:
+        logger.info(f"\n{'='*40}")
+        logger.info(f"最終保存: {success_count}件完了")
+        logger.info(f"{'='*40}")
+        save_callback(target_products)
+        logger.info(f"最終保存完了")
 
     # BullionstarはJPY価格を取得するため、為替レート取得は通常不要
     # （スクレイピング時にJPY/為替レート1/日本円価格を設定済み）
@@ -1489,10 +1514,20 @@ def main():
         logger.info("\n" + "=" * 60)
         logger.info(f"価格・在庫情報を取得（為替種類: {args.exchange_type}）")
         logger.info("=" * 60)
+
+        # 中間保存用コールバック（ドライランでない場合のみ）
+        save_callback = None
+        if not args.dry_run:
+            def save_callback(processed_products):
+                """スクレイピング中間保存用コールバック"""
+                save_products_to_spreadsheet(processed_products)
+
         products = fetch_prices_for_products(
             products,
             limit=args.limit,
-            exchange_type=args.exchange_type
+            exchange_type=args.exchange_type,
+            save_callback=save_callback,
+            batch_size=50
         )
 
         # limitが指定されている場合、保存する商品もlimit件数に制限
@@ -1500,9 +1535,14 @@ def main():
             products = products[:args.limit]
             logger.info(f"保存対象を{args.limit}件に制限")
 
-    if args.dry_run:
+        # fetch_pricesモードでは中間保存で既に保存済みなので、追加の保存は不要
+        if not args.dry_run:
+            logger.info("スプレッドシートへの保存完了（中間保存済み）")
+
+    elif args.dry_run:
         logger.info("\n[ドライラン] スプレッドシートへの保存をスキップ")
     else:
+        # fetch_pricesなしの場合は従来通り最後に保存
         logger.info("\n" + "=" * 60)
         logger.info("スプレッドシートに保存")
         logger.info("=" * 60)
