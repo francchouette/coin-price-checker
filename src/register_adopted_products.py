@@ -360,9 +360,12 @@ def register_adopted_products(
                     category_big = int(existing_cat_big)
                     category_small = int(existing_cat_small) if existing_cat_small else 0
                     if existing_group_id:
-                        group_ids = [int(g.strip()) for g in existing_group_id.split(",") if g.strip()]
+                        # 先頭のシングルクォート（テキスト保存用）を除去
+                        group_id_str = existing_group_id.lstrip("'")
+                        group_ids = [int(g.strip()) for g in group_id_str.split(",") if g.strip().isdigit()]
                     logger.info(f"  カテゴリー(既存値使用): 大={category_big}, 小={category_small}, グループ={group_ids}")
-                except ValueError:
+                except ValueError as e:
+                    logger.warning(f"  カテゴリー解析エラー: {e}")
                     pass
 
             if not category_big:

@@ -748,31 +748,49 @@ class ColorMeImageUploader:
                 await self._page.goto(edit_url, wait_until="networkidle")
                 await asyncio.sleep(3)
 
+                # SEOセクションを展開（デフォルトで非表示の場合がある）
+                await self._page.evaluate("""
+                    () => {
+                        const metaTitle = document.querySelector('input[name="meta_title"]');
+                        if (!metaTitle) return;
+
+                        let parent = metaTitle.parentElement;
+                        while (parent && parent !== document.body) {
+                            const style = window.getComputedStyle(parent);
+                            if (style.display === 'none') {
+                                parent.style.display = 'block';
+                            }
+                            parent = parent.parentElement;
+                        }
+                    }
+                """)
+                await asyncio.sleep(1)
+
                 updated_fields = []
 
-                # ページタイトル（title）
+                # ページタイトル（meta_title）
                 if page_title:
-                    title_input = await self._page.query_selector('input[name="title"]')
+                    title_input = await self._page.query_selector('input[name="meta_title"]')
                     if title_input:
                         await title_input.fill(page_title)
-                        updated_fields.append("title")
-                        logger.debug(f"  title設定: {page_title[:50]}...")
+                        updated_fields.append("meta_title")
+                        logger.debug(f"  meta_title設定: {page_title[:50]}...")
 
-                # メタディスクリプション
+                # メタディスクリプション（meta_description）
                 if meta_description:
-                    desc_input = await self._page.query_selector('textarea[name="description"], input[name="description"]')
+                    desc_input = await self._page.query_selector('input[name="meta_description"]')
                     if desc_input:
                         await desc_input.fill(meta_description)
-                        updated_fields.append("description")
-                        logger.debug(f"  description設定: {meta_description[:50]}...")
+                        updated_fields.append("meta_description")
+                        logger.debug(f"  meta_description設定: {meta_description[:50]}...")
 
-                # メタキーワード
+                # メタキーワード（meta_keywords）
                 if meta_keywords:
-                    keywords_input = await self._page.query_selector('input[name="keywords"], textarea[name="keywords"]')
+                    keywords_input = await self._page.query_selector('input[name="meta_keywords"]')
                     if keywords_input:
                         await keywords_input.fill(meta_keywords)
-                        updated_fields.append("keywords")
-                        logger.debug(f"  keywords設定: {meta_keywords[:50]}...")
+                        updated_fields.append("meta_keywords")
+                        logger.debug(f"  meta_keywords設定: {meta_keywords[:50]}...")
 
                 if not updated_fields:
                     # SEOフィールドが見つからなかった場合、別のセレクタを試す
