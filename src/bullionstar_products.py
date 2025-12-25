@@ -1232,6 +1232,30 @@ def fetch_bullionstar_products(limit: Optional[int] = None) -> list[BullionstarP
     return fetcher.get_all_products(limit=limit)
 
 
+def get_existing_urls_from_spreadsheet() -> set[str]:
+    """
+    スプレッドシートから既存商品のURLを取得
+
+    Returns:
+        set[str]: 既存商品URLのセット
+    """
+    client = SpreadsheetClient()
+    if not client.connect():
+        logger.warning("スプレッドシートへの接続に失敗。既存URLチェックをスキップ")
+        return set()
+
+    try:
+        sheet = client._spreadsheet.worksheet(Config.SHEET_BULLIONSTAR_PRODUCTS)
+        # E列（URL）のみ取得（高速化のため）
+        url_column = sheet.col_values(5)  # E列 = 5
+        existing_urls = set(url_column[1:])  # ヘッダー行をスキップ
+        logger.info(f"既存商品URL: {len(existing_urls)}件")
+        return existing_urls
+    except Exception as e:
+        logger.warning(f"既存URL取得エラー: {e}")
+        return set()
+
+
 def fetch_prices_for_products(
     products: list[BullionstarProduct],
     limit: Optional[int] = None,
@@ -1514,6 +1538,16 @@ def main():
         logger.info("\n" + "=" * 60)
         logger.info(f"価格・在庫情報を取得（為替種類: {args.exchange_type}）")
         logger.info("=" * 60)
+
+        # 既存商品URLを取得してスクレイピング対象から除外
+        if not args.dry_run:
+            existing_urls = get_existing_urls_from_spreadsheet()
+            new_products = [p for p in products if p.url not in existing_urls]
+            skipped_count = len(products) - len(new_products)
+            if skipped_count > 0:
+                logger.info(f"既存商品をスキップ: {skipped_count}件")
+                logger.info(f"スクレイピング対象: {len(new_products)}件（新規のみ）")
+            products = new_products
 
         # 中間保存用コールバック（ドライランでない場合のみ）
         save_callback = None
