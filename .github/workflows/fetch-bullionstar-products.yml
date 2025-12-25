@@ -21,33 +21,8 @@ on:
           - Supplies
           - Bullion Savings Program
           - Auctions
-      fetch_prices:
-        description: '価格・在庫もスクレイピングで取得（時間がかかります）'
-        required: false
-        default: false
-        type: boolean
       limit:
-        description: '価格取得の件数制限（テスト用、空欄で全件）'
-        required: false
-        default: ''
-        type: string
-      register_adopted:
-        description: '採用商品をカラーミーに登録（A列=採用の商品）'
-        required: false
-        default: false
-        type: boolean
-      register_limit:
-        description: '登録件数制限（空欄で全件）'
-        required: false
-        default: ''
-        type: string
-      upload_images:
-        description: '登録した商品の画像をアップロード'
-        required: false
-        default: false
-        type: boolean
-      upload_limit:
-        description: '画像アップロード件数制限（空欄で全件）'
+        description: '取得件数制限（テスト用、空欄で全件）'
         required: false
         default: ''
         type: string
@@ -84,7 +59,6 @@ jobs:
           pip install -r requirements.txt
 
       - name: Install Playwright browsers
-        if: ${{ inputs.fetch_prices == true || inputs.upload_images == true }}
         run: |
           playwright install chromium
           playwright install-deps chromium
@@ -95,41 +69,11 @@ jobs:
           COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          ARGS="-v"
+          ARGS="-v --fetch-prices"
           if [ -n "${{ inputs.category }}" ]; then
             ARGS="$ARGS --category \"${{ inputs.category }}\""
-          fi
-          if [ "${{ inputs.fetch_prices }}" == "true" ]; then
-            ARGS="$ARGS --fetch-prices"
           fi
           if [ -n "${{ inputs.limit }}" ]; then
             ARGS="$ARGS --limit ${{ inputs.limit }}"
           fi
           python -m src.bullionstar_products $ARGS
-
-      - name: Register adopted products to ColorMe
-        if: ${{ inputs.register_adopted == true }}
-        env:
-          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          ARGS=""
-          if [ -n "${{ inputs.register_limit }}" ]; then
-            ARGS="$ARGS --limit ${{ inputs.register_limit }}"
-          fi
-          python -m src.register_adopted_products $ARGS
-
-      - name: Upload images for registered products
-        if: ${{ inputs.upload_images == true }}
-        env:
-          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
-          COLORME_LOGIN_ID: ${{ secrets.COLORME_LOGIN_ID }}
-          COLORME_PASSWORD: ${{ secrets.COLORME_PASSWORD }}
-        run: |
-          ARGS=""
-          if [ -n "${{ inputs.upload_limit }}" ]; then
-            ARGS="$ARGS --max-per-run ${{ inputs.upload_limit }}"
-          fi
-          python -m src.upload_bullionstar_images $ARGS
