@@ -566,7 +566,8 @@ def register_adopted_products(
                 if group_ids:
                     batch_data.append({
                         'range': f"AR{row_idx}",  # AR列: グループID
-                        'values': [[",".join(str(g) for g in group_ids)]]
+                        # 先頭にシングルクォートを付けてテキストとして保存（桁区切り防止）
+                        'values': [["'" + ",".join(str(g) for g in group_ids)]]
                     })
                     # AS列: グループ名を取得して保存
                     group_names = [group_name_map.get(g, "") for g in group_ids]

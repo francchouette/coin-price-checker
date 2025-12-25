@@ -757,7 +757,8 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                         # グループID/名称の更新
                         if group_ids:
                             if not existing_group_ids:
-                                update_cells.append((row_idx, 44, ",".join(str(g) for g in group_ids)))  # AR列: グループID
+                                # 先頭にシングルクォートを付けてテキストとして保存（桁区切り防止）
+                                update_cells.append((row_idx, 44, "'" + ",".join(str(g) for g in group_ids)))  # AR列: グループID
                             # AS列: グループ名称を取得（IDがあれば名称も設定）
                             if not existing_group_names:
                                 # 既存のグループIDまたは新規判定のIDを使用
@@ -883,7 +884,8 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                                 category_small = str(cat_small)
                                 category_small_name = category_name_map.get(cat_small, "")
                         if group_ids:
-                            group_ids_str = ",".join(str(g) for g in group_ids)
+                            # 先頭にシングルクォートを付けてテキストとして保存（桁区切り防止）
+                            group_ids_str = "'" + ",".join(str(g) for g in group_ids)
                             # グループ名称を取得
                             group_names = [group_name_map.get(g, "") for g in group_ids]
                             group_names_str = ",".join(n for n in group_names if n)
