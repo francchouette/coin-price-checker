@@ -861,10 +861,11 @@ class ColorMeClient:
             return 0, "バリデーションエラー: " + ", ".join(errors)
 
         # 登録データ作成
+        # price: 定価, sales_price: 販売価格（通常の販売価格）
         product_data = {
             "name": product.name,
-            "price": product.regular_price,
-            "sales_price": product.regular_price,
+            "price": product.regular_price,  # 定価
+            "sales_price": product.current_price if product.current_price > 0 else product.regular_price,  # 販売価格
             "category": {
                 "id_big": product.category_id_big,
                 "id_small": product.category_id_small or 0
@@ -874,17 +875,19 @@ class ColorMeClient:
             "display_state": "showing" if product.display_control in ("表示", "showing", "") else "hidden",
         }
 
-        # オプション項目
-        if product.model_number:
-            product_data["model_number"] = product.model_number
-        if product.group_ids:
-            product_data["group_ids"] = product.group_ids
+        # 価格関連オプション
         if product.members_price > 0:
             product_data["members_price"] = product.members_price
         if product.cost > 0:
             product_data["cost"] = product.cost
         if product.delivery_charge > 0:
             product_data["delivery_charge"] = product.delivery_charge
+
+        # オプション項目
+        if product.model_number:
+            product_data["model_number"] = product.model_number
+        if product.group_ids:
+            product_data["group_ids"] = product.group_ids
         if product.few_num > 0:
             product_data["few_num"] = product.few_num
         if product.min_num > 1:
@@ -928,6 +931,13 @@ class ColorMeClient:
                 update_data["stocks"] = product.stock_quantity
             if product.model_number:
                 update_data["model_number"] = product.model_number
+            # 価格関連も再設定（新規登録時に反映されない場合があるため）
+            if product.members_price > 0:
+                update_data["members_price"] = product.members_price
+            if product.cost > 0:
+                update_data["cost"] = product.cost
+            if product.delivery_charge > 0:
+                update_data["delivery_charge"] = product.delivery_charge
 
             if update_data and new_id:
                 try:
@@ -938,7 +948,7 @@ class ColorMeClient:
                         timeout=30
                     )
                     update_response.raise_for_status()
-                    logger.info(f"  追加情報を更新: expl={len(product.expl) if product.expl else 0}文字, groups={product.group_ids}, stocks={product.stock_quantity}, model={product.model_number}")
+                    logger.info(f"  追加情報を更新: groups={product.group_ids}, stocks={product.stock_quantity}, model={product.model_number}, members_price={product.members_price}, cost={product.cost}, delivery_charge={product.delivery_charge}")
                 except requests.RequestException as e:
                     logger.warning(f"  追加情報の更新に失敗: {e}")
 

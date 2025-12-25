@@ -476,19 +476,40 @@ def register_adopted_products(
                 if img_url and img_url not in image_urls:
                     image_urls.append(img_url)
 
-            # 販売価格（マージン10%を加算）
-            selling_price = int(price_jpy * 1.1)
+            # 価格関連情報を取得（スプレッドシートの値を優先）
+            # AH列: 販売価格, AI列: 定価, AJ列: 会員価格, AK列: 原価
+            sales_price = int(get_cell_float(row, COL_CM_SALES_PRICE))
+            regular_price = int(get_cell_float(row, COL_CM_REGULAR_PRICE))
+            members_price = int(get_cell_float(row, COL_CM_MEMBERS_PRICE))
+            cost = int(get_cell_float(row, COL_CM_COST))
+            delivery_charge = int(get_cell_float(row, COL_CM_DELIVERY_CHARGE))
+
+            # スプレッドシートに値がない場合はデフォルト計算
+            if sales_price <= 0:
+                # 販売価格（マージン10%を加算）
+                sales_price = int(price_jpy * 1.1)
+            if regular_price <= 0:
+                # 定価は販売価格と同じ
+                regular_price = sales_price
+            if cost <= 0:
+                # 原価は仕入れ価格
+                cost = int(price_jpy)
+
+            logger.info(f"  価格: 販売={sales_price:,}, 定価={regular_price:,}, 会員={members_price:,}, 原価={cost:,}, 個別送料={delivery_charge:,}")
 
             # ColorMeProduct作成
             colorme_product = ColorMeProduct(
                 product_id=0,  # 新規登録
                 name=cm_product_name,  # CM商品名（日本語）を使用
-                current_price=selling_price,
+                current_price=sales_price,  # 販売価格
                 colorme_url="",
                 source_url=product_url,
                 quantity=1,
                 margin_rate=1.1,
-                regular_price=selling_price,
+                regular_price=regular_price,  # 定価
+                members_price=members_price,  # 会員価格
+                cost=cost,  # 原価
+                delivery_charge=delivery_charge,  # 個別送料
                 category_id_big=category_big,
                 category_id_small=category_small,
                 group_ids=group_ids,  # グループIDを追加
@@ -506,7 +527,7 @@ def register_adopted_products(
             )
 
             if dry_run:
-                logger.info(f"  [DRY-RUN] 登録予定: {cm_product_name[:30]}... 価格: ¥{selling_price:,}")
+                logger.info(f"  [DRY-RUN] 登録予定: {cm_product_name[:30]}... 価格: ¥{sales_price:,}")
                 logger.info(f"    カテゴリー: 大={category_big}, 小={category_small}, グループ={group_ids}")
                 success_count += 1
                 continue
