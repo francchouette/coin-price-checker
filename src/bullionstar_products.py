@@ -1522,6 +1522,14 @@ def fetch_prices_for_products(
 
         logger.info(f"日本円換算完了: {jpy_calculated_count}件")
 
+        # 為替レート計算後に再保存（SGD等の通貨がある場合）
+        if save_callback and jpy_calculated_count > 0:
+            logger.info(f"\n{'='*40}")
+            logger.info(f"為替レート反映のため再保存: {len(target_products)}件")
+            logger.info(f"{'='*40}")
+            save_callback(target_products)
+            logger.info("再保存完了")
+
     return products
 
 
