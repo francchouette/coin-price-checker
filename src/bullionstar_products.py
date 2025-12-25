@@ -577,10 +577,15 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 for i, row in enumerate(new_rows_batch[:3]):
                     logger.debug(f"  行{i}: {len(row)}列, URL={row[4][:50] if len(row) > 4 else 'N/A'}...")
                 try:
-                    result = sheet.append_rows(new_rows_batch, value_input_option='USER_ENTERED')
-                    logger.info(f"  append_rows完了: {result}")
+                    # append_rowsは列位置がずれる問題があるため、明示的に範囲指定で書き込む
+                    # A列からCE列（83列）に書き込む
+                    end_row = start_row + len(new_rows_batch) - 1
+                    range_str = f"A{start_row}:CE{end_row}"
+                    logger.info(f"  update準備: 範囲={range_str}")
+                    result = sheet.update(range_str, new_rows_batch, value_input_option='USER_ENTERED')
+                    logger.info(f"  update完了: {result.get('updatedCells', 0)}セル更新")
                 except Exception as e:
-                    logger.error(f"  append_rowsエラー: {e}")
+                    logger.error(f"  updateエラー: {e}")
                     raise
                 saved_new = len(new_rows_batch)
 
