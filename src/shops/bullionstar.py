@@ -30,9 +30,9 @@ class BullionstarScraper(BaseScraper):
 
     # 画像セレクタ（Bullionstar固有の構造）
     # メイン画像: .photo セクション内の大きい画像
-    MAIN_IMAGE_SELECTOR = ".photo > img, section.photo > img, .product-image img"
-    # サムネイル: .photo ul li 内の画像
-    THUMBNAIL_SELECTOR = ".photo ul li img, .photo li img, .product-thumbnails img"
+    MAIN_IMAGE_SELECTOR = ".photo > img, section.photo > img, .product-image img, .gallery img, .product-gallery img"
+    # サムネイル: .photo ul li 内の画像（複数のセレクタパターンに対応）
+    THUMBNAIL_SELECTOR = ".photo ul li img, .photo li img, .product-thumbnails img, .gallery-thumbs img, ul.thumbs img, .thumb-list img"
 
     # 商品説明セレクタ
     DESCRIPTION_SELECTOR = ".product-description, .description, .product-info .expl"
@@ -400,7 +400,10 @@ class BullionstarScraper(BaseScraper):
     def _get_full_resolution_url(self, url: str) -> str:
         """
         サムネイルURLを最大解像度のURLに変換する
-        例: /image_thumb.jpg -> /image.jpg
+
+        Bullionstarの画像URL形式:
+        - 解像度プレフィックス: 73x73_, 300x300_, 600x600_, 1200x1200_
+        - 例: /files/.../73x73_image.webp -> /files/.../1200x1200_image.webp
         """
         if not url:
             return url
@@ -411,7 +414,12 @@ class BullionstarScraper(BaseScraper):
         elif url.startswith("/"):
             url = "https://www.bullionstar.com" + url
 
-        # サムネイルサフィックスを除去
+        # Bullionstar固有の解像度プレフィックスを最大解像度に変換
+        import re
+        # パターン: /73x73_filename.webp -> /1200x1200_filename.webp
+        url = re.sub(r'/(\d+x\d+)_', '/1200x1200_', url)
+
+        # 従来のサムネイルサフィックスも除去（念のため）
         for suffix in ["_thumb", "_small", "_medium", "_large", "-thumb", "-small"]:
             url = url.replace(suffix, "")
 
