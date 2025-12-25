@@ -582,8 +582,62 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     end_row = start_row + len(new_rows_batch) - 1
                     range_str = f"A{start_row}:CE{end_row}"
                     logger.info(f"  update準備: 範囲={range_str}")
-                    result = sheet.update(range_str, new_rows_batch, value_input_option='USER_ENTERED')
+                    result = sheet.update(values=new_rows_batch, range_name=range_str, value_input_option='USER_ENTERED')
                     logger.info(f"  update完了: {result.get('updatedCells', 0)}セル更新")
+
+                    # 新規行にA列・B列のデータ検証（ドロップダウン）を設定
+                    sheet_id = sheet.id
+                    validation_requests = [
+                        # A列: 採用フラグ
+                        {
+                            'setDataValidation': {
+                                'range': {
+                                    'sheetId': sheet_id,
+                                    'startRowIndex': start_row - 1,  # 0-indexed
+                                    'endRowIndex': end_row,
+                                    'startColumnIndex': 0,
+                                    'endColumnIndex': 1
+                                },
+                                'rule': {
+                                    'condition': {
+                                        'type': 'ONE_OF_LIST',
+                                        'values': [
+                                            {'userEnteredValue': '採用'},
+                                            {'userEnteredValue': '未採用'},
+                                            {'userEnteredValue': '検討中'}
+                                        ]
+                                    },
+                                    'showCustomUi': True,
+                                    'strict': False
+                                }
+                            }
+                        },
+                        # B列: カラーミー登録状況
+                        {
+                            'setDataValidation': {
+                                'range': {
+                                    'sheetId': sheet_id,
+                                    'startRowIndex': start_row - 1,
+                                    'endRowIndex': end_row,
+                                    'startColumnIndex': 1,
+                                    'endColumnIndex': 2
+                                },
+                                'rule': {
+                                    'condition': {
+                                        'type': 'ONE_OF_LIST',
+                                        'values': [
+                                            {'userEnteredValue': '登録済'},
+                                            {'userEnteredValue': '未登録'}
+                                        ]
+                                    },
+                                    'showCustomUi': True,
+                                    'strict': False
+                                }
+                            }
+                        }
+                    ]
+                    sheet.spreadsheet.batch_update({'requests': validation_requests})
+                    logger.info(f"  データ検証設定完了: A列・B列")
                 except Exception as e:
                     logger.error(f"  updateエラー: {e}")
                     raise
