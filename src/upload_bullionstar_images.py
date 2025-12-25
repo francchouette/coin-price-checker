@@ -37,9 +37,14 @@ COL_REGISTRATION_STATUS = 1  # B列: カラーミー登録状況
 COL_COLORME_URL = 3          # D列: カラーミー商品URL
 COL_IMAGE_1 = 61             # BJ列: 画像URL1
 COL_IMAGE_10 = 70            # BS列: 画像URL10
+COL_PAGE_TITLE = 71          # BT列: ページタイトル（SEO）
+COL_META_DESC = 72           # BU列: メタディスクリプション（SEO）
+COL_META_KEYWORDS = 73       # BV列: メタキーワード（SEO）
 
 # 商品IDと行番号のマッピングを保持
 _product_row_map: dict[int, int] = {}
+# 商品IDとSEO情報のマッピングを保持
+_product_seo_map: dict[int, dict] = {}
 
 
 def extract_product_id_from_url(url: str) -> int:
@@ -67,8 +72,9 @@ def get_products_needing_images() -> list[tuple[int, list[str]]]:
     Returns:
         list[tuple[int, list[str]]]: (商品ID, 画像URLリスト)のリスト
     """
-    global _product_row_map
+    global _product_row_map, _product_seo_map
     _product_row_map = {}
+    _product_seo_map = {}
 
     client = SpreadsheetClient()
     if not client.connect():
@@ -105,6 +111,19 @@ def get_products_needing_images() -> list[tuple[int, list[str]]]:
                     # 外部URLのみ追加（カラーミー登録済みは除外）
                     image_urls.append(url)
 
+            # SEO情報を取得（BT-BV列）
+            page_title = row[COL_PAGE_TITLE] if len(row) > COL_PAGE_TITLE else ""
+            meta_desc = row[COL_META_DESC] if len(row) > COL_META_DESC else ""
+            meta_keywords = row[COL_META_KEYWORDS] if len(row) > COL_META_KEYWORDS else ""
+
+            # SEO情報がある場合はマップに保存
+            if page_title or meta_desc or meta_keywords:
+                _product_seo_map[product_id] = {
+                    'page_title': page_title,
+                    'meta_description': meta_desc,
+                    'meta_keywords': meta_keywords
+                }
+
             if not image_urls:
                 continue
 
@@ -114,6 +133,7 @@ def get_products_needing_images() -> list[tuple[int, list[str]]]:
 
         total_images = sum(len(urls) for _, urls in products)
         logger.info(f"画像アップロード対象: {len(products)}商品, {total_images}枚")
+        logger.info(f"SEO更新対象: {len(_product_seo_map)}商品")
         return products
 
     except Exception as e:
@@ -221,6 +241,27 @@ async def run_upload(
             max_products_per_run=max_per_run,
             save_progress_every=5
         )
+
+        # SEO項目の更新（画像アップロード成功した商品のみ）
+        seo_success_count = 0
+        seo_failed_count = 0
+        for r in results:
+            if r.success and r.product_id in _product_seo_map:
+                seo_info = _product_seo_map[r.product_id]
+                success, error = await uploader.update_seo_fields(
+                    r.product_id,
+                    page_title=seo_info.get('page_title', ''),
+                    meta_description=seo_info.get('meta_description', ''),
+                    meta_keywords=seo_info.get('meta_keywords', '')
+                )
+                if success:
+                    seo_success_count += 1
+                else:
+                    seo_failed_count += 1
+                    logger.warning(f"  SEO更新失敗: 商品ID {r.product_id} - {error}")
+
+        if seo_success_count > 0 or seo_failed_count > 0:
+            logger.info(f"SEO更新: {seo_success_count}件成功, {seo_failed_count}件失敗")
 
     # 成功した商品の画像URLをスプレッドシートに更新
     successful_updates = [

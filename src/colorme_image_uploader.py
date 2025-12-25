@@ -708,6 +708,111 @@ class ColorMeImageUploader:
             error_message="リトライ上限到達"
         )
 
+    async def update_seo_fields(
+        self,
+        product_id: int,
+        page_title: str = "",
+        meta_description: str = "",
+        meta_keywords: str = "",
+        max_retries: int = 2
+    ) -> tuple[bool, str]:
+        """
+        商品のSEO項目を更新する
+
+        カラーミーAPIではSEO項目（title, meta_description, meta_keywords）を
+        設定できないため、管理画面からPlaywrightで更新する。
+
+        Args:
+            product_id: 商品ID
+            page_title: ページタイトル（SEO用）
+            meta_description: メタディスクリプション
+            meta_keywords: メタキーワード
+            max_retries: リトライ回数
+
+        Returns:
+            tuple[bool, str]: (成功フラグ, エラーメッセージ)
+        """
+        if not page_title and not meta_description and not meta_keywords:
+            return True, "SEO項目が指定されていません"
+
+        if not self._logged_in:
+            if not await self.login():
+                return False, "ログイン失敗"
+
+        logger.info(f"商品ID {product_id} のSEO項目を更新中...")
+
+        for attempt in range(max_retries):
+            try:
+                # 商品編集ページに移動
+                edit_url = f"{self.ADMIN_URL}?mode=product_edt&type=UPD&product_id={product_id}"
+                await self._page.goto(edit_url, wait_until="networkidle")
+                await asyncio.sleep(3)
+
+                updated_fields = []
+
+                # ページタイトル（title）
+                if page_title:
+                    title_input = await self._page.query_selector('input[name="title"]')
+                    if title_input:
+                        await title_input.fill(page_title)
+                        updated_fields.append("title")
+                        logger.debug(f"  title設定: {page_title[:50]}...")
+
+                # メタディスクリプション
+                if meta_description:
+                    desc_input = await self._page.query_selector('textarea[name="description"], input[name="description"]')
+                    if desc_input:
+                        await desc_input.fill(meta_description)
+                        updated_fields.append("description")
+                        logger.debug(f"  description設定: {meta_description[:50]}...")
+
+                # メタキーワード
+                if meta_keywords:
+                    keywords_input = await self._page.query_selector('input[name="keywords"], textarea[name="keywords"]')
+                    if keywords_input:
+                        await keywords_input.fill(meta_keywords)
+                        updated_fields.append("keywords")
+                        logger.debug(f"  keywords設定: {meta_keywords[:50]}...")
+
+                if not updated_fields:
+                    # SEOフィールドが見つからなかった場合、別のセレクタを試す
+                    logger.warning(f"  SEOフィールドが見つかりません（試行 {attempt + 1}）")
+
+                    # デバッグ: ページ内のinput要素を確認
+                    all_inputs = await self._page.query_selector_all('input[type="text"], textarea')
+                    for inp in all_inputs[:20]:
+                        name = await inp.get_attribute("name")
+                        placeholder = await inp.get_attribute("placeholder")
+                        logger.debug(f"    input: name={name}, placeholder={placeholder}")
+
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(3)
+                        continue
+                    return False, "SEOフィールドが見つかりません"
+
+                # 保存ボタン実行（JavaScript経由）
+                logger.info(f"  SEO項目更新: {', '.join(updated_fields)}")
+                await self._page.evaluate("jf_Submit('UPD')")
+
+                # 保存完了待機
+                await asyncio.sleep(3)
+                await self._page.wait_for_load_state("networkidle")
+                await asyncio.sleep(2)
+
+                logger.info(f"  → 商品ID {product_id}: SEO更新成功")
+                return True, ""
+
+            except Exception as e:
+                error_msg = str(e)
+                logger.warning(f"  → 試行 {attempt + 1}/{max_retries} 失敗: {error_msg}")
+
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(3)
+                else:
+                    return False, error_msg
+
+        return False, "リトライ上限到達"
+
     async def upload_product_images_batch(
         self,
         products: list[tuple[int, list[str] | str]],
