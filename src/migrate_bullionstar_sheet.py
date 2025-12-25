@@ -97,7 +97,7 @@ def migrate_row(old_row: list) -> list:
 
     # カラーミー商品IDからURLを生成
     colorme_id = get_old_value(old_row, OLD_COL["カラーミー商品ID"])
-    colorme_url = f"https://yokohamacoin.shop-pro.jp/?pid={colorme_id}" if colorme_id else ""
+    colorme_url = f"https://www.ybx.jp/?pid={colorme_id}" if colorme_id else ""
 
     # 新構造（81列）の行を作成
     new_row = [

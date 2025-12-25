@@ -518,7 +518,7 @@ def register_adopted_products(
                 # 83列構造: B列=登録状況, D列=カラーミー商品URL, CD列=同期日時
                 # カテゴリー・グループ: AN-AS列(6列), 型番: AT列, 商品説明: BF-BG列, SEO: BT-BV列
                 timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
-                colorme_url = f"https://yokohamacoin.shop-pro.jp/?pid={new_product_id}"
+                colorme_url = f"https://www.ybx.jp/?pid={new_product_id}"
                 batch_data = [
                     {
                         'range': f"B{row_idx}",  # B列: カラーミー登録状況

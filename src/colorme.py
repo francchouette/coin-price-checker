@@ -915,6 +915,7 @@ class ColorMeClient:
 
             # カラーミーAPIは新規登録時にexpl, simple_expl, group_idsが反映されないため、
             # 登録後に更新APIで設定する
+            # 注意: SEO項目（title, description, keywords）はAPIでは設定不可、Playwrightが必要
             update_data = {}
             if product.expl:
                 update_data["expl"] = product.expl

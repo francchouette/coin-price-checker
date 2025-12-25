@@ -15,7 +15,6 @@ import asyncio
 import logging
 import re
 import sys
-from datetime import datetime
 from pathlib import Path
 
 # プロジェクトルートをパスに追加
@@ -39,13 +38,16 @@ COL_COLORME_URL = 3          # D列: カラーミー商品URL
 COL_IMAGE_1 = 61             # BJ列: 画像URL1
 COL_IMAGE_10 = 70            # BS列: 画像URL10
 
+# 商品IDと行番号のマッピングを保持
+_product_row_map: dict[int, int] = {}
+
 
 def extract_product_id_from_url(url: str) -> int:
     """
     カラーミー商品URLから商品IDを抽出
 
     Args:
-        url: カラーミー商品URL (例: https://yokohamacoin.shop-pro.jp/?pid=123456)
+        url: カラーミー商品URL (例: https://www.ybx.jp/?pid=123456)
 
     Returns:
         int: 商品ID（抽出失敗時は0）
@@ -65,6 +67,9 @@ def get_products_needing_images() -> list[tuple[int, list[str]]]:
     Returns:
         list[tuple[int, list[str]]]: (商品ID, 画像URLリスト)のリスト
     """
+    global _product_row_map
+    _product_row_map = {}
+
     client = SpreadsheetClient()
     if not client.connect():
         logger.error("スプレッドシートへの接続に失敗しました")
@@ -104,6 +109,7 @@ def get_products_needing_images() -> list[tuple[int, list[str]]]:
                 continue
 
             products.append((product_id, image_urls))
+            _product_row_map[product_id] = row_idx
             logger.debug(f"行{row_idx}: 商品ID {product_id}, 画像{len(image_urls)}枚")
 
         total_images = sum(len(urls) for _, urls in products)
@@ -113,6 +119,57 @@ def get_products_needing_images() -> list[tuple[int, list[str]]]:
     except Exception as e:
         logger.error(f"商品取得エラー: {e}")
         return []
+
+
+def update_image_urls_in_spreadsheet(updates: list[tuple[int, list[str]]]) -> int:
+    """
+    スプレッドシートの画像URLをカラーミーのURLに更新
+
+    Args:
+        updates: (商品ID, カラーミー画像URLリスト)のリスト
+
+    Returns:
+        int: 更新した行数
+    """
+    if not updates:
+        return 0
+
+    client = SpreadsheetClient()
+    if not client.connect():
+        logger.error("スプレッドシートへの接続に失敗しました")
+        return 0
+
+    try:
+        sheet = client._spreadsheet.worksheet(Config.SHEET_BULLIONSTAR_PRODUCTS)
+        batch_data = []
+
+        for product_id, image_urls in updates:
+            row_idx = _product_row_map.get(product_id)
+            if not row_idx:
+                logger.warning(f"商品ID {product_id} の行番号が見つかりません")
+                continue
+
+            # BJ-BS列（画像URL1-10）を更新
+            # 画像URLを10列分に展開（足りない分は空文字）
+            padded_urls = image_urls[:10] + [""] * (10 - len(image_urls[:10]))
+            # BJ列 = 62列目（1-based）
+            range_str = f"BJ{row_idx}:BS{row_idx}"
+            batch_data.append({
+                'range': range_str,
+                'values': [padded_urls]
+            })
+            logger.debug(f"行{row_idx}: 画像URL {len(image_urls)}枚を更新")
+
+        if batch_data:
+            sheet.batch_update(batch_data, value_input_option='USER_ENTERED')
+            logger.info(f"スプレッドシート更新完了: {len(batch_data)}行")
+            return len(batch_data)
+
+        return 0
+
+    except Exception as e:
+        logger.error(f"スプレッドシート更新エラー: {e}")
+        return 0
 
 
 async def run_upload(
@@ -164,6 +221,18 @@ async def run_upload(
             max_products_per_run=max_per_run,
             save_progress_every=5
         )
+
+    # 成功した商品の画像URLをスプレッドシートに更新
+    successful_updates = [
+        (r.product_id, r.uploaded_urls)
+        for r in results
+        if r.success and r.uploaded_urls
+    ]
+
+    if successful_updates:
+        logger.info(f"スプレッドシートの画像URLを更新中... ({len(successful_updates)}件)")
+        updated_count = update_image_urls_in_spreadsheet(successful_updates)
+        logger.info(f"スプレッドシート更新完了: {updated_count}件")
 
     # 結果サマリー
     success_count = sum(1 for r in results if r.success)
