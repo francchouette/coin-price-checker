@@ -300,13 +300,17 @@ class ColorMeImageUploader:
         """
         start_time = asyncio.get_event_loop().time()
 
+        # 初回チェック前に少し待機（アップロード開始を待つ）
+        await asyncio.sleep(3)
+
         while (asyncio.get_event_loop().time() - start_time) < max_wait:
             try:
                 # 方法1: pluploadのアップロード中表示を確認
                 # アップロード中のプログレスバーやスピナーが消えるのを待つ
                 uploading_indicators = await self._page.query_selector_all(
                     '.plupload_progress, .uploading, [class*="upload"][class*="progress"], '
-                    '.plupload_file_status:not(.plupload_done)'
+                    '.plupload_file_status:not(.plupload_done), '
+                    '.moxie-shim-html5, .plupload_button[style*="disabled"]'
                 )
 
                 # プログレス表示が消えたらアップロード完了
@@ -314,7 +318,8 @@ class ColorMeImageUploader:
                     # 追加確認: 画像プレビューが表示されているか
                     preview_images = await self._page.query_selector_all(
                         '.plupload_file_thumb img, .uploaded-image, '
-                        'img[src*="shop-pro.jp"], .image-preview img'
+                        'img[src*="shop-pro.jp"], .image-preview img, '
+                        '.product-image-thumbnail img, .thumb img'
                     )
                     if preview_images:
                         logger.info(f"  → アップロード完了確認（プレビュー画像: {len(preview_images)}枚）")
@@ -327,28 +332,37 @@ class ColorMeImageUploader:
                 try:
                     plupload_state = await self._page.evaluate("""
                         () => {
-                            // グローバルのpluploadインスタンスを探す
-                            if (typeof uploader !== 'undefined' && uploader.files) {
-                                const pending = uploader.files.filter(f =>
-                                    f.status !== plupload.DONE && f.status !== plupload.FAILED
-                                ).length;
-                                return { pending: pending, total: uploader.files.length };
+                            // グローバルのpluploadインスタンスを探す（様々な命名パターン）
+                            const uploaderNames = ['uploader', 'imageUploader', 'plu', 'pluploader', 'fileUploader'];
+                            for (const name of uploaderNames) {
+                                if (typeof window[name] !== 'undefined' && window[name].files) {
+                                    const pending = window[name].files.filter(f =>
+                                        f.status !== plupload.DONE && f.status !== plupload.FAILED
+                                    ).length;
+                                    return { pending: pending, total: window[name].files.length, name: name };
+                                }
                             }
-                            // 他の命名パターン
-                            if (typeof imageUploader !== 'undefined' && imageUploader.files) {
-                                const pending = imageUploader.files.filter(f =>
-                                    f.status !== plupload.DONE && f.status !== plupload.FAILED
-                                ).length;
-                                return { pending: pending, total: imageUploader.files.length };
+                            // window上の全オブジェクトからpluploadインスタンスを探す
+                            for (const key in window) {
+                                try {
+                                    if (window[key] && window[key].files && window[key].start && window[key].state !== undefined) {
+                                        const pending = window[key].files.filter(f =>
+                                            f.status !== plupload.DONE && f.status !== plupload.FAILED
+                                        ).length;
+                                        return { pending: pending, total: window[key].files.length, name: key };
+                                    }
+                                } catch (e) {}
                             }
                             return null;
                         }
                     """)
-                    if plupload_state and plupload_state.get('pending', 0) == 0:
-                        logger.info(f"  → pluploadアップロード完了（{plupload_state.get('total', 0)}ファイル）")
-                        return True
-                except Exception:
-                    pass  # JavaScriptエラーは無視
+                    if plupload_state:
+                        logger.debug(f"  plupload状態: {plupload_state}")
+                        if plupload_state.get('pending', 0) == 0 and plupload_state.get('total', 0) > 0:
+                            logger.info(f"  → pluploadアップロード完了（{plupload_state.get('total', 0)}ファイル, {plupload_state.get('name', 'unknown')}）")
+                            return True
+                except Exception as e:
+                    logger.debug(f"  plupload状態確認JS例外: {e}")
 
                 await asyncio.sleep(2)
 
@@ -649,8 +663,15 @@ class ColorMeImageUploader:
                         logger.debug(f"  plupload開始トリガーエラー（無視）: {e}")
 
                     # pluploadの非同期アップロード完了を待機
-                    logger.info("  pluploadアップロード完了待機中...")
-                    await self._wait_for_plupload_complete(wait_after_upload * 4)
+                    # GitHub Actions環境では時間がかかるため、長めのタイムアウトを設定
+                    plupload_timeout = max(60.0, wait_after_upload * 4 + len(temp_paths) * 10)
+                    logger.info(f"  pluploadアップロード完了待機中（最大{plupload_timeout:.0f}秒）...")
+                    plupload_completed = await self._wait_for_plupload_complete(plupload_timeout)
+
+                    if not plupload_completed:
+                        logger.warning("  pluploadがタイムアウトしましたが、保存を試みます...")
+                        # 追加の待機時間（念のため）
+                        await asyncio.sleep(10)
 
                     # 保存ボタン実行（JavaScript経由）
                     logger.info("  保存ボタン実行中...")
