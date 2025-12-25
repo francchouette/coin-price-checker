@@ -1294,6 +1294,7 @@ def fetch_prices_for_products(
     success_count = 0
     error_count = 0
     currencies_found: set[str] = set()  # 見つかった通貨を収集
+    last_saved_index = 0  # 最後に保存したインデックス（二重保存防止用）
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -1399,10 +1400,11 @@ def fetch_prices_for_products(
                     logger.info(f"\n{'='*40}")
                     logger.info(f"中間保存: {success_count}/{len(target_products)}件完了")
                     logger.info(f"{'='*40}")
-                    # ここまでに処理した商品を保存
-                    processed_products = target_products[:i+1]
-                    save_callback(processed_products)
-                    logger.info(f"中間保存完了")
+                    # 前回保存分以降の新規バッチのみ保存（二重処理防止）
+                    batch_products = target_products[last_saved_index:i+1]
+                    save_callback(batch_products)
+                    last_saved_index = i + 1
+                    logger.info(f"中間保存完了: {len(batch_products)}件")
 
                 # レート制限対策
                 time.sleep(random.uniform(1.0, 2.0))
@@ -1418,11 +1420,12 @@ def fetch_prices_for_products(
     logger.info(f"価格・画像取得完了: 成功={success_count}件, 失敗={error_count}件")
 
     # 最終保存（残りの商品）
-    if save_callback and success_count % batch_size != 0:
+    if save_callback and last_saved_index < len(target_products):
+        remaining_products = target_products[last_saved_index:]
         logger.info(f"\n{'='*40}")
-        logger.info(f"最終保存: {success_count}件完了")
+        logger.info(f"最終保存: {len(remaining_products)}件")
         logger.info(f"{'='*40}")
-        save_callback(target_products)
+        save_callback(remaining_products)
         logger.info(f"最終保存完了")
 
     # BullionstarはJPY価格を取得するため、為替レート取得は通常不要
