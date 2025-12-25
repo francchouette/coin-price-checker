@@ -558,6 +558,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
             # 新規行を追加
             if new_rows_batch:
                 start_row = existing_data_len + start_row_offset + 1
+                logger.info(f"  append_rows準備: {len(new_rows_batch)}行, 開始行={start_row}")
                 for i, row in enumerate(new_rows_batch):
                     row_num = start_row + i
                     row[18] = f'=IF(R{row_num}="","",IF(R{row_num}=0,"",(Q{row_num}-R{row_num})/R{row_num}*100))'
@@ -572,7 +573,15 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     row[36] = f'=AD{row_num}'
                     row[37] = f'=AH{row_num}*1.1'
                     row[38] = f'=AH{row_num}*0.1'
-                sheet.append_rows(new_rows_batch, value_input_option='USER_ENTERED')
+                # 各行の列数を確認
+                for i, row in enumerate(new_rows_batch[:3]):
+                    logger.debug(f"  行{i}: {len(row)}列, URL={row[4][:50] if len(row) > 4 else 'N/A'}...")
+                try:
+                    result = sheet.append_rows(new_rows_batch, value_input_option='USER_ENTERED')
+                    logger.info(f"  append_rows完了: {result}")
+                except Exception as e:
+                    logger.error(f"  append_rowsエラー: {e}")
+                    raise
                 saved_new = len(new_rows_batch)
 
             # 既存行を更新
