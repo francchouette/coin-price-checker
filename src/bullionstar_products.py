@@ -566,7 +566,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     row[29] = f'=Y{row_num}+AB{row_num}+AC{row_num}'
                     row[30] = f'=ROUNDUP(AD{row_num}/(2-Z{row_num})+AB{row_num}+AC{row_num},-2)'
                     row[31] = f'=AE{row_num}-AD{row_num}'
-                    row[32] = f'=IF(AE{row_num}=0,"",AF{row_num}/AE{row_num}*100)'
+                    row[32] = f'=IF(AE{row_num}=0,"",AF{row_num}/AE{row_num})'
                     row[33] = f'=AE{row_num}'
                     row[34] = f'=AE{row_num}'
                     row[35] = f'=AE{row_num}'
