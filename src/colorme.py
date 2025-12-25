@@ -912,6 +912,30 @@ class ColorMeClient:
             result = response.json()
             new_id = result.get("product", {}).get("id", 0)
             logger.info(f"商品新規登録成功: {product.name} → ID: {new_id}")
+
+            # カラーミーAPIは新規登録時にexpl, simple_expl, group_idsが反映されないため、
+            # 登録後に更新APIで設定する
+            update_data = {}
+            if product.expl:
+                update_data["expl"] = product.expl
+            if product.simple_expl:
+                update_data["simple_expl"] = product.simple_expl
+            if product.group_ids:
+                update_data["group_ids"] = product.group_ids
+
+            if update_data and new_id:
+                try:
+                    update_response = requests.put(
+                        f"{self.API_BASE}/products/{new_id}.json",
+                        headers=self._headers(),
+                        json={"product": update_data},
+                        timeout=30
+                    )
+                    update_response.raise_for_status()
+                    logger.info(f"  追加情報を更新: expl={len(product.expl) if product.expl else 0}文字, groups={product.group_ids}")
+                except requests.RequestException as e:
+                    logger.warning(f"  追加情報の更新に失敗: {e}")
+
             return new_id, ""
 
         except requests.RequestException as e:
