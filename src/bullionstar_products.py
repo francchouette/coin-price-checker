@@ -1414,31 +1414,37 @@ def fetch_prices_for_products(
                     product.location = scraped_location
 
                 # 画像情報を取得
-                # メイン画像URLを画像URL1として設定
                 main_image = scraper.get_main_image_url()
-                if main_image:
-                    product.image_url1 = main_image
-
-                # 追加画像URLを画像URL2-10として設定
                 image_urls = scraper.get_image_urls()
-                if len(image_urls) > 0:
-                    product.image_url2 = image_urls[0]
-                if len(image_urls) > 1:
-                    product.image_url3 = image_urls[1]
-                if len(image_urls) > 2:
-                    product.image_url4 = image_urls[2]
-                if len(image_urls) > 3:
-                    product.image_url5 = image_urls[3]
-                if len(image_urls) > 4:
-                    product.image_url6 = image_urls[4]
-                if len(image_urls) > 5:
-                    product.image_url7 = image_urls[5]
-                if len(image_urls) > 6:
-                    product.image_url8 = image_urls[6]
-                if len(image_urls) > 7:
-                    product.image_url9 = image_urls[7]
-                if len(image_urls) > 8:
-                    product.image_url10 = image_urls[8]
+
+                # 全画像を統合してURL1から順番に設定
+                # メイン画像があれば先頭に、なければ追加画像リストをそのまま使用
+                all_images = []
+                if main_image:
+                    all_images.append(main_image)
+                all_images.extend(image_urls)
+
+                # 画像URL1-10に設定（URL1から順番に詰めて設定）
+                if len(all_images) > 0:
+                    product.image_url1 = all_images[0]
+                if len(all_images) > 1:
+                    product.image_url2 = all_images[1]
+                if len(all_images) > 2:
+                    product.image_url3 = all_images[2]
+                if len(all_images) > 3:
+                    product.image_url4 = all_images[3]
+                if len(all_images) > 4:
+                    product.image_url5 = all_images[4]
+                if len(all_images) > 5:
+                    product.image_url6 = all_images[5]
+                if len(all_images) > 6:
+                    product.image_url7 = all_images[6]
+                if len(all_images) > 7:
+                    product.image_url8 = all_images[7]
+                if len(all_images) > 8:
+                    product.image_url9 = all_images[8]
+                if len(all_images) > 9:
+                    product.image_url10 = all_images[9]
 
                 # 仕様・詳細情報を取得
                 product.specs = scraper.get_specs()
@@ -1447,7 +1453,7 @@ def fetch_prices_for_products(
                 product.mintage = scraper.get_mintage()
 
                 # ログ出力
-                img_count = 1 + len(image_urls) if main_image else len(image_urls)
+                img_count = len(all_images)
                 logger.info(
                     f"  価格: {result.currency} {result.price:.2f}, "
                     f"在庫: {'あり' if result.in_stock else 'なし'}, "
