@@ -497,12 +497,12 @@ def main():
 
             # P-T: 新規追加5列（製造国、商品説明（英語）、仕様・スペック、発行年、発行数・限定数）
             # ※商品仕入れ先一覧シートからINDEX/MATCHで取得（J列=仕入れ先商品URLをキーに）
-            # 商品仕入れ先一覧: H=製造国, AH=仕様・スペック, AI=商品説明（英語）, AK=発行年, AL=発行数・限定数
+            # 商品仕入れ先一覧: H=製造国, AE=仕様・スペック, AF=商品説明（英語）, AH=発行年, AI=発行数・限定数
             row[15] = preserve_or_set(existing_row, 15, f'=IFERROR(INDEX(商品仕入れ先一覧!$H:$H,MATCH($J{new_row_num},商品仕入れ先一覧!$C:$C,0)),"")', old_row_num, new_row_num)  # P: 製造国 (H列)
-            row[16] = preserve_or_set(existing_row, 16, f'=IFERROR(INDEX(商品仕入れ先一覧!$AI:$AI,MATCH($J{new_row_num},商品仕入れ先一覧!$C:$C,0)),"")', old_row_num, new_row_num)  # Q: 商品説明（英語） (AI列)
-            row[17] = preserve_or_set(existing_row, 17, f'=IFERROR(INDEX(商品仕入れ先一覧!$AH:$AH,MATCH($J{new_row_num},商品仕入れ先一覧!$C:$C,0)),"")', old_row_num, new_row_num)  # R: 仕様・スペック (AH列)
-            row[18] = preserve_or_set(existing_row, 18, f'=IFERROR(INDEX(商品仕入れ先一覧!$AK:$AK,MATCH($J{new_row_num},商品仕入れ先一覧!$C:$C,0)),"")', old_row_num, new_row_num)  # S: 発行年 (AK列)
-            row[19] = preserve_or_set(existing_row, 19, f'=IFERROR(INDEX(商品仕入れ先一覧!$AL:$AL,MATCH($J{new_row_num},商品仕入れ先一覧!$C:$C,0)),"")', old_row_num, new_row_num)  # T: 発行数・限定数 (AL列)
+            row[16] = preserve_or_set(existing_row, 16, f'=IFERROR(INDEX(商品仕入れ先一覧!$AF:$AF,MATCH($J{new_row_num},商品仕入れ先一覧!$C:$C,0)),"")', old_row_num, new_row_num)  # Q: 商品説明（英語） (AF列)
+            row[17] = preserve_or_set(existing_row, 17, f'=IFERROR(INDEX(商品仕入れ先一覧!$AE:$AE,MATCH($J{new_row_num},商品仕入れ先一覧!$C:$C,0)),"")', old_row_num, new_row_num)  # R: 仕様・スペック (AE列)
+            row[18] = preserve_or_set(existing_row, 18, f'=IFERROR(INDEX(商品仕入れ先一覧!$AH:$AH,MATCH($J{new_row_num},商品仕入れ先一覧!$C:$C,0)),"")', old_row_num, new_row_num)  # S: 発行年 (AH列)
+            row[19] = preserve_or_set(existing_row, 19, f'=IFERROR(INDEX(商品仕入れ先一覧!$AI:$AI,MATCH($J{new_row_num},商品仕入れ先一覧!$C:$C,0)),"")', old_row_num, new_row_num)  # T: 発行数・限定数 (AI列)
 
             # U列: 仕入れ先在庫状況
             row[20] = preserve_or_set(existing_row, 20, "", old_row_num, new_row_num)  # U: 仕入れ先在庫状況
