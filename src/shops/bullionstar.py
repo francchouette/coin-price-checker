@@ -347,7 +347,7 @@ class BullionstarScraper(BaseScraper):
         - JSON-LD image: 600x600の画像URL配列
         """
         try:
-            seen_urls = set()
+            seen_keys = set()  # 正規化キーで重複判定
             image_urls = []
 
             # メイン画像を取得（高解像度版を優先）
@@ -362,9 +362,11 @@ class BullionstarScraper(BaseScraper):
                 )
                 if src:
                     full_src = self._get_full_resolution_url(src)
-                    self._main_image_url = full_src
-                    seen_urls.add(full_src)
-                    logger.debug(f"メイン画像: {full_src[:80]}...")
+                    key = self._get_normalized_image_key(full_src)
+                    if key and key not in seen_keys:
+                        self._main_image_url = full_src
+                        seen_keys.add(key)
+                        logger.debug(f"メイン画像: {full_src[:80]}...")
 
             # サムネイル画像を取得（高解像度版を優先）
             thumbnails = self.page.query_selector_all(self.THUMBNAIL_SELECTOR)
@@ -379,8 +381,9 @@ class BullionstarScraper(BaseScraper):
                 )
                 if src:
                     full_src = self._get_full_resolution_url(src)
-                    if full_src not in seen_urls:
-                        seen_urls.add(full_src)
+                    key = self._get_normalized_image_key(full_src)
+                    if key and key not in seen_keys:
+                        seen_keys.add(key)
                         image_urls.append(full_src)
 
             # 最初のサムネイルをサムネイルURLとして設定
@@ -390,7 +393,7 @@ class BullionstarScraper(BaseScraper):
                 logger.debug(f"サムネイルから画像: {len(self._image_urls)}枚")
 
             # JSON-LDからも画像を取得（高品質な600x600画像が含まれる）
-            self._extract_images_from_json_ld(seen_urls)
+            self._extract_images_from_json_ld(seen_keys)
 
             logger.info(f"画像取得完了: メイン={1 if self._main_image_url else 0}枚, 追加={len(self._image_urls)}枚")
 
@@ -425,8 +428,35 @@ class BullionstarScraper(BaseScraper):
 
         return url
 
-    def _extract_images_from_json_ld(self, seen_urls: set) -> None:
-        """JSON-LDから画像URLを抽出する"""
+    def _get_normalized_image_key(self, url: str) -> str:
+        """
+        画像URLから解像度を除いた正規化キーを生成する（重複判定用）
+
+        例:
+        - https://example.com/files/73x73_coin.webp -> files/coin.webp
+        - https://example.com/files/1200x1200_coin.webp -> files/coin.webp
+        """
+        if not url:
+            return ""
+
+        import re
+        from urllib.parse import urlparse
+
+        # URLからパス部分を抽出
+        parsed = urlparse(url)
+        path = parsed.path
+
+        # 解像度プレフィックスを除去（73x73_, 300x300_ 等）
+        path = re.sub(r'/\d+x\d+_', '/', path)
+
+        # サムネイルサフィックスを除去
+        for suffix in ["_thumb", "_small", "_medium", "_large", "-thumb", "-small"]:
+            path = path.replace(suffix, "")
+
+        return path.lower()
+
+    def _extract_images_from_json_ld(self, seen_keys: set) -> None:
+        """JSON-LDから画像URLを抽出する（正規化キーで重複判定）"""
         try:
             scripts = self.page.query_selector_all('script[type="application/ld+json"]')
 
@@ -447,14 +477,16 @@ class BullionstarScraper(BaseScraper):
                                 images = [images]
 
                             for img_url in images:
-                                if isinstance(img_url, str) and img_url not in seen_urls:
+                                if isinstance(img_url, str):
                                     full_url = self._get_full_resolution_url(img_url)
-                                    seen_urls.add(full_url)
+                                    key = self._get_normalized_image_key(full_url)
+                                    if key and key not in seen_keys:
+                                        seen_keys.add(key)
 
-                                    if not self._main_image_url:
-                                        self._main_image_url = full_url
-                                    elif len(self._image_urls) < 8:
-                                        self._image_urls.append(full_url)
+                                        if not self._main_image_url:
+                                            self._main_image_url = full_url
+                                        elif len(self._image_urls) < 8:
+                                            self._image_urls.append(full_url)
 
                 except json.JSONDecodeError:
                     continue
