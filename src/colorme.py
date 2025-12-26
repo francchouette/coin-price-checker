@@ -901,7 +901,10 @@ class ColorMeClient:
             product_data["simple_expl"] = product.simple_expl
             logger.info(f"  簡易説明を設定: {len(product.simple_expl)}文字")
 
-        # デバッグ: 送信データの確認
+        # デバッグ: 送信データの確認（価格関連を詳細に出力）
+        logger.info(f"  API送信: price={product_data.get('price')}, sales_price={product_data.get('sales_price')}, "
+                   f"cost={product_data.get('cost', 0)}, delivery_charge={product_data.get('delivery_charge', 0)}, "
+                   f"members_price={product_data.get('members_price', 0)}")
         logger.debug(f"API送信データ: {list(product_data.keys())}")
 
         try:
@@ -914,7 +917,12 @@ class ColorMeClient:
             response.raise_for_status()
             result = response.json()
             new_id = result.get("product", {}).get("id", 0)
+
+            # レスポンスの価格情報を確認
+            created_product = result.get("product", {})
             logger.info(f"商品新規登録成功: {product.name} → ID: {new_id}")
+            logger.info(f"  登録結果: price={created_product.get('price')}, sales_price={created_product.get('sales_price')}, "
+                       f"cost={created_product.get('cost')}, delivery_charge={created_product.get('delivery_charge')}")
 
             # カラーミーAPIは新規登録時に一部の項目が反映されないため、
             # 登録後に更新APIで設定する
@@ -932,6 +940,11 @@ class ColorMeClient:
             if product.model_number:
                 update_data["model_number"] = product.model_number
             # 価格関連も再設定（新規登録時に反映されない場合があるため）
+            # 定価と販売価格
+            if product.regular_price > 0:
+                update_data["price"] = product.regular_price
+            if product.current_price > 0:
+                update_data["sales_price"] = product.current_price
             if product.members_price > 0:
                 update_data["members_price"] = product.members_price
             if product.cost > 0:
@@ -948,7 +961,9 @@ class ColorMeClient:
                         timeout=30
                     )
                     update_response.raise_for_status()
-                    logger.info(f"  追加情報を更新: groups={product.group_ids}, stocks={product.stock_quantity}, model={product.model_number}, members_price={product.members_price}, cost={product.cost}, delivery_charge={product.delivery_charge}")
+                    updated_product = update_response.json().get("product", {})
+                    logger.info(f"  追加更新成功: price={updated_product.get('price')}, sales_price={updated_product.get('sales_price')}, "
+                               f"cost={updated_product.get('cost')}, delivery_charge={updated_product.get('delivery_charge')}, groups={product.group_ids}")
                 except requests.RequestException as e:
                     logger.warning(f"  追加情報の更新に失敗: {e}")
 
