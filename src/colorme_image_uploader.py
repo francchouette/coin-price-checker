@@ -395,19 +395,41 @@ class ColorMeImageUploader:
 
             urls = []
 
-            # 商品画像URLのパターン（imgXX.shop-pro.jp/PA01517/852/product/...）
+            # 商品画像URLのパターン（複数形式に対応）
+            # - imgXX.shop-pro.jp/PA01517/852/product/XXXXX.jpg
+            # - imgXX.shop-pro.jp/PA01517/852/product/XXXXX_XXX.jpg（サムネイル付き）
+            # - fileXXX.shop-pro.jp/PA01517/852/ファイル名.jpg
             # アイコンや共通画像は除外（/img/new/icons, /img/common など）
             import re
+            # より柔軟なパターン: shop-pro.jpの商品画像を広く取得
             product_image_pattern = re.compile(
-                r'https?://img\d+\.shop-pro\.jp/PA\d+/\d+/product/\d+\.(jpg|jpeg|png|gif|webp)',
+                r'https?://(img|file)\d+\.shop-pro\.jp/PA\d+/\d+/[^"\'<>\s]+\.(jpg|jpeg|png|gif|webp)',
                 re.IGNORECASE
             )
+
+            # 除外パターン（共通アイコン等）
+            exclude_patterns = [
+                '/img/new/icons',
+                '/img/common',
+                '/img/layout',
+                '/img/button',
+                '/img/icon',
+                'noimage',
+                'no_image',
+                'blank.gif',
+                'spacer.gif',
+            ]
 
             # img要素のsrc属性から商品画像のみ取得
             img_elements = await self._page.query_selector_all('img[src*="shop-pro.jp"]')
             for img in img_elements:
                 src = await img.get_attribute("src")
                 if not src:
+                    continue
+
+                # 除外パターンをチェック
+                is_excluded = any(pattern in src.lower() for pattern in exclude_patterns)
+                if is_excluded:
                     continue
 
                 # サムネイルサイズを除去して元URLに
@@ -420,6 +442,38 @@ class ColorMeImageUploader:
                 # 商品画像パターンにマッチするもののみ追加
                 if product_image_pattern.match(original_src) and original_src not in urls:
                     urls.append(original_src)
+
+            # 追加: 画像プレビュー領域から取得（pluploadアップロード済み画像）
+            # カラーミー管理画面の画像表示領域から取得
+            preview_selectors = [
+                '.product_image_area img[src*="shop-pro.jp"]',
+                '.image_list img[src*="shop-pro.jp"]',
+                '.uploaded_image img[src*="shop-pro.jp"]',
+                '.photo_list img[src*="shop-pro.jp"]',
+                '[id*="image"] img[src*="shop-pro.jp"]',
+                '[class*="image"] img[src*="shop-pro.jp"]',
+                '[class*="photo"] img[src*="shop-pro.jp"]',
+            ]
+            for selector in preview_selectors:
+                try:
+                    preview_imgs = await self._page.query_selector_all(selector)
+                    for img in preview_imgs:
+                        src = await img.get_attribute("src")
+                        if not src:
+                            continue
+                        is_excluded = any(pattern in src.lower() for pattern in exclude_patterns)
+                        if is_excluded:
+                            continue
+                        # サムネイルサイズを除去
+                        original_src = src
+                        for size in ["/50_50/", "/100_100/", "/200_200/", "/300_300/", "/400_400/"]:
+                            if size in original_src:
+                                original_src = original_src.replace(size, "/")
+                                break
+                        if product_image_pattern.match(original_src) and original_src not in urls:
+                            urls.append(original_src)
+                except Exception:
+                    pass
 
             logger.info(f"  ページから画像URL取得: {len(urls)}枚")
             for i, url in enumerate(urls[:5]):
@@ -684,8 +738,20 @@ class ColorMeImageUploader:
 
                 logger.info(f"  → 商品ID {product_id}: {uploaded_count}枚アップロード成功")
 
-                # ページから直接画像URLを取得
-                uploaded_urls = await self._extract_image_urls_from_page(product_id)
+                # ページから直接画像URLを取得（リトライ付き）
+                uploaded_urls = []
+                for page_attempt in range(3):
+                    # 商品編集ページをリロードして最新の状態を取得
+                    edit_url = f"{self.ADMIN_URL}?mode=product_edt&type=UPD&product_id={product_id}"
+                    await self._page.goto(edit_url, wait_until="networkidle")
+                    await asyncio.sleep(3)
+
+                    uploaded_urls = await self._extract_image_urls_from_page(product_id)
+                    if len(uploaded_urls) >= uploaded_count:
+                        # 期待した枚数が取得できた
+                        break
+                    logger.info(f"  画像URL取得: {len(uploaded_urls)}/{uploaded_count}枚 (リトライ {page_attempt + 1}/3)")
+                    await asyncio.sleep(3)
 
                 # ページから取得できなかった場合はAPIで取得
                 if not uploaded_urls:
@@ -697,6 +763,9 @@ class ColorMeImageUploader:
                             break
                         logger.info(f"  画像URL取得リトライ中... ({fetch_attempt + 1}/3)")
                         await asyncio.sleep(5)
+
+                if len(uploaded_urls) < uploaded_count:
+                    logger.warning(f"  警告: アップロード{uploaded_count}枚に対し、取得できたURL{len(uploaded_urls)}枚")
 
                 return ImageUploadResult(
                     product_id=product_id,
