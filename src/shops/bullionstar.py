@@ -405,10 +405,12 @@ class BullionstarScraper(BaseScraper):
         サムネイルURLを最大解像度のURLに変換する
 
         Bullionstarの画像URL形式:
-        - 解像度プレフィックス: 73x73_, 300x300_, 600x600_, 1200x1200_
-        - 別形式: 600_600_, 1200_1200_ (アンダースコア区切り)
+        - xで区切り: 73x73_, 300x300_, 600x600_, 1200x1200_
+        - アンダースコア区切り: 73_73_, 300_300_, 600_600_, 1200_1200_
         - 例: /files/.../73x73_image.webp -> /files/.../1200x1200_image.webp
-        - 例: /files/.../600_600_image.webp -> /files/.../1200x1200_image.webp
+        - 例: /files/.../600_600_image.webp -> /files/.../1200_1200_image.webp
+
+        注意: 元のURLの区切り文字に合わせて変換する（xはx、_は_に維持）
         """
         if not url:
             return url
@@ -421,10 +423,10 @@ class BullionstarScraper(BaseScraper):
 
         # Bullionstar固有の解像度プレフィックスを最大解像度に変換
         import re
-        # パターン1: /73x73_filename.webp -> /1200x1200_filename.webp
+        # パターン1: /73x73_filename.webp -> /1200x1200_filename.webp (xで区切り)
         url = re.sub(r'/\d+x\d+_', '/1200x1200_', url)
-        # パターン2: /600_600_filename.webp -> /1200x1200_filename.webp (アンダースコア区切り)
-        url = re.sub(r'/\d+_\d+_', '/1200x1200_', url)
+        # パターン2: /600_600_filename.webp -> /1200_1200_filename.webp (アンダースコア区切り)
+        url = re.sub(r'/\d+_\d+_', '/1200_1200_', url)
 
         # 従来のサムネイルサフィックスも除去（念のため）
         for suffix in ["_thumb", "_small", "_medium", "_large", "-thumb", "-small"]:
