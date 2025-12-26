@@ -28,6 +28,7 @@
 """
 
 import argparse
+import asyncio
 import logging
 import sys
 import time
@@ -43,6 +44,7 @@ from src.spreadsheet import SpreadsheetClient
 from src.colorme import ColorMeClient, ColorMeProduct
 from src.sync_supplier_list import sync_registered_products_to_supplier_list
 from src.add_product import CategoryDetector, DescriptionGenerator, SEOGenerator, JapaneseProductNameGenerator, ModelNumberGenerator
+from src.colorme_image_uploader import ColorMeImageUploader
 
 logger = logging.getLogger(__name__)
 
@@ -537,6 +539,39 @@ def register_adopted_products(
 
             if new_product_id > 0:
                 logger.info(f"  登録成功: カラーミー商品ID={new_product_id}")
+
+                # Playwright経由で個別送料とSEO項目を設定
+                # （カラーミーAPIでは個別送料とSEO項目が設定できないため）
+                playwright_updates_needed = delivery_charge > 0 or page_title or meta_description or meta_keywords
+                if playwright_updates_needed:
+                    logger.info(f"  Playwright経由で追加設定を適用中...")
+                    try:
+                        async def apply_playwright_updates():
+                            async with ColorMeImageUploader(headless=True) as uploader:
+                                # 個別送料を設定
+                                if delivery_charge > 0:
+                                    success, error = await uploader.update_delivery_charge(new_product_id, delivery_charge)
+                                    if success:
+                                        logger.info(f"    個別送料設定成功: {delivery_charge}円")
+                                    else:
+                                        logger.warning(f"    個別送料設定失敗: {error}")
+
+                                # SEO項目を設定
+                                if page_title or meta_description or meta_keywords:
+                                    success, error = await uploader.update_seo_fields(
+                                        new_product_id,
+                                        page_title=page_title,
+                                        meta_description=meta_description,
+                                        meta_keywords=meta_keywords
+                                    )
+                                    if success:
+                                        logger.info(f"    SEO項目設定成功")
+                                    else:
+                                        logger.warning(f"    SEO項目設定失敗: {error}")
+
+                        asyncio.run(apply_playwright_updates())
+                    except Exception as e:
+                        logger.warning(f"  Playwright処理エラー（続行）: {e}")
 
                 # スプレッドシート更新
                 # 83列構造: B列=登録状況, D列=カラーミー商品URL, CD列=同期日時
