@@ -406,7 +406,9 @@ class BullionstarScraper(BaseScraper):
 
         Bullionstarの画像URL形式:
         - 解像度プレフィックス: 73x73_, 300x300_, 600x600_, 1200x1200_
+        - 別形式: 600_600_, 1200_1200_ (アンダースコア区切り)
         - 例: /files/.../73x73_image.webp -> /files/.../1200x1200_image.webp
+        - 例: /files/.../600_600_image.webp -> /files/.../1200x1200_image.webp
         """
         if not url:
             return url
@@ -419,8 +421,10 @@ class BullionstarScraper(BaseScraper):
 
         # Bullionstar固有の解像度プレフィックスを最大解像度に変換
         import re
-        # パターン: /73x73_filename.webp -> /1200x1200_filename.webp
-        url = re.sub(r'/(\d+x\d+)_', '/1200x1200_', url)
+        # パターン1: /73x73_filename.webp -> /1200x1200_filename.webp
+        url = re.sub(r'/\d+x\d+_', '/1200x1200_', url)
+        # パターン2: /600_600_filename.webp -> /1200x1200_filename.webp (アンダースコア区切り)
+        url = re.sub(r'/\d+_\d+_', '/1200x1200_', url)
 
         # 従来のサムネイルサフィックスも除去（念のため）
         for suffix in ["_thumb", "_small", "_medium", "_large", "-thumb", "-small"]:
@@ -435,6 +439,7 @@ class BullionstarScraper(BaseScraper):
         例:
         - https://example.com/files/73x73_coin.webp -> files/coin.webp
         - https://example.com/files/1200x1200_coin.webp -> files/coin.webp
+        - https://example.com/files/600_600_coin.webp -> files/coin.webp
         """
         if not url:
             return ""
@@ -446,8 +451,11 @@ class BullionstarScraper(BaseScraper):
         parsed = urlparse(url)
         path = parsed.path
 
-        # 解像度プレフィックスを除去（73x73_, 300x300_ 等）
+        # 解像度プレフィックスを除去（複数パターン対応）
+        # パターン1: /73x73_filename.webp (スラッシュ直後にNxN_)
         path = re.sub(r'/\d+x\d+_', '/', path)
+        # パターン2: /600_600_filename.webp (スラッシュ直後にN_N_)
+        path = re.sub(r'/\d+_\d+_', '/', path)
 
         # サムネイルサフィックスを除去
         for suffix in ["_thumb", "_small", "_medium", "_large", "-thumb", "-small"]:
