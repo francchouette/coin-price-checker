@@ -958,31 +958,15 @@ class ColorMeImageUploader:
                 await asyncio.sleep(3)
 
                 # 個別送料フィールドを探す
-                delivery_input = await self._page.query_selector('input[name="delivery_charge"]')
+                # カラーミー管理画面では "postage" という名前
+                delivery_input = await self._page.query_selector('input[name="postage"]')
 
                 if not delivery_input:
-                    # 別のセレクタを試す
+                    # 代替セレクタを試す
+                    delivery_input = await self._page.query_selector('input[name="delivery_charge"]')
+
+                if not delivery_input:
                     delivery_input = await self._page.query_selector('input[name="individual_shipping_fee"]')
-
-                if not delivery_input:
-                    # name属性に"送料"を含むものを探す
-                    all_inputs = await self._page.query_selector_all('input[type="text"], input[type="number"]')
-                    for inp in all_inputs:
-                        name = await inp.get_attribute("name")
-                        placeholder = await inp.get_attribute("placeholder")
-                        inp_id = await inp.get_attribute("id")
-                        if name and ("delivery" in name.lower() or "shipping" in name.lower() or "charge" in name.lower()):
-                            delivery_input = inp
-                            logger.info(f"  個別送料フィールド発見: name={name}")
-                            break
-                        if placeholder and "送料" in placeholder:
-                            delivery_input = inp
-                            logger.info(f"  個別送料フィールド発見: placeholder={placeholder}")
-                            break
-                        if inp_id and ("delivery" in inp_id.lower() or "shipping" in inp_id.lower()):
-                            delivery_input = inp
-                            logger.info(f"  個別送料フィールド発見: id={inp_id}")
-                            break
 
                 if not delivery_input:
                     # デバッグ: ページ内のinput要素を確認
