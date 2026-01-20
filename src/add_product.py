@@ -2296,7 +2296,7 @@ def fill_incomplete_rows() -> bool:
 
     # 9. 画像解析器を初期化（AI検証用）
     image_analyzer = ImageAnalyzer()
-    if image_analyzer.client:
+    if image_analyzer.genai_model:
         logger.info("AI画像解析器: 初期化完了")
     else:
         logger.warning("AI画像解析器: APIキーが設定されていないため無効")
@@ -2387,7 +2387,7 @@ def fill_incomplete_rows() -> bool:
 
             # 商品説明を生成
             description, simple_description = "", ""
-            if generator.client:
+            if generator.genai_model:
                 logger.info("  商品説明を生成中...")
                 description, simple_description = generator.generate(product_info)
                 if description:

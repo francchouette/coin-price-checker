@@ -416,7 +416,7 @@ def register_adopted_products(
                     "specs": specs
                 }
 
-                if description_generator.client:
+                if description_generator.genai_model:
                     description, simple_description = description_generator.generate(product_info)
                     if description:
                         logger.info(f"  商品説明: AI生成成功 ({len(description)}文字)")
@@ -436,7 +436,7 @@ def register_adopted_products(
                 meta_keywords = existing_meta_keywords
                 logger.info(f"  SEO項目: 既存値を使用")
             else:
-                if seo_generator.client:
+                if seo_generator.genai_model:
                     product_info = {
                         "name": product_name,
                         "price": int(price_jpy),

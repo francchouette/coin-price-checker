@@ -771,7 +771,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                         logger.debug(f"  既存商品カテゴリー判定エラー: {e}")
 
                 # 型番自動生成（AT列）
-                if model_number_generator.client and not existing_model_number:
+                if model_number_generator.genai_model and not existing_model_number:
                     try:
                         model_info = {
                             "name": product.name,
@@ -892,7 +892,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 # 商品説明を自動生成（BP-BR列）
                 cm_description = ""
                 cm_simple_description = ""
-                if description_generator.client:
+                if description_generator.genai_model:
                     try:
                         price_jpy = int(product.price_jpy) if product.price_jpy else 0
                         desc_info = {
@@ -912,7 +912,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 page_title = ""
                 meta_description = ""
                 meta_keywords = ""
-                if seo_generator.client:
+                if seo_generator.genai_model:
                     try:
                         price_jpy = int(product.price_jpy) if product.price_jpy else 0
                         seo_info = {
@@ -929,7 +929,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
 
                 # 型番を自動生成（AQ列）
                 model_number = ""
-                if model_number_generator.client:
+                if model_number_generator.genai_model:
                     try:
                         model_info = {
                             "name": product.name,
