@@ -572,18 +572,16 @@ class ProductScraper:
 class DescriptionGenerator:
     """商品説明をAIで生成するクラス"""
 
-    def __init__(self, api_key: str = None):
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
-        self.client = None
-        if self.api_key:
-            try:
-                import anthropic
-                self.client = anthropic.Anthropic(api_key=self.api_key)
-                logger.info("説明生成器: 初期化完了（APIキー設定済み）")
-            except ImportError:
-                logger.warning("anthropicライブラリがインストールされていません")
-        else:
-            logger.warning("説明生成器: ANTHROPIC_API_KEYが設定されていません")
+    def __init__(self):
+        self.genai_model = None
+        try:
+            import vertexai
+            from vertexai.generative_models import GenerativeModel
+            vertexai.init(project="coin-price-tracker-479614", location="us-central1")
+            self.genai_model = GenerativeModel("gemini-2.5-pro")
+            logger.info("説明生成器: Vertex AI Gemini初期化完了")
+        except Exception as e:
+            logger.warning(f"説明生成器: Vertex AI初期化エラー: {e}")
 
     def generate(self, product_info: dict) -> tuple[str, str]:
         """
@@ -595,8 +593,8 @@ class DescriptionGenerator:
         Returns:
             tuple[str, str]: (商品説明, 簡易説明)
         """
-        if not self.client:
-            logger.warning("ANTHROPIC_API_KEYが設定されていないか、ライブラリがありません。説明は空になります。")
+        if not self.genai_model:
+            logger.warning("Vertex AI Geminiが初期化されていません。説明は空になります。")
             return "", ""
 
         prompt = DESCRIPTION_PROMPT.format(
@@ -608,14 +606,9 @@ class DescriptionGenerator:
         )
 
         try:
-            logger.info("  Claude APIを呼び出し中（説明生成）...")
-            response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=2000,
-                messages=[{"role": "user", "content": prompt}]
-            )
-
-            response_text = response.content[0].text
+            logger.info("  Gemini APIを呼び出し中（説明生成）...")
+            response = self.genai_model.generate_content(prompt)
+            response_text = response.text
             logger.debug(f"  API応答（先頭200文字）: {response_text[:200]}")
 
             json_match = re.search(r'\{[\s\S]*\}', response_text)
@@ -695,18 +688,16 @@ JSON形式で出力してください:
 class SEOGenerator:
     """SEO項目（ページタイトル、メタディスクリプション、メタキーワード）をAIで生成するクラス"""
 
-    def __init__(self, api_key: str = None):
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
-        self.client = None
-        if self.api_key:
-            try:
-                import anthropic
-                self.client = anthropic.Anthropic(api_key=self.api_key)
-                logger.info("SEO生成器: 初期化完了（APIキー設定済み）")
-            except ImportError:
-                logger.warning("anthropicライブラリがインストールされていません")
-        else:
-            logger.warning("SEO生成器: ANTHROPIC_API_KEYが設定されていません")
+    def __init__(self):
+        self.genai_model = None
+        try:
+            import vertexai
+            from vertexai.generative_models import GenerativeModel
+            vertexai.init(project="coin-price-tracker-479614", location="us-central1")
+            self.genai_model = GenerativeModel("gemini-2.5-pro")
+            logger.info("SEO生成器: Vertex AI Gemini初期化完了")
+        except Exception as e:
+            logger.warning(f"SEO生成器: Vertex AI初期化エラー: {e}")
 
     def generate(self, product_info: dict) -> tuple[str, str, str]:
         """
@@ -722,8 +713,8 @@ class SEOGenerator:
         Returns:
             tuple[str, str, str]: (ページタイトル, メタディスクリプション, メタキーワード)
         """
-        if not self.client:
-            logger.warning("ANTHROPIC_API_KEYが設定されていないか、ライブラリがありません。SEO項目は空になります。")
+        if not self.genai_model:
+            logger.warning("Vertex AI Geminiが初期化されていません。SEO項目は空になります。")
             return "", "", ""
 
         prompt = SEO_PROMPT.format(
@@ -734,14 +725,9 @@ class SEOGenerator:
         )
 
         try:
-            logger.info("  Claude APIを呼び出し中（SEO生成）...")
-            response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=500,
-                messages=[{"role": "user", "content": prompt}]
-            )
-
-            response_text = response.content[0].text
+            logger.info("  Gemini APIを呼び出し中（SEO生成）...")
+            response = self.genai_model.generate_content(prompt)
+            response_text = response.text
             logger.debug(f"  API応答（先頭200文字）: {response_text[:200]}")
 
             json_match = re.search(r'\{[\s\S]*\}', response_text)
@@ -774,15 +760,16 @@ class SEOGenerator:
 class ImageAnalyzer:
     """AIを使って商品画像を解析・検証するクラス"""
 
-    def __init__(self, api_key: str = None):
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
-        self.client = None
-        if self.api_key:
-            try:
-                import anthropic
-                self.client = anthropic.Anthropic(api_key=self.api_key)
-            except ImportError:
-                logger.warning("anthropicライブラリがインストールされていません")
+    def __init__(self):
+        self.genai_model = None
+        try:
+            import vertexai
+            from vertexai.generative_models import GenerativeModel
+            vertexai.init(project="coin-price-tracker-479614", location="us-central1")
+            self.genai_model = GenerativeModel("gemini-2.5-pro")
+            logger.info("画像解析器: Vertex AI Gemini初期化完了")
+        except Exception as e:
+            logger.warning(f"画像解析器: Vertex AI初期化エラー: {e}")
 
     def filter_product_images(self, image_urls: list[str], product_name: str) -> list[str]:
         """
@@ -795,28 +782,30 @@ class ImageAnalyzer:
         Returns:
             list[str]: 正しい商品画像のURLリスト
         """
-        if not self.client or not image_urls:
+        if not self.genai_model or not image_urls:
             return image_urls
 
         try:
+            from vertexai.generative_models import Part
+            import requests
+
             # 最大5枚の画像をAIで検証（コスト削減）
             urls_to_check = image_urls[:5]
 
-            # 画像コンテンツを構築
+            # 画像コンテンツを構築（Gemini形式）
             content = []
             for i, url in enumerate(urls_to_check):
-                content.append({
-                    "type": "image",
-                    "source": {"type": "url", "url": url}
-                })
-                content.append({
-                    "type": "text",
-                    "text": f"画像{i+1}: {url.split('/')[-1]}"
-                })
+                try:
+                    # 画像をダウンロード
+                    img_response = requests.get(url, timeout=10)
+                    if img_response.status_code == 200:
+                        content_type = img_response.headers.get('content-type', 'image/jpeg')
+                        content.append(Part.from_data(img_response.content, mime_type=content_type))
+                        content.append(f"画像{i+1}: {url.split('/')[-1]}")
+                except Exception as e:
+                    logger.warning(f"  画像取得エラー: {url} - {e}")
 
-            content.append({
-                "type": "text",
-                "text": f"""上記の画像を確認してください。
+            content.append(f"""上記の画像を確認してください。
 
 商品名: {product_name}
 
@@ -830,17 +819,11 @@ JSON形式で回答してください:
     "valid_images": [1, 2, 3],  // 正しい商品画像の番号リスト
     "reason": "判定理由"
 }}
-"""
-            })
+""")
 
             logger.info(f"  AI画像検証中... ({len(urls_to_check)}枚)")
-            response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=300,
-                messages=[{"role": "user", "content": content}]
-            )
-
-            response_text = response.content[0].text
+            response = self.genai_model.generate_content(content)
+            response_text = response.text
             json_match = re.search(r'\{[\s\S]*\}', response_text)
             if json_match:
                 data = json.loads(json_match.group())
@@ -870,14 +853,14 @@ JSON形式で回答してください:
         Returns:
             list[str]: 商品画像のURLリスト
         """
-        if not self.client:
+        if not self.genai_model:
             return []
 
         try:
+            from vertexai.generative_models import Part
+
             # スクリーンショットを取得
             screenshot_bytes = page.screenshot(full_page=False)
-            import base64
-            screenshot_b64 = base64.b64encode(screenshot_bytes).decode('utf-8')
 
             # ページ内のすべての画像URLを取得
             all_imgs = page.query_selector_all("img[src*='/files/']")
@@ -906,18 +889,10 @@ JSON形式で回答してください:
                 for info in img_info
             ])
 
+            # Gemini形式でコンテンツを構築
             content = [
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "image/png",
-                        "data": screenshot_b64
-                    }
-                },
-                {
-                    "type": "text",
-                    "text": f"""このスクリーンショットは貴金属商品のページです。
+                Part.from_data(screenshot_bytes, mime_type="image/png"),
+                f"""このスクリーンショットは貴金属商品のページです。
 
 商品名: {product_name}
 
@@ -933,17 +908,11 @@ JSON形式で回答:
     "reason": "判定理由"
 }}
 """
-                }
             ]
 
             logger.info("  スクリーンショットからAI画像特定中...")
-            response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=300,
-                messages=[{"role": "user", "content": content}]
-            )
-
-            response_text = response.content[0].text
+            response = self.genai_model.generate_content(content)
+            response_text = response.text
             json_match = re.search(r'\{[\s\S]*\}', response_text)
             if json_match:
                 data = json.loads(json_match.group())
@@ -968,76 +937,351 @@ JSON形式で回答:
 
 
 class CategoryDetector:
-    """商品名からカテゴリーを自動判定するクラス（AIサポート）"""
+    """商品名からカテゴリーを自動判定するクラス（AIサポート）
 
-    # カテゴリーID（固定値）
+    新グループ階層構造（5階層）:
+    L1: 素材（ゴールド/シルバー/プラチナ/パラジウム/カッパー）
+      └─ L2: 形状（コイン（ラウンド）/ インゴット（バー））
+          └─ L3: タイプ（地金型 / コレクション / 鑑定済み）
+              └─ L4: 国名（アメリカ、カナダ、イギリス...）
+                  └─ L5: シリーズ名（イーグル、メイプルリーフ...）※地金型の主要国のみ
+    """
+
+    # カテゴリーID（5素材対応）
     CATEGORY_IDS = {
-        "gold": 2961572,
-        "silver": 2961573,
+        "gold": 2977963,      # ゴールド（金）
+        "silver": 2977964,    # シルバー（銀）
+        "platinum": 2977965,  # プラチナ
+        "palladium": 2977966, # パラジウム
+        "copper": 2977967,    # カッパー（銅）
     }
 
-    # グループマスター（キー: 内部名, 値: {id, name, parent_key}）
-    GROUP_MASTER = {
-        # 素材グループ（親）
-        "gold": {"id": 3110187, "name": "Gold", "parent_key": None},
-        "silver": {"id": 3110193, "name": "Silver", "parent_key": None},
-        "platinum": {"id": 3119343, "name": "Platinum", "parent_key": None},
-        # シリーズ（金）- 親: gold
-        "maple_gold": {"id": 3110188, "name": "メイプルリーフ カナダ", "parent_key": "gold"},
-        "vienna_gold": {"id": 3110189, "name": "ウィーン オーストリア", "parent_key": "gold"},
-        "britannia_gold": {"id": 3110190, "name": "ブリタニア イギリス", "parent_key": "gold"},
-        "eagle_gold": {"id": 3110191, "name": "イーグル アメリカ", "parent_key": "gold"},
-        "kangaroo_gold": {"id": 3110192, "name": "カンガルー オーストラリア", "parent_key": "gold"},
-        "queens_beast": {"id": 3117632, "name": "クイーンズビースト", "parent_key": "gold"},
-        # シリーズ（銀）- 親: silver
-        "maple_silver": {"id": 3110200, "name": "メイプルリーフ カナダ", "parent_key": "silver"},
-        "vienna_silver": {"id": 3110199, "name": "ウィーン オーストリア", "parent_key": "silver"},
-        "britannia_silver": {"id": 3110198, "name": "ブリタニア イギリス", "parent_key": "silver"},
-        "eagle_silver": {"id": 3110197, "name": "イーグル アメリカ", "parent_key": "silver"},
-        "kookaburra": {"id": 3110194, "name": "カワセミ オーストラリア", "parent_key": "silver"},
-        "kangaroo_silver": {"id": 3110196, "name": "カンガルー オーストラリア", "parent_key": "silver"},
-        "koala": {"id": 3110195, "name": "コアラ オーストラリア", "parent_key": "silver"},
-        # タイプ
-        "coin": {"id": 3115142, "name": "コイン", "parent_key": None},
-        "bar": {"id": 3115143, "name": "バー", "parent_key": None},
-        "premier": {"id": 3115144, "name": "プレミア", "parent_key": None},
+    # L1: 素材グループ（トップレベル）
+    GROUP_L1 = {
+        "gold": 3151359,
+        "silver": 3151360,
+        "platinum": 3151361,
+        "palladium": 3151362,
+        "copper": 3151363,
     }
 
-    # 素材キーワードマッピング
-    METAL_KEYWORDS = {
-        "gold": ["gold", "金貨", "ゴールド", "金", "au"],
-        "silver": ["silver", "銀貨", "シルバー", "銀", "ag"],
-        "platinum": ["platinum", "プラチナ", "白金", "pt"],
+    # L2: 形状グループ（素材の子）
+    GROUP_L2 = {
+        ("gold", "coin"): 3151364,
+        ("gold", "bar"): 3151365,
+        ("silver", "coin"): 3151366,
+        ("silver", "bar"): 3151367,
+        ("platinum", "coin"): 3151368,
+        ("platinum", "bar"): 3151369,
+        ("palladium", "coin"): 3151370,
+        ("palladium", "bar"): 3151371,
+        ("copper", "coin"): 3151372,
+        ("copper", "bar"): 3151373,
     }
 
-    # シリーズキーワードマッピング（キー: シリーズ内部名, 値: {keywords, display_name}）
-    # 命名規則: 「シリーズ名 国名」形式（既存グループと一貫性を保つ）
-    SERIES_MASTER = {
-        "maple": {"keywords": ["maple", "メイプル"], "display_name": "メイプルリーフ カナダ"},
-        "vienna": {"keywords": ["vienna", "philharmonic", "ウィーン", "フィルハーモニー"], "display_name": "ウィーン オーストリア"},
-        "britannia": {"keywords": ["britannia", "ブリタニア"], "display_name": "ブリタニア イギリス"},
-        "eagle": {"keywords": ["eagle", "イーグル"], "display_name": "イーグル アメリカ"},
-        "kangaroo": {"keywords": ["kangaroo", "カンガルー"], "display_name": "カンガルー オーストラリア"},
-        "kookaburra": {"keywords": ["kookaburra", "カワセミ"], "display_name": "カワセミ オーストラリア"},
-        "koala": {"keywords": ["koala", "コアラ"], "display_name": "コアラ オーストラリア"},
-        "queens_beast": {"keywords": ["queen's beast", "queens beast", "クイーンズビースト"], "display_name": "クイーンズビースト イギリス"},
-        "panda": {"keywords": ["panda", "パンダ"], "display_name": "パンダ 中国"},
-        # 干支シリーズは国別ではなく干支別にグループ化
-        "dragon": {"keywords": ["dragon", "ドラゴン", "龍", "year of the dragon"], "display_name": "干支シリーズ"},
-        "lunar": {"keywords": ["lunar", "干支", "year of"], "display_name": "干支シリーズ"},
-        "tiger": {"keywords": ["tiger", "タイガー", "虎", "year of the tiger"], "display_name": "干支シリーズ"},
-        "rabbit": {"keywords": ["rabbit", "ラビット", "兎", "year of the rabbit"], "display_name": "干支シリーズ"},
-        "snake": {"keywords": ["snake", "スネーク", "蛇", "year of the snake"], "display_name": "干支シリーズ"},
-        "horse": {"keywords": ["horse", "ホース", "馬", "year of the horse"], "display_name": "干支シリーズ"},
-        "krugerrand": {"keywords": ["krugerrand", "クルーガーランド"], "display_name": "クルーガーランド 南アフリカ"},
-        "buffalo": {"keywords": ["buffalo", "バッファロー"], "display_name": "バッファロー アメリカ"},
-        "libertad": {"keywords": ["libertad", "リベルタード"], "display_name": "リベルタード メキシコ"},
+    # L3: タイプグループ（形状の子）
+    # bullion=地金型, collection=コレクション, graded=鑑定済み
+    GROUP_L3 = {
+        # ゴールド
+        ("gold", "coin", "bullion"): 3151374,
+        ("gold", "coin", "collection"): 3151375,
+        ("gold", "coin", "graded"): 3151376,
+        ("gold", "bar", "bullion"): 3151377,
+        # シルバー
+        ("silver", "coin", "bullion"): 3151378,
+        ("silver", "coin", "collection"): 3151379,
+        ("silver", "coin", "graded"): 3151380,
+        ("silver", "bar", "bullion"): 3151381,
+        # プラチナ
+        ("platinum", "coin", "bullion"): 3151382,
+        ("platinum", "coin", "collection"): 3151383,
+        ("platinum", "coin", "graded"): 3151384,
+        ("platinum", "bar", "bullion"): 3151385,
+        # パラジウム
+        ("palladium", "coin", "bullion"): 3151386,
+        ("palladium", "bar", "bullion"): 3151387,
+        # カッパー
+        ("copper", "coin", "bullion"): 3151388,
+        ("copper", "bar", "bullion"): 3151389,
     }
 
-    # 商品タイプキーワード
-    TYPE_KEYWORDS = {
-        "coin": ["coin", "コイン", "貨", "round", "ラウンド"],
-        "bar": ["bar", "ingot", "インゴット", "バー", "地金"],
+    # L4: 国名グループ - 地金型コイン
+    GROUP_L4_BULLION_COIN = {
+        # ゴールド
+        ("gold", "usa"): 3151390,
+        ("gold", "canada"): 3151391,
+        ("gold", "austria"): 3151392,
+        ("gold", "uk"): 3151393,
+        ("gold", "australia"): 3151394,
+        ("gold", "china"): 3151395,
+        ("gold", "south_africa"): 3151396,
+        ("gold", "mexico"): 3151397,
+        ("gold", "st_helena"): 3151398,
+        ("gold", "singapore"): 3151399,
+        ("gold", "palau"): 3151400,
+        ("gold", "barbados"): 3151401,
+        ("gold", "cameroon"): 3151402,
+        ("gold", "chad"): 3151403,
+        ("gold", "armenia"): 3151404,
+        ("gold", "tuvalu"): 3151405,
+        ("gold", "niue"): 3151406,
+        ("gold", "cook_islands"): 3151407,
+        ("gold", "fiji"): 3151408,
+        ("gold", "solomon_islands"): 3151409,
+        ("gold", "tokelau"): 3151410,
+        ("gold", "france"): 3151411,
+        ("gold", "samoa"): 3151412,
+        ("gold", "other"): 3151413,
+        # シルバー
+        ("silver", "usa"): 3151447,
+        ("silver", "canada"): 3151448,
+        ("silver", "austria"): 3151449,
+        ("silver", "uk"): 3151450,
+        ("silver", "australia"): 3151451,
+        ("silver", "china"): 3151452,
+        ("silver", "south_africa"): 3151453,
+        ("silver", "mexico"): 3151454,
+        ("silver", "st_helena"): 3151455,
+        ("silver", "singapore"): 3151456,
+        ("silver", "palau"): 3151457,
+        ("silver", "barbados"): 3151458,
+        ("silver", "cameroon"): 3151459,
+        ("silver", "chad"): 3151460,
+        ("silver", "armenia"): 3151461,
+        ("silver", "tuvalu"): 3151462,
+        ("silver", "niue"): 3151463,
+        ("silver", "cook_islands"): 3151464,
+        ("silver", "fiji"): 3151465,
+        ("silver", "solomon_islands"): 3151466,
+        ("silver", "tokelau"): 3151467,
+        ("silver", "france"): 3151468,
+        ("silver", "samoa"): 3151469,
+        ("silver", "other"): 3151470,
+        # プラチナ
+        ("platinum", "usa"): 3151504,
+        ("platinum", "canada"): 3151505,
+        ("platinum", "austria"): 3151506,
+        ("platinum", "uk"): 3151507,
+        ("platinum", "australia"): 3151508,
+        ("platinum", "china"): 3151509,
+        ("platinum", "south_africa"): 3151510,
+        ("platinum", "mexico"): 3151511,
+        ("platinum", "st_helena"): 3151512,
+        ("platinum", "singapore"): 3151513,
+        ("platinum", "palau"): 3151514,
+        ("platinum", "barbados"): 3151515,
+        ("platinum", "cameroon"): 3151516,
+        ("platinum", "chad"): 3151517,
+        ("platinum", "armenia"): 3151518,
+        ("platinum", "tuvalu"): 3151519,
+        ("platinum", "niue"): 3151520,
+        ("platinum", "cook_islands"): 3151521,
+        ("platinum", "fiji"): 3151522,
+        ("platinum", "solomon_islands"): 3151523,
+        ("platinum", "tokelau"): 3151524,
+        ("platinum", "france"): 3151525,
+        ("platinum", "samoa"): 3151526,
+        ("platinum", "other"): 3151527,
+        # パラジウム
+        ("palladium", "usa"): 3151561,
+        ("palladium", "other"): 3151562,
+        # カッパー
+        ("copper", "usa"): 3151565,
+        ("copper", "other"): 3151566,
+    }
+
+    # L4: 国名グループ - 地金型バー
+    GROUP_L4_BULLION_BAR = {
+        # ゴールド
+        ("gold", "usa"): 3151442,
+        ("gold", "canada"): 3151443,
+        ("gold", "uk"): 3151444,
+        ("gold", "germany"): 3151445,
+        ("gold", "other"): 3151446,
+        # シルバー
+        ("silver", "usa"): 3151499,
+        ("silver", "canada"): 3151500,
+        ("silver", "uk"): 3151501,
+        ("silver", "germany"): 3151502,
+        ("silver", "other"): 3151503,
+        # プラチナ
+        ("platinum", "usa"): 3151556,
+        ("platinum", "canada"): 3151557,
+        ("platinum", "uk"): 3151558,
+        ("platinum", "germany"): 3151559,
+        ("platinum", "other"): 3151560,
+        # パラジウム
+        ("palladium", "usa"): 3151563,
+        ("palladium", "other"): 3151564,
+        # カッパー
+        ("copper", "usa"): 3151567,
+        ("copper", "other"): 3151568,
+    }
+
+    # L4: 国名グループ - コレクション
+    GROUP_L4_COLLECTION = {
+        # ゴールド
+        ("gold", "usa"): 3151414,
+        ("gold", "canada"): 3151415,
+        ("gold", "austria"): 3151416,
+        ("gold", "uk"): 3151417,
+        ("gold", "australia"): 3151418,
+        ("gold", "china"): 3151419,
+        ("gold", "south_africa"): 3151420,
+        ("gold", "mexico"): 3151421,
+        ("gold", "st_helena"): 3151422,
+        ("gold", "singapore"): 3151423,
+        ("gold", "palau"): 3151424,
+        ("gold", "barbados"): 3151425,
+        ("gold", "cameroon"): 3151426,
+        ("gold", "chad"): 3151427,
+        ("gold", "armenia"): 3151428,
+        ("gold", "tuvalu"): 3151429,
+        ("gold", "niue"): 3151430,
+        ("gold", "cook_islands"): 3151431,
+        ("gold", "fiji"): 3151432,
+        ("gold", "solomon_islands"): 3151433,
+        ("gold", "tokelau"): 3151434,
+        ("gold", "france"): 3151435,
+        ("gold", "samoa"): 3151436,
+        ("gold", "other"): 3151437,
+        # シルバー
+        ("silver", "usa"): 3151471,
+        ("silver", "canada"): 3151472,
+        ("silver", "austria"): 3151473,
+        ("silver", "uk"): 3151474,
+        ("silver", "australia"): 3151475,
+        ("silver", "china"): 3151476,
+        ("silver", "south_africa"): 3151477,
+        ("silver", "mexico"): 3151478,
+        ("silver", "st_helena"): 3151479,
+        ("silver", "singapore"): 3151480,
+        ("silver", "palau"): 3151481,
+        ("silver", "barbados"): 3151482,
+        ("silver", "cameroon"): 3151483,
+        ("silver", "chad"): 3151484,
+        ("silver", "armenia"): 3151485,
+        ("silver", "tuvalu"): 3151486,
+        ("silver", "niue"): 3151487,
+        ("silver", "cook_islands"): 3151488,
+        ("silver", "fiji"): 3151489,
+        ("silver", "solomon_islands"): 3151490,
+        ("silver", "tokelau"): 3151491,
+        ("silver", "france"): 3151492,
+        ("silver", "samoa"): 3151493,
+        ("silver", "other"): 3151494,
+        # プラチナ
+        ("platinum", "usa"): 3151528,
+        ("platinum", "canada"): 3151529,
+        ("platinum", "austria"): 3151530,
+        ("platinum", "uk"): 3151531,
+        ("platinum", "australia"): 3151532,
+        ("platinum", "china"): 3151533,
+        ("platinum", "south_africa"): 3151534,
+        ("platinum", "mexico"): 3151535,
+        ("platinum", "st_helena"): 3151536,
+        ("platinum", "singapore"): 3151537,
+        ("platinum", "palau"): 3151538,
+        ("platinum", "barbados"): 3151539,
+        ("platinum", "cameroon"): 3151540,
+        ("platinum", "chad"): 3151541,
+        ("platinum", "armenia"): 3151542,
+        ("platinum", "tuvalu"): 3151543,
+        ("platinum", "niue"): 3151544,
+        ("platinum", "cook_islands"): 3151545,
+        ("platinum", "fiji"): 3151546,
+        ("platinum", "solomon_islands"): 3151547,
+        ("platinum", "tokelau"): 3151548,
+        ("platinum", "france"): 3151549,
+        ("platinum", "samoa"): 3151550,
+        ("platinum", "other"): 3151551,
+    }
+
+    # L4: テーマグループ - コレクション
+    GROUP_L4_THEME = {
+        ("gold", "movie"): 3151438,
+        ("gold", "anime"): 3151439,
+        ("gold", "music"): 3151440,
+        ("gold", "other_theme"): 3151441,
+        ("silver", "movie"): 3151495,
+        ("silver", "anime"): 3151496,
+        ("silver", "music"): 3151497,
+        ("silver", "other_theme"): 3151498,
+        ("platinum", "movie"): 3151552,
+        ("platinum", "anime"): 3151553,
+        ("platinum", "music"): 3151554,
+        ("platinum", "other_theme"): 3151555,
+    }
+
+    # L5: シリーズグループ - 地金型コイン（主要国のみ）
+    GROUP_L5_SERIES = {
+        # ゴールド - アメリカ
+        ("gold", "usa", "eagle"): 3151569,
+        ("gold", "usa", "buffalo"): 3151570,
+        ("gold", "usa", "other"): 3151571,
+        # ゴールド - カナダ
+        ("gold", "canada", "maple"): 3151572,
+        ("gold", "canada", "other"): 3151573,
+        # ゴールド - オーストリア
+        ("gold", "austria", "vienna"): 3151574,
+        ("gold", "austria", "other"): 3151575,
+        # ゴールド - イギリス
+        ("gold", "uk", "britannia"): 3151576,
+        ("gold", "uk", "other"): 3151577,
+        # ゴールド - オーストラリア
+        ("gold", "australia", "kangaroo"): 3151578,
+        ("gold", "australia", "koala"): 3151579,
+        ("gold", "australia", "kookaburra"): 3151580,
+        ("gold", "australia", "lunar"): 3151581,
+        ("gold", "australia", "other"): 3151582,
+        # ゴールド - 中国
+        ("gold", "china", "panda"): 3151583,
+        ("gold", "china", "other"): 3151584,
+        # ゴールド - 南アフリカ
+        ("gold", "south_africa", "krugerrand"): 3151585,
+        ("gold", "south_africa", "other"): 3151586,
+        # ゴールド - メキシコ
+        ("gold", "mexico", "libertad"): 3151587,
+        ("gold", "mexico", "other"): 3151588,
+        # シルバー - アメリカ
+        ("silver", "usa", "eagle"): 3151589,
+        ("silver", "usa", "buffalo"): 3151590,
+        ("silver", "usa", "other"): 3151591,
+        # シルバー - カナダ
+        ("silver", "canada", "maple"): 3151592,
+        ("silver", "canada", "other"): 3151593,
+        # シルバー - オーストリア
+        ("silver", "austria", "vienna"): 3151594,
+        ("silver", "austria", "other"): 3151595,
+        # シルバー - イギリス
+        ("silver", "uk", "britannia"): 3151596,
+        ("silver", "uk", "other"): 3151597,
+        # シルバー - オーストラリア
+        ("silver", "australia", "kangaroo"): 3151598,
+        ("silver", "australia", "koala"): 3151599,
+        ("silver", "australia", "kookaburra"): 3151600,
+        ("silver", "australia", "lunar"): 3151601,
+        ("silver", "australia", "other"): 3151602,
+        # シルバー - 中国
+        ("silver", "china", "panda"): 3151603,
+        ("silver", "china", "other"): 3151604,
+        # シルバー - 南アフリカ
+        ("silver", "south_africa", "krugerrand"): 3151605,
+        ("silver", "south_africa", "elephant"): 3151606,
+        ("silver", "south_africa", "other"): 3151607,
+        # シルバー - メキシコ
+        ("silver", "mexico", "libertad"): 3151608,
+        ("silver", "mexico", "other"): 3151609,
+        # プラチナ - アメリカ
+        ("platinum", "usa", "eagle"): 3151610,
+        ("platinum", "usa", "other"): 3151611,
+        # プラチナ - カナダ
+        ("platinum", "canada", "maple"): 3151612,
+        ("platinum", "canada", "other"): 3151613,
+        # プラチナ - オーストラリア
+        ("platinum", "australia", "kangaroo"): 3151614,
+        ("platinum", "australia", "koala"): 3151615,
+        ("platinum", "australia", "other"): 3151616,
     }
 
     def __init__(self, categories: list[dict], groups: list[dict], colorme_client=None):
@@ -1045,15 +1289,25 @@ class CategoryDetector:
         self.groups = groups
         self.colorme_client = colorme_client
 
-        # Claude APIクライアントを初期化
-        self.client = None
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if api_key:
-            try:
-                import anthropic
-                self.client = anthropic.Anthropic(api_key=api_key)
-            except Exception as e:
-                logger.warning(f"Anthropic APIクライアント初期化エラー: {e}")
+        # Vertex AI Geminiクライアントを初期化
+        self.genai_model = None
+        try:
+            import google.auth
+            from google.auth.transport.requests import Request
+            import vertexai
+            from vertexai.generative_models import GenerativeModel
+
+            # ADC認証を使用
+            credentials, project = google.auth.default()
+            if hasattr(credentials, 'refresh'):
+                credentials.refresh(Request())
+
+            # Vertex AIを初期化
+            vertexai.init(project="coin-price-tracker-479614", location="us-central1")
+            self.genai_model = GenerativeModel("gemini-2.5-pro")
+            logger.info("Vertex AI Gemini APIクライアント初期化成功")
+        except Exception as e:
+            logger.warning(f"Vertex AI Gemini APIクライアント初期化エラー: {e}")
 
         # APIから取得したグループ名→{id, parent_id}のマッピングを作成
         self.existing_groups = {}
@@ -1061,250 +1315,247 @@ class CategoryDetector:
             parent_id = g.get("parent_id", 0) or 0
             self.existing_groups[g["name"]] = {"id": g["id"], "parent_id": parent_id}
 
-    def _get_or_create_group(self, group_key: str, required_parent_id: int = None) -> int:
-        """グループIDを取得、存在しない場合は作成
-
-        Args:
-            group_key: GROUP_MASTERのキー
-            required_parent_id: 必須の親グループID（指定時は親が一致するものを探す）
-        """
-        if group_key not in self.GROUP_MASTER:
-            return 0
-
-        master = self.GROUP_MASTER[group_key]
-        group_id = master["id"]
-        group_name = master["name"]
-        expected_parent_key = master.get("parent_key")
-
-        # 期待される親グループIDを取得
-        if required_parent_id is not None:
-            expected_parent_id = required_parent_id
-        elif expected_parent_key and expected_parent_key in self.GROUP_MASTER:
-            expected_parent_id = self.GROUP_MASTER[expected_parent_key]["id"]
-        else:
-            expected_parent_id = 0
-
-        # 既存グループに存在するか確認（親も一致するかチェック）
-        if group_name in self.existing_groups:
-            existing = self.existing_groups[group_name]
-            existing_id = existing["id"]
-            existing_parent = existing["parent_id"]
-
-            # 親グループが一致する場合はそのまま返す
-            if expected_parent_id == 0 or existing_parent == expected_parent_id:
-                return existing_id
-
-            # 親が一致しない場合は新しいグループを作成
-            logger.info(f"  既存グループ '{group_name}' は親が不一致 (期待: {expected_parent_id}, 実際: {existing_parent})")
-
-        # マスターのIDが存在するか確認（API取得グループと照合）
-        for g in self.groups:
-            if g["id"] == group_id:
-                parent_id = g.get("parent_id", 0) or 0
-                if expected_parent_id == 0 or parent_id == expected_parent_id:
-                    return group_id
-
-        # 存在しない場合は作成
-        if self.colorme_client:
-            logger.info(f"  グループ作成中: {group_name} (親ID: {expected_parent_id})")
-            new_id, error = self.colorme_client.create_group(group_name, expected_parent_id)
-            if new_id > 0:
-                # マスターとキャッシュを更新
-                self.GROUP_MASTER[group_key]["id"] = new_id
-                self.existing_groups[group_name] = {"id": new_id, "parent_id": expected_parent_id}
-                return new_id
-            else:
-                logger.warning(f"  グループ作成失敗: {error}")
-
-        return group_id  # フォールバック: マスターのID
-
     def detect(self, product_name: str, url: str = "") -> tuple[int, int, list[int]]:
         """
-        商品名からカテゴリーIDとグループIDを判定（AI判定対応）
+        商品名からカテゴリーIDとグループIDを判定（常にAI判定を使用）
+
+        新グループ階層（5階層）:
+        L1: 素材 → L2: 形状 → L3: タイプ → L4: 国名 → L5: シリーズ
+
+        振り分けルール:
+        - 地金型・主要国・有名シリーズ → L5シリーズグループ
+        - 地金型・主要国・その他 → L5その他グループ
+        - 地金型・マイナー国 → L4国名グループ
+        - インゴット（バー） → L4国名グループ
+        - 鑑定済み → L3鑑定済みグループ
+        - コレクション（国のみ） → L4国名グループ
+        - コレクション（国+テーマ） → L4国名 + L4テーマ（2グループ）
 
         Args:
             product_name: 商品名
-            url: 商品URL（AI判定の参考情報）
+            url: 商品URL
 
         Returns:
-            tuple[int, int, list[int]]: (大カテゴリーID, 小カテゴリーID, グループIDリスト)
+            tuple[int, int, list[int]]: (大カテゴリーID, 小カテゴリーID(常に0), グループIDリスト)
         """
-        name_lower = product_name.lower()
-        url_lower = url.lower() if url else ""
+        # AIで判定（常時実行）
+        ai_result = self._detect_with_ai(product_name, url)
+
+        # AI判定結果を取得（フォールバック付き）
+        metal = ai_result.get("metal", "silver")
+        if metal not in self.CATEGORY_IDS:
+            metal = "silver"
+
+        shape = ai_result.get("shape", "coin")
+        if shape not in ["coin", "bar"]:
+            shape = "coin"
+
+        product_type = ai_result.get("type", "bullion")
+        if product_type not in ["bullion", "collection", "graded"]:
+            product_type = "bullion"
+
+        country = ai_result.get("country", "other")
+        series = ai_result.get("series", "other")
+        theme = ai_result.get("theme")
+
+        category_id = self.CATEGORY_IDS[metal]
         group_ids = []
 
-        # 1. 素材タイプを判定 → カテゴリーID決定
-        # まずURLから判定（最も確実）
-        detected_metal = None
-        if "silver" in url_lower:
-            detected_metal = "silver"
-        elif "gold" in url_lower:
-            detected_metal = "gold"
-        elif "platinum" in url_lower:
-            detected_metal = "platinum"
+        # === グループID決定 ===
 
-        # URLで判定できない場合はキーワードから判定
-        if not detected_metal:
-            for metal, keywords in self.METAL_KEYWORDS.items():
-                if any(kw in name_lower for kw in keywords):
-                    detected_metal = metal
-                    break
+        if product_type == "graded":
+            # 鑑定済み → L3で終了
+            key = (metal, shape, "graded")
+            if key in self.GROUP_L3:
+                group_ids.append(self.GROUP_L3[key])
+            else:
+                # 鑑定済みグループがない素材の場合はbullionにフォールバック
+                fallback_key = (metal, shape, "bullion")
+                if fallback_key in self.GROUP_L3:
+                    group_ids.append(self.GROUP_L3[fallback_key])
 
-        # それでも判定できない場合はAIで判定
-        ai_result = {}
-        if not detected_metal and self.client:
-            logger.info("  素材をAIで判定中...")
-            ai_result = self._detect_with_ai(product_name, url)
-            if ai_result.get("metal"):
-                detected_metal = ai_result["metal"]
+        elif product_type == "collection":
+            # コレクション → L4国名グループ
+            key = (metal, country)
+            if key in self.GROUP_L4_COLLECTION:
+                group_ids.append(self.GROUP_L4_COLLECTION[key])
+            else:
+                # その他国にフォールバック
+                fallback_key = (metal, "other")
+                if fallback_key in self.GROUP_L4_COLLECTION:
+                    group_ids.append(self.GROUP_L4_COLLECTION[fallback_key])
 
-        # カテゴリーID決定（金/銀のみ）
-        if detected_metal == "gold":
-            category_id_big = self.CATEGORY_IDS["gold"]
-        elif detected_metal == "silver":
-            category_id_big = self.CATEGORY_IDS["silver"]
+            # テーマ判定（映画/アニメ/ミュージック）→ 2グループ目
+            if theme and theme in ["movie", "anime", "music"]:
+                theme_key = (metal, theme)
+                if theme_key in self.GROUP_L4_THEME:
+                    group_ids.append(self.GROUP_L4_THEME[theme_key])
+
+        elif shape == "bar":
+            # インゴット（バー） → L4国名グループ
+            key = (metal, country)
+            if key in self.GROUP_L4_BULLION_BAR:
+                group_ids.append(self.GROUP_L4_BULLION_BAR[key])
+            else:
+                # その他国にフォールバック
+                fallback_key = (metal, "other")
+                if fallback_key in self.GROUP_L4_BULLION_BAR:
+                    group_ids.append(self.GROUP_L4_BULLION_BAR[fallback_key])
+
         else:
-            # デフォルトは銀
-            category_id_big = self.CATEGORY_IDS["silver"]
-            detected_metal = "silver"
-
-        # 2. 素材グループを追加
-        metal_group_id = self._get_or_create_group(detected_metal)
-        if metal_group_id:
-            group_ids.append(metal_group_id)
-
-        # 3. シリーズを判定 → グループID追加
-        detected_series = None
-        for series, info in self.SERIES_MASTER.items():
-            if any(kw in name_lower for kw in info["keywords"]):
-                detected_series = series
-                break
-
-        # キーワードで判定できない場合はAI結果を使用
-        if not detected_series and ai_result.get("series"):
-            detected_series = ai_result["series"]
-            logger.info(f"  シリーズをAI判定で使用: {detected_series}")
-
-        if detected_series:
-            # 素材に応じたシリーズグループを取得/作成
-            series_key = f"{detected_series}_{detected_metal}"
-            if series_key in self.GROUP_MASTER:
-                series_group_id = self._get_or_create_group(series_key)
+            # 地金型コイン
+            # L5シリーズグループを探す
+            l5_key = (metal, country, series)
+            if l5_key in self.GROUP_L5_SERIES:
+                group_ids.append(self.GROUP_L5_SERIES[l5_key])
             else:
-                # 素材別グループがない場合は正しい親の下にグループを作成
-                series_group_id = self._get_or_create_series_group(detected_series, detected_metal)
+                # L5「その他」グループを探す
+                l5_other_key = (metal, country, "other")
+                if l5_other_key in self.GROUP_L5_SERIES:
+                    group_ids.append(self.GROUP_L5_SERIES[l5_other_key])
+                else:
+                    # L4国名グループにフォールバック
+                    l4_key = (metal, country)
+                    if l4_key in self.GROUP_L4_BULLION_COIN:
+                        group_ids.append(self.GROUP_L4_BULLION_COIN[l4_key])
+                    else:
+                        # その他諸国にフォールバック
+                        fallback_key = (metal, "other")
+                        if fallback_key in self.GROUP_L4_BULLION_COIN:
+                            group_ids.append(self.GROUP_L4_BULLION_COIN[fallback_key])
 
-            if series_group_id:
-                group_ids.append(series_group_id)
+        logger.info(f"  判定: 素材={metal}, 形状={shape}, タイプ={product_type}, 国={country}")
+        logger.info(f"  → カテゴリー={category_id}, グループ={group_ids}")
 
-        # 4. 商品タイプを判定 → グループID追加
-        detected_type = None
-        for ptype, keywords in self.TYPE_KEYWORDS.items():
-            if any(kw in name_lower for kw in keywords):
-                detected_type = ptype
-                break
-
-        # AI結果からタイプを取得
-        if not detected_type and ai_result.get("type"):
-            detected_type = ai_result["type"]
-
-        if detected_type:
-            type_group_id = self._get_or_create_group(detected_type)
-            if type_group_id:
-                group_ids.append(type_group_id)
-
-        logger.info(f"  判定: 素材={detected_metal}, シリーズ={detected_series}, タイプ={detected_type}")
-        logger.info(f"  → カテゴリー={category_id_big}, グループ={group_ids}")
-
-        return category_id_big, 0, group_ids
-
-    def _get_or_create_series_group(self, series: str, metal: str) -> int:
-        """シリーズグループを取得、存在しない場合は正しい親の下に作成"""
-        if series not in self.SERIES_MASTER:
-            return 0
-
-        series_info = self.SERIES_MASTER[series]
-        group_name = series_info["display_name"]
-
-        # 期待される親グループID（metalに対応するグループ）
-        expected_parent_id = self.GROUP_MASTER.get(metal, {}).get("id", 0)
-
-        # 既存グループに存在するか確認（親も一致するかチェック）
-        if group_name in self.existing_groups:
-            existing = self.existing_groups[group_name]
-            existing_id = existing["id"]
-            existing_parent = existing["parent_id"]
-
-            # 親グループが一致する場合はそのまま返す
-            if existing_parent == expected_parent_id:
-                return existing_id
-
-            # 親が一致しない場合は正しい親の下に新規作成
-            logger.info(f"  既存グループ '{group_name}' は親が不一致 (期待: {expected_parent_id}/{metal}, 実際: {existing_parent})")
-            logger.info(f"  → 正しい親の下に新規作成します")
-
-        # 存在しない、または親が不一致の場合は作成
-        if self.colorme_client:
-            logger.info(f"  新シリーズグループ作成中: {group_name} (親: {metal}, ID: {expected_parent_id})")
-            new_id, error = self.colorme_client.create_group(group_name, expected_parent_id)
-            if new_id > 0:
-                # マスターを更新
-                new_key = f"{series}_{metal}"
-                self.GROUP_MASTER[new_key] = {"id": new_id, "name": group_name, "parent_key": metal}
-                self.existing_groups[group_name] = {"id": new_id, "parent_id": expected_parent_id}
-                return new_id
-            else:
-                logger.warning(f"  グループ作成失敗: {error}")
-
-        return 0
+        return category_id, 0, group_ids
 
     def _detect_with_ai(self, product_name: str, url: str = "") -> dict:
         """
-        AIを使って商品のカテゴリー情報を判定する
+        AIを使って商品のカテゴリー情報を判定する（常時実行）
 
         Returns:
-            dict: {"metal": "gold"|"silver"|"platinum", "series": str, "type": "coin"|"bar"|None}
+            dict: {"metal": "gold"|"silver"|"platinum"|"palladium"|"copper",
+                   "shape": "coin"|"bar",
+                   "type": "bullion"|"collection"|"graded",
+                   "country": str, "series": str, "theme": str|None}
+
+        Raises:
+            RuntimeError: AI APIが利用できない場合、またはAI判定に失敗した場合
         """
-        if not self.client:
-            return {}
-
-        try:
-            prompt = f"""以下の商品情報から、素材・シリーズ・タイプを判定してください。
-
-商品名: {product_name}
-URL: {url}
-
-判定基準:
-- 素材 (metal): "gold"（金貨/ゴールド）, "silver"（銀貨/シルバー）, "platinum"（プラチナ）
-- シリーズ (series): "maple", "vienna", "britannia", "eagle", "kangaroo", "kookaburra", "koala", "dragon", "lunar", "panda" など
-- タイプ (type): "coin"（コイン/ラウンド）, "bar"（バー/インゴット）, null（不明）
-
-JSON形式で回答してください:
-{{"metal": "...", "series": "...", "type": "..."}}
-
-注意:
-- URLに"silver"が含まれていれば銀貨、"gold"が含まれていれば金貨
-- "dragon", "lunar"などの干支シリーズは素材と組み合わせて判定
-- 判定できない場合はnullを設定
-"""
-
-            response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=200,
-                messages=[{"role": "user", "content": prompt}]
+        # AI APIがない場合はエラー
+        if not self.genai_model:
+            raise RuntimeError(
+                "AI APIが利用できません。Vertex AI認証を確認してください。"
             )
 
-            response_text = response.content[0].text
+        try:
+            # 利用可能な国名リスト（グループマスターに登録されているもの）
+            available_countries = [
+                "usa", "canada", "austria", "uk", "australia", "china",
+                "south_africa", "mexico", "st_helena", "singapore", "palau",
+                "barbados", "cameroon", "chad", "armenia", "tuvalu", "niue",
+                "cook_islands", "fiji", "solomon_islands", "tokelau", "france",
+                "samoa", "germany", "other"
+            ]
+
+            # 利用可能なシリーズリスト
+            available_series = [
+                "eagle", "buffalo", "maple", "vienna", "britannia",
+                "kangaroo", "koala", "kookaburra", "lunar", "panda",
+                "krugerrand", "elephant", "libertad", "other"
+            ]
+
+            prompt = f"""あなたは貴金属コイン・地金の専門家です。以下の商品情報を分析し、カテゴリ情報をJSON形式で出力してください。
+
+## 商品情報
+- 商品名: {product_name}
+- URL: {url}
+
+## 判定ルール
+
+### 1. 素材 (metal)
+URLのパスに含まれる素材名を最優先で判定:
+- /gold/ → "gold"
+- /silver/ → "silver"
+- /platinum/ → "platinum"
+- /palladium/ → "palladium"
+- /copper/ → "copper"
+
+URLで判定できない場合は商品名から判定。デフォルトは "silver"。
+
+### 2. 形状 (shape)
+- "bar": bar, ingot, バー, インゴット, 地金 が含まれる場合
+- "coin": それ以外（デフォルト）
+
+### 3. タイプ (type)
+- "graded": NGC, PCGS, PF70, PF69, MS70, MS69, PR70, 鑑定 などが含まれる場合
+- "collection": proof, colorized, gilded, antiqued, high relief, piedfort, privy, 限定, 記念, または映画/アニメ/音楽関連キャラクター名が含まれる場合
+- "bullion": 上記以外の地金型コイン（デフォルト）
+
+### 4. 国名 (country)
+発行国を判定。以下のリストから選択: {', '.join(available_countries)}
+
+国名判定のヒント:
+- American Eagle, Buffalo → usa
+- Maple Leaf → canada
+- Britannia, Royal Mint → uk
+- Kangaroo, Koala, Kookaburra, Perth Mint → australia
+- Philharmonic, Vienna → austria
+- Panda → china
+- Krugerrand → south_africa
+- Libertad → mexico
+
+### 5. シリーズ (series)
+地金型コインのシリーズ名。以下のリストから選択: {', '.join(available_series)}
+
+シリーズ判定:
+- eagle: American Eagle
+- buffalo: American Buffalo
+- maple: Maple Leaf
+- vienna: Philharmonic, ウィーン
+- britannia: Britannia
+- kangaroo: Kangaroo
+- koala: Koala
+- kookaburra: Kookaburra
+- lunar: Lunar, 干支, Year of the Dragon/Tiger/etc.
+- panda: Panda
+- krugerrand: Krugerrand
+- elephant: Elephant, Big Five
+- libertad: Libertad
+- other: 上記以外
+
+### 6. テーマ (theme)
+コレクションの場合のみ判定:
+- "movie": Star Wars, Marvel, Disney, Batman, Superman, Harry Potter, Lord of the Rings など
+- "anime": Pokemon, Pikachu, Hello Kitty, Dragon Ball, Gundam など
+- "music": Beatles, Elvis, Queen, Rolling Stones など
+- null: テーマなし
+
+## 出力形式
+JSONのみを出力してください。説明は不要です。
+
+{{"metal": "...", "shape": "...", "type": "...", "country": "...", "series": "...", "theme": ...}}
+"""
+
+            response = self.genai_model.generate_content(prompt)
+            response_text = response.text
             json_match = re.search(r'\{[\s\S]*\}', response_text)
             if json_match:
                 data = json.loads(json_match.group())
                 logger.info(f"  AI判定結果: {data}")
                 return data
 
-        except Exception as e:
-            logger.warning(f"  AI判定エラー: {e}")
+            # JSONが取得できなかった場合
+            raise RuntimeError(
+                f"AI判定結果からJSONを取得できませんでした。レスポンス: {response_text[:200]}"
+            )
 
-        return {}
+        except RuntimeError:
+            # RuntimeErrorはそのまま再送出
+            raise
+        except Exception as e:
+            # その他のエラーはRuntimeErrorにラップ
+            raise RuntimeError(f"AI判定でエラーが発生しました: {e}") from e
 
 
 class JapaneseProductNameGenerator:
@@ -1633,18 +1884,16 @@ ITM-{{国コード}}-{{カテゴリ}}-{{メーカー}}-{{数量3桁}}-{{重量}}
 型番のみを1行で出力してください。説明は不要です。
 """
 
-    def __init__(self, api_key: str = None):
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
-        self.client = None
-        if self.api_key:
-            try:
-                import anthropic
-                self.client = anthropic.Anthropic(api_key=self.api_key)
-                logger.info("型番生成器: 初期化完了（APIキー設定済み）")
-            except ImportError:
-                logger.warning("anthropicライブラリがインストールされていません")
-        else:
-            logger.warning("型番生成器: ANTHROPIC_API_KEYが設定されていません")
+    def __init__(self):
+        self.genai_model = None
+        try:
+            import vertexai
+            from vertexai.generative_models import GenerativeModel
+            vertexai.init(project="coin-price-tracker-479614", location="us-central1")
+            self.genai_model = GenerativeModel("gemini-2.5-pro")
+            logger.info("型番生成器: Vertex AI Gemini初期化完了")
+        except Exception as e:
+            logger.warning(f"型番生成器: Vertex AI初期化エラー: {e}")
 
     def generate(self, product_info: dict, quantity: int = 1) -> str:
         """
@@ -1657,8 +1906,8 @@ ITM-{{国コード}}-{{カテゴリ}}-{{メーカー}}-{{数量3桁}}-{{重量}}
         Returns:
             str: 型番 (例: ITM-2026-GBR-SCJ-BRT-100)
         """
-        if not self.client:
-            logger.warning("ANTHROPIC_API_KEYが設定されていません。型番生成をスキップします。")
+        if not self.genai_model:
+            logger.warning("Vertex AI Geminiが初期化されていません。型番生成をスキップします。")
             return ""
 
         prompt = self.PROMPT_TEMPLATE.format(
@@ -1669,13 +1918,8 @@ ITM-{{国コード}}-{{カテゴリ}}-{{メーカー}}-{{数量3桁}}-{{重量}}
         )
 
         try:
-            response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=100,
-                messages=[{"role": "user", "content": prompt}]
-            )
-
-            model_number = response.content[0].text.strip()
+            response = self.genai_model.generate_content(prompt)
+            model_number = response.text.strip()
             # 型番形式の検証（ITM-で始まる）
             if model_number.startswith("ITM-"):
                 return model_number

@@ -483,22 +483,18 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
         # CategoryDetectorの固定カテゴリーID → 名称マップを構築
         # （カラーミーAPIから取得したカテゴリーとは別に管理）
         category_name_map = {
-            2961572: "金貨・金地金",      # gold
-            2961573: "銀貨・銀地金",      # silver
+            2977963: "ゴールド（金）",
+            2977964: "シルバー（銀）",
+            2977965: "プラチナ",
+            2977966: "パラジウム",
+            2977967: "カッパー（銅）",
         }
 
-        # グループ名称マップを構築（CategoryDetector.GROUP_MASTERから）
-        for _, info in CategoryDetector.GROUP_MASTER.items():
-            grp_id = info.get("id", 0)
-            grp_name = info.get("name", "")
-            if grp_id and grp_name:
-                group_name_map[grp_id] = grp_name
-
-        # カラーミーAPIから取得したグループ名称も追加（上書きしない）
+        # グループ名称マップを構築（カラーミーAPIから取得したグループ情報を使用）
         for grp in groups:
             grp_id = grp.get("id", 0)
             grp_name = grp.get("name", "")
-            if grp_id and grp_name and grp_id not in group_name_map:
+            if grp_id and grp_name:
                 group_name_map[grp_id] = grp_name
 
         logger.info(f"カテゴリー判定器: {len(categories)}カテゴリー, {len(groups)}グループ")
