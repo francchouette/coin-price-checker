@@ -1292,22 +1292,13 @@ class CategoryDetector:
         # Vertex AI Geminiクライアントを初期化
         self.genai_model = None
         try:
-            import google.auth
-            from google.auth.transport.requests import Request
             import vertexai
             from vertexai.generative_models import GenerativeModel
-
-            # ADC認証を使用
-            credentials, project = google.auth.default()
-            if hasattr(credentials, 'refresh'):
-                credentials.refresh(Request())
-
-            # Vertex AIを初期化
             vertexai.init(project="coin-price-tracker-479614", location="us-central1")
             self.genai_model = GenerativeModel("gemini-2.5-pro")
-            logger.info("Vertex AI Gemini APIクライアント初期化成功")
+            logger.info("カテゴリー判定器: Vertex AI Gemini初期化完了")
         except Exception as e:
-            logger.warning(f"Vertex AI Gemini APIクライアント初期化エラー: {e}")
+            logger.warning(f"カテゴリー判定器: Vertex AI初期化エラー: {e}")
 
         # APIから取得したグループ名→{id, parent_id}のマッピングを作成
         self.existing_groups = {}
