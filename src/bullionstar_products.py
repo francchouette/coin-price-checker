@@ -544,7 +544,7 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
         skipped_count = 0
         updated_count = 0
         processed_count = 0
-        BATCH_SAVE_INTERVAL = 50  # 50件ごとに中間保存
+        BATCH_SAVE_INTERVAL = 10  # 10件ごとに中間保存
 
         def save_batch(sheet, new_rows_batch, update_cells_batch, existing_data_len, start_row_offset):
             """バッチ保存を実行"""
@@ -663,184 +663,10 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
 
         for product in products:
             if product.url in existing_by_url:
-                # 既存商品: 価格情報を更新（P-W列）
-                # 81列構造: P=在庫, Q=価格, R=前回価格, S=変動率, T=通貨, U=為替種類, V=為替レート, W=日本円
-                row_idx, existing_row = existing_by_url[product.url]
-
-                # 価格情報がある場合のみ更新
-                if product.price is not None:
-                    # R列(17): 前回仕入れ価格（現在のQ列(16)の値を保存）
-                    if len(existing_row) > 16 and existing_row[16]:
-                        try:
-                            prev_price = float(existing_row[16].replace(",", ""))
-                            update_cells.append((row_idx, 18, str(prev_price)))  # R列 = index 17 + 1 = 18
-                        except ValueError:
-                            pass
-
-                    # P列(16): 仕入れ先在庫状況
-                    if product.in_stock is not None:
-                        stock_status = "In Stock" if product.in_stock else "Out of Stock"
-                        update_cells.append((row_idx, 16, stock_status))
-
-                    # Q列(17): 仕入れ先価格（現地通貨）
-                    update_cells.append((row_idx, 17, str(product.price)))
-
-                    # T列(20): 取引通貨
-                    if product.currency:
-                        update_cells.append((row_idx, 20, product.currency))
-
-                    # U列(21): 為替種類
-                    if product.exchange_type:
-                        update_cells.append((row_idx, 21, product.exchange_type))
-
-                    # V列(22): 為替レート - JPYなら1、それ以外は取得した為替レート
-                    if product.currency == "JPY":
-                        update_cells.append((row_idx, 22, "1"))
-                    elif product.exchange_rate > 0:
-                        update_cells.append((row_idx, 22, str(round(product.exchange_rate, 4))))
-
-                    # W列(23): 仕入れ額(日本円)
-                    if product.price_jpy > 0:
-                        update_cells.append((row_idx, 23, str(int(product.price_jpy))))
-
-                    updated_count += 1
-                else:
-                    skipped_count += 1
-
-                # AN-AT列: カテゴリー・グループ・型番が空の場合のみAI生成（価格有無に関わらず実行）
-                # AN列(40): 大カテゴリーID, AO列(41): 大カテゴリー名称
-                # AP列(42): 小カテゴリーID, AQ列(43): 小カテゴリー名称
-                # AR列(44): グループID, AS列(45): グループ名
-                # AT列(46): 型番
-                existing_cat_big = existing_row[39] if len(existing_row) > 39 else ""
-                existing_cat_big_name = existing_row[40] if len(existing_row) > 40 else ""
-                existing_cat_small = existing_row[41] if len(existing_row) > 41 else ""
-                existing_cat_small_name = existing_row[42] if len(existing_row) > 42 else ""
-                existing_group_ids = existing_row[43] if len(existing_row) > 43 else ""
-                existing_group_names = existing_row[44] if len(existing_row) > 44 else ""
-                existing_model_number = existing_row[45] if len(existing_row) > 45 else ""
-
-                # カテゴリー・グループ自動判定（AN-AS列: 6列）
-                # IDまたは名称が空の場合に更新を試みる
-                needs_category_update = (
-                    not existing_cat_big or not existing_cat_big_name or
-                    not existing_group_ids or not existing_group_names
-                )
-                if category_detector and needs_category_update:
-                    try:
-                        cat_big, cat_small, group_ids = category_detector.detect(product.name, product.url)
-                        # 大カテゴリーID/名称の更新
-                        if cat_big:
-                            if not existing_cat_big:
-                                update_cells.append((row_idx, 40, str(cat_big)))  # AN列: 大カテゴリーID
-                            # AO列: 大カテゴリー名称を取得（IDがあれば名称も設定）
-                            if not existing_cat_big_name:
-                                # 既存のカテゴリーIDまたは新規判定のIDを使用
-                                lookup_id = int(existing_cat_big) if existing_cat_big else cat_big
-                                cat_big_name = category_name_map.get(lookup_id, "")
-                                if cat_big_name:
-                                    update_cells.append((row_idx, 41, cat_big_name))  # AO列
-                        # 小カテゴリーID/名称の更新
-                        if cat_small:
-                            if not existing_cat_small:
-                                update_cells.append((row_idx, 42, str(cat_small)))  # AP列: 小カテゴリーID
-                            # AQ列: 小カテゴリー名称を取得
-                            if not existing_cat_small_name:
-                                lookup_id = int(existing_cat_small) if existing_cat_small else cat_small
-                                cat_small_name = category_name_map.get(lookup_id, "")
-                                if cat_small_name:
-                                    update_cells.append((row_idx, 43, cat_small_name))  # AQ列
-                        # グループID/名称の更新
-                        if group_ids:
-                            if not existing_group_ids:
-                                # 先頭にシングルクォートを付けてテキストとして保存（桁区切り防止）
-                                update_cells.append((row_idx, 44, "'" + ",".join(str(g) for g in group_ids)))  # AR列: グループID
-                            # AS列: グループ名称を取得（IDがあれば名称も設定）
-                            if not existing_group_names:
-                                # 既存のグループIDまたは新規判定のIDを使用
-                                if existing_group_ids:
-                                    lookup_ids = [int(g.strip()) for g in existing_group_ids.split(",") if g.strip()]
-                                else:
-                                    lookup_ids = group_ids
-                                group_names = [group_name_map.get(g, "") for g in lookup_ids]
-                                group_names = [n for n in group_names if n]  # 空文字を除外
-                                if group_names:
-                                    update_cells.append((row_idx, 45, ",".join(group_names)))  # AS列
-                        logger.debug(f"  既存商品カテゴリー更新: 大={cat_big}, 小={cat_small}, グループ={group_ids}")
-                    except Exception as e:
-                        logger.debug(f"  既存商品カテゴリー判定エラー: {e}")
-
-                # 型番自動生成（AT列）
-                if model_number_generator.genai_model and not existing_model_number:
-                    try:
-                        model_info = {
-                            "name": product.name,
-                            "specs": product.specs or "",
-                            "description": product.description_en or "",
-                        }
-                        model_number = model_number_generator.generate(model_info, quantity=1)
-                        if model_number:
-                            update_cells.append((row_idx, 46, model_number))  # AT列
-                            logger.debug(f"  既存商品型番更新: {model_number}")
-                    except Exception as e:
-                        logger.debug(f"  既存商品型番生成エラー: {e}")
-
-                # 計算式列が空の場合に数式を追加（S, Y, AD-AM列）
-                # 既存の値をチェック（数式か値かに関わらず、空の場合のみ設定）
-                existing_s = existing_row[18] if len(existing_row) > 18 else ""
-                existing_y = existing_row[24] if len(existing_row) > 24 else ""
-                existing_ad = existing_row[29] if len(existing_row) > 29 else ""
-                existing_ae = existing_row[30] if len(existing_row) > 30 else ""
-                existing_af = existing_row[31] if len(existing_row) > 31 else ""
-                existing_ag = existing_row[32] if len(existing_row) > 32 else ""
-                existing_ah = existing_row[33] if len(existing_row) > 33 else ""
-                existing_ak = existing_row[36] if len(existing_row) > 36 else ""
-                existing_al = existing_row[37] if len(existing_row) > 37 else ""
-                existing_am = existing_row[38] if len(existing_row) > 38 else ""
-
-                # デフォルト値を追加（空の列のみ）- A列、B列、AB列、AC列
-                existing_a = existing_row[0] if len(existing_row) > 0 else ""
-                existing_b = existing_row[1] if len(existing_row) > 1 else ""
-                existing_ab = existing_row[27] if len(existing_row) > 27 else ""
-                existing_ac = existing_row[28] if len(existing_row) > 28 else ""
-                if not existing_a:
-                    update_cells.append((row_idx, 1, "検討中"))  # A列: 採用フラグ
-                if not existing_b:
-                    update_cells.append((row_idx, 2, "未登録"))  # B列: カラーミー登録状況
-                if not existing_ab:
-                    update_cells.append((row_idx, 28, "100"))  # AB列: 送料
-                if not existing_ac:
-                    update_cells.append((row_idx, 29, "50"))   # AC列: 諸経費
-
-                # 計算式を追加（空の列のみ）- update_cellsに追加（後でbatch_updateで処理）
-                if not existing_s:
-                    update_cells.append((row_idx, 19, f'=IF(R{row_idx}="","",IF(R{row_idx}=0,"",(Q{row_idx}-R{row_idx})/R{row_idx}*100))'))
-                if not existing_y:
-                    update_cells.append((row_idx, 25, f'=W{row_idx}*X{row_idx}'))
-                if not existing_ad:
-                    update_cells.append((row_idx, 30, f'=Y{row_idx}+AB{row_idx}+AC{row_idx}'))
-                if not existing_ae:
-                    update_cells.append((row_idx, 31, f'=ROUNDUP(AD{row_idx}/(2-Z{row_idx})+AB{row_idx}+AC{row_idx},-2)'))
-                if not existing_af:
-                    update_cells.append((row_idx, 32, f'=AE{row_idx}-AD{row_idx}'))
-                if not existing_ag:
-                    update_cells.append((row_idx, 33, f'=IF(AE{row_idx}=0,"",AF{row_idx}/AE{row_idx}*100)'))
-                if not existing_ah:
-                    update_cells.append((row_idx, 34, f'=AE{row_idx}'))
-                # AI列(35): 定価 = AE
-                existing_ai = existing_row[34] if len(existing_row) > 34 else ""
-                if not existing_ai:
-                    update_cells.append((row_idx, 35, f'=AE{row_idx}'))
-                # AJ列(36): 会員価格 = AE
-                existing_aj = existing_row[35] if len(existing_row) > 35 else ""
-                if not existing_aj:
-                    update_cells.append((row_idx, 36, f'=AE{row_idx}'))
-                if not existing_ak:
-                    update_cells.append((row_idx, 37, f'=AD{row_idx}'))
-                if not existing_al:
-                    update_cells.append((row_idx, 38, f'=AH{row_idx}*1.1'))
-                if not existing_am:
-                    update_cells.append((row_idx, 39, f'=AH{row_idx}*0.1'))
+                # 既存商品: 完全スキップ（価格更新は別のGitHub Actionで行う）
+                skipped_count += 1
+                logger.debug(f"  既存商品スキップ: {product.name}")
+                continue
             else:
                 # 新規商品: 83列のデータを作成
                 supplier_id = generate_supplier_id(existing_ids)
@@ -1057,12 +883,12 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     "",                                             # CC: 掲載終了日時
 
                     # === システム情報（CD-CE列: 2列）※元は3列だが調整===
-                    "",                                             # CD: 同期日時
-                    "",                                             # CE: 商品更新日時
+                    product.fetched_at,                             # CD: 同期日時（初回取得日時）
+                    product.last_price_updated,                     # CE: 商品更新日時（価格更新日時）
                 ]
                 new_rows.append(new_row)
 
-            # 50件ごとに中間保存
+            # 10件ごとに中間保存
             processed_count += 1
             if processed_count % BATCH_SAVE_INTERVAL == 0:
                 logger.info(f"中間保存中... ({processed_count}/{len(products)}件処理済み)")
@@ -1327,7 +1153,7 @@ def fetch_prices_for_products(
     limit: Optional[int] = None,
     exchange_type: str = "クレカ",
     save_callback=None,
-    batch_size: int = 50
+    batch_size: int = 10
 ) -> list[BullionstarProduct]:
     """
     商品リストの価格・在庫・画像・仕様情報をスクレイピングで取得し、
@@ -1339,7 +1165,7 @@ def fetch_prices_for_products(
         limit: 取得件数制限（Noneで全件）
         exchange_type: 為替種類（"クレカ" または "Wise"）
         save_callback: 中間保存用コールバック関数（商品リストを受け取る）
-        batch_size: 中間保存の間隔（デフォルト50件）
+        batch_size: 中間保存の間隔（デフォルト10件）
 
     Returns:
         価格・画像・仕様情報・日本円換算価格が付加された商品リスト
@@ -1644,7 +1470,7 @@ def main():
             limit=args.limit,
             exchange_type=args.exchange_type,
             save_callback=save_callback,
-            batch_size=50
+            batch_size=10
         )
 
         # limitが指定されている場合、保存する商品もlimit件数に制限

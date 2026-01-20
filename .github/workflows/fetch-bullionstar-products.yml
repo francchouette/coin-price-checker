@@ -26,15 +26,21 @@ on:
         required: false
         default: ''
         type: string
+      auto_continue:
+        description: '自動継続モード（内部用）'
+        required: false
+        default: 'false'
+        type: string
 
 jobs:
   fetch-products:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 360  # GitHub Actionsの最大値（6時間）
 
     permissions:
       contents: read
       id-token: write
+      actions: write  # ワークフロー再起動に必要
 
     steps:
       - name: Checkout repository
@@ -64,6 +70,7 @@ jobs:
           playwright install-deps chromium
 
       - name: Fetch Bullionstar products
+        id: fetch
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
@@ -76,4 +83,35 @@ jobs:
           if [ -n "${{ inputs.limit }}" ]; then
             ARGS="$ARGS --limit ${{ inputs.limit }}"
           fi
-          python -m src.bullionstar_products $ARGS
+
+          # 実行結果をファイルに出力
+          python -m src.bullionstar_products $ARGS 2>&1 | tee /tmp/fetch_output.log
+
+          # 新規追加件数を抽出（"新規追加: XX件" のパターン）
+          NEW_COUNT=$(grep -oP '新規追加: \K\d+' /tmp/fetch_output.log | tail -1 || echo "0")
+          echo "new_count=$NEW_COUNT" >> $GITHUB_OUTPUT
+          echo "新規追加件数: $NEW_COUNT"
+
+      - name: Check if continuation needed
+        id: check_continue
+        if: ${{ inputs.limit == '' }}
+        run: |
+          # 新規追加が1件以上あれば、まだ未処理の商品がある可能性が高い
+          if [ "${{ steps.fetch.outputs.new_count }}" -gt "0" ]; then
+            echo "should_continue=true" >> $GITHUB_OUTPUT
+            echo "未処理の商品が残っている可能性があります。継続実行をトリガーします。"
+          else
+            echo "should_continue=false" >> $GITHUB_OUTPUT
+            echo "全商品の処理が完了しました。"
+          fi
+
+      - name: Trigger continuation workflow
+        if: ${{ steps.check_continue.outputs.should_continue == 'true' && inputs.limit == '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "ワークフローを再起動して未処理の商品を継続処理します..."
+          gh workflow run fetch-bullionstar-products.yml \
+            -f category="${{ inputs.category }}" \
+            -f auto_continue="true"
+          echo "継続ワークフローをトリガーしました。"
