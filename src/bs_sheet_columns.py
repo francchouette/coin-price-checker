@@ -63,8 +63,8 @@ class Col:
     REGISTRATION_STATUS = _col(1, "カラーミー登録状況")
     SUPPLIER_ID = _col(2, "仕入れ先商品ID")
 
-    # === D列: CM商品名（1列）===
-    CM_PRODUCT_NAME = _col(3, "CM商品名")
+    # === D列: カラーミー商品名（1列）===
+    CM_PRODUCT_NAME = _col(3, "カラーミー商品名")
 
     # === E-Q列: 仕入れ先商品情報（13列）===
     COLORME_URL = _col(4, "カラーミー商品URL")
@@ -112,7 +112,7 @@ class Col:
     CM_CATEGORY_BIG = _col(40, "大カテゴリーID")
     CM_CATEGORY_BIG_NAME = _col(41, "大カテゴリー名称")
     CM_CATEGORY_SMALL = _col(42, "小カテゴリーID")
-    CM_CATEGORY_SMALL_NAME = _col(43, "小カテゴリー名称")
+    CM_CATEGORY_SMALL_NAME = _col(43, "小カテゴリー名")
     CM_GROUP_ID = _col(44, "グループID")
     CM_GROUP_NAME = _col(45, "グループ名")
 
