@@ -1,4 +1,4 @@
-name: Upload Product Images
+name: "[BS4] Upload Product Images"
 
 on:
   # 手動実行

@@ -1,4 +1,4 @@
-name: Generate CM Product Names
+name: "[BS3] Generate CM Product Names"
 
 on:
   # 手動実行
