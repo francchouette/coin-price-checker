@@ -16,11 +16,15 @@ on:
         description: '仕入れ先一覧同期をスキップ'
         type: boolean
         default: false
+      skip_images:
+        description: '画像アップロードをスキップ'
+        type: boolean
+        default: false
 
 jobs:
   register:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
 
     permissions:
       contents: read
@@ -48,7 +52,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install Playwright browsers
+        if: inputs.skip_images != true && inputs.dry_run != true
+        run: |
+          python -m playwright install chromium
+          python -m playwright install-deps chromium
+
       - name: Run register adopted products
+        id: register
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
@@ -64,3 +75,18 @@ jobs:
             ARGS="$ARGS --skip-sync"
           fi
           python -m src.register_adopted_products $ARGS
+
+      - name: Upload images for registered products
+        if: inputs.skip_images != true && inputs.dry_run != true
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
+          COLORME_LOGIN_ID: ${{ secrets.COLORME_LOGIN_ID }}
+          COLORME_PASSWORD: ${{ secrets.COLORME_PASSWORD }}
+        run: |
+          echo "=== 画像アップロード開始 ==="
+          ARGS=""
+          if [ -n "${{ inputs.limit }}" ]; then
+            ARGS="$ARGS --max-per-run ${{ inputs.limit }}"
+          fi
+          python -m src.upload_bullionstar_images $ARGS
