@@ -1660,12 +1660,14 @@ class JapaneseProductNameGenerator:
 
         if is_ingot:
             # インゴットの命名規則
-            # [メーカー名] [国名] [重量] [種類]インゴット 新品未使用【[個数]】
+            # [年号] [メーカー名] [国名] [重量] [種類]インゴット 新品未使用【[個数]】
             ingot_type = "ゴールドインゴット" if "gold" in metal_type else "シルバーインゴット"
             if "platinum" in metal_type:
                 ingot_type = "プラチナインゴット"
 
             parts = []
+            if year:
+                parts.append(year)
             if series_or_maker:
                 parts.append(series_or_maker)
             if country:
