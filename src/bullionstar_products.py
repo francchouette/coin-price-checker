@@ -1189,10 +1189,16 @@ def fetch_prices_for_products(
     if save_callback:
         logger.info(f"  → {batch_size}件ごとに中間保存します")
 
+    # 為替レートを事前取得（SGD等の通貨に対応）
+    # Bullionstarは主にSGD価格を返すため、事前に取得しておく
+    logger.info("為替レートを事前取得中...")
+    pre_fetched_rates = fetch_exchange_rates(["SGD", "USD", "EUR", "AUD"], exchange_type)
+    logger.info(f"為替レート取得完了: {pre_fetched_rates}")
+
     timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
     success_count = 0
     error_count = 0
-    currencies_found: set[str] = set()  # 見つかった通貨を収集
+    currencies_found: set[str] = set()  # 見つかった通貨を収集（ログ用）
     last_saved_index = 0  # 最後に保存したインデックス（二重保存防止用）
 
     with sync_playwright() as p:
@@ -1225,12 +1231,20 @@ def fetch_prices_for_products(
                 product.in_stock = result.in_stock
                 product.last_price_updated = timestamp
 
-                # JPY以外の通貨が検出された場合は記録（後で為替変換）
+                # 通貨に応じて為替レートを即時適用
                 if result.currency and result.currency != "JPY":
                     currencies_found.add(result.currency)
-                    # 一旦為替レート未設定（後でまとめて設定）
-                    product.exchange_rate = 0.0
-                    product.price_jpy = 0.0
+                    currency = result.currency.upper()
+                    rate = pre_fetched_rates.get(currency)
+                    if rate and result.price:
+                        product.exchange_type = exchange_type
+                        product.exchange_rate = rate
+                        product.price_jpy = round(result.price * rate, 0)
+                    else:
+                        # レートが取得できない場合は0のまま（後で手動対応）
+                        product.exchange_rate = 0.0
+                        product.price_jpy = 0.0
+                        logger.warning(f"  為替レートが取得できません: {currency}")
                 else:
                     # JPYの場合は為替レート1、日本円価格はそのまま
                     product.exchange_type = "なし"  # JPYなので為替不要
@@ -1333,23 +1347,29 @@ def fetch_prices_for_products(
         save_callback(remaining_products)
         logger.info(f"最終保存完了")
 
-    # BullionstarはJPY価格を取得するため、為替レート取得は通常不要
-    # （スクレイピング時にJPY/為替レート1/日本円価格を設定済み）
-    # 万が一JPY以外の通貨が検出された場合のみ為替レートを取得
+    # 事前取得で漏れた通貨がある場合のフォールバック処理
+    # （通常は事前取得でSGD/USD/EUR/AUDをカバーしているため発動しない）
     if currencies_found:
-        logger.info("\n" + "=" * 60)
-        logger.info(f"JPY以外の通貨が検出されました: {currencies_found}")
-        logger.info("為替レートを取得して日本円換算価格を計算")
-        logger.info("=" * 60)
+        logger.info(f"\n検出された通貨: {currencies_found}")
 
-        exchange_rates = fetch_exchange_rates(list(currencies_found), exchange_type)
+        # 為替レートが0のまま残っている商品を確認
+        missing_rate_products = [
+            p for p in target_products
+            if p.currency and p.currency.upper() != "JPY" and p.exchange_rate == 0.0
+        ]
 
-        # 各商品の日本円換算価格を計算（JPY以外のみ）
-        jpy_calculated_count = 0
-        for product in target_products:
-            if product.price is not None and product.currency:
-                currency = product.currency.upper()
-                if currency != "JPY":
+        if missing_rate_products:
+            logger.info(f"為替レート未設定の商品: {len(missing_rate_products)}件")
+            logger.info("追加で為替レートを取得して日本円換算価格を計算")
+
+            # 事前取得で漏れた通貨のみ再取得
+            missing_currencies = {p.currency.upper() for p in missing_rate_products if p.currency}
+            exchange_rates = fetch_exchange_rates(list(missing_currencies), exchange_type)
+
+            jpy_calculated_count = 0
+            for product in missing_rate_products:
+                if product.price is not None and product.currency:
+                    currency = product.currency.upper()
                     rate = exchange_rates.get(currency)
                     if rate:
                         product.exchange_type = exchange_type
@@ -1357,15 +1377,17 @@ def fetch_prices_for_products(
                         product.price_jpy = round(product.price * rate, 0)
                         jpy_calculated_count += 1
 
-        logger.info(f"日本円換算完了: {jpy_calculated_count}件")
+            logger.info(f"追加日本円換算完了: {jpy_calculated_count}件")
 
-        # 為替レート計算後に再保存（SGD等の通貨がある場合）
-        if save_callback and jpy_calculated_count > 0:
-            logger.info(f"\n{'='*40}")
-            logger.info(f"為替レート反映のため再保存: {len(target_products)}件")
-            logger.info(f"{'='*40}")
-            save_callback(target_products)
-            logger.info("再保存完了")
+            # 為替レート計算後に再保存
+            if save_callback and jpy_calculated_count > 0:
+                logger.info(f"\n{'='*40}")
+                logger.info(f"為替レート反映のため再保存: {len(target_products)}件")
+                logger.info(f"{'='*40}")
+                save_callback(target_products)
+                logger.info("再保存完了")
+        else:
+            logger.info("全商品の為替レートは事前取得で適用済み")
 
     return products
 
