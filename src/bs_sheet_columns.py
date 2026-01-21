@@ -164,11 +164,11 @@ class Col:
     CM_SORT = _col(78, "表示順")
     CM_DISABLED_PAYMENT = _col(79, "利用不可決済")
 
-    # === CC-CD列: 掲載期間（2列）===
+    # === CA-CB列: 掲載期間（2列）===
     CM_START_DATE = _col(80, "掲載開始日時")
     CM_END_DATE = _col(81, "掲載終了日時")
 
-    # === CE-CF列: システム情報（2列）===
+    # === CC-CD列: システム情報（2列）===
     CM_SYNC_AT = _col(82, "同期日時")
     CM_CREATED_AT = _col(83, "商品作成日時")
 
@@ -181,13 +181,15 @@ class Col:
 
     @classmethod
     def all_columns(cls) -> list[Column]:
-        """全列のリストを返す（インデックス順）"""
+        """全列のリストを返す（インデックス順、重複除外）"""
+        seen_indices = set()
         columns = []
         for name in dir(cls):
             if not name.startswith('_') and name.isupper():
                 attr = getattr(cls, name)
-                if isinstance(attr, Column):
+                if isinstance(attr, Column) and attr.index not in seen_indices:
                     columns.append(attr)
+                    seen_indices.add(attr.index)
         return sorted(columns, key=lambda c: c.index)
 
     @classmethod
