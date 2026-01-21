@@ -37,46 +37,66 @@ logger = logging.getLogger(__name__)
 # 日本時間 (JST = UTC+9)
 JST = timezone(timedelta(hours=9))
 
-# ブリオンスター商品ページ一覧の列インデックス（83列: A-CE、0-based）
-# 83列構造 - AH列にCM商品名を追加
+# ブリオンスター商品ページ一覧の列インデックス（84列: A-CF、0-based）
+# 84列構造 - D列にCM商品名を追加
 
-# === A-B列: 採用・登録管理列 ===
+# === A-C列: 管理列（3列）===
 BS_COL_ADOPTED_FLAG = 0       # A列: 採用フラグ
 BS_COL_REGISTRATION = 1       # B列: カラーミー登録状況
-# === C-AG列: 仕入れ先商品情報（31列）===
 BS_COL_SUPPLIER_ID = 2        # C列: 仕入れ先商品ID
-BS_COL_NAME = 3               # D列: 仕入れ先商品名
-BS_COL_URL = 4                # E列: 仕入れ先商品URL
-BS_COL_SITE = 5               # F列: 仕入れ先サイト（自動）
-BS_COL_TOP_CATEGORY = 6       # G列: 最上位カテゴリ
-BS_COL_PARENT_CATEGORY = 7    # H列: 親カテゴリ
-BS_COL_CHILD_CATEGORY = 8     # I列: 子カテゴリ
-BS_COL_COUNTRY = 9            # J列: 製造国（サイトからスクレイピング）
-BS_COL_FIRST_FETCHED = 10     # K列: 初回取得日
-BS_COL_STOCK_STATUS = 11      # L列: 在庫状況（サイトからスクレイピング）
-BS_COL_PRICE = 12             # M列: 現在価格（現地通貨）
-BS_COL_CURRENCY = 13          # N列: 取引通貨（サイトからスクレイピング）
-BS_COL_EXCHANGE_TYPE = 14     # O列: 為替種類（手入力）
-BS_COL_EXCHANGE_RATE = 15     # P列: 為替レート（自動取得）
-BS_COL_PRICE_JPY = 16         # Q列: 日本円換算価格（計算式）
-BS_COL_COLORME_ID = 17        # R列: カラーミー商品ID（登録後自動）
-# 画像URL（S-AB列: 10列）
-BS_COL_IMAGE_1 = 18           # S列: 画像URL1
-BS_COL_IMAGE_2 = 19           # T列: 画像URL2
-BS_COL_IMAGE_3 = 20           # U列: 画像URL3
-BS_COL_IMAGE_4 = 21           # V列: 画像URL4
-BS_COL_IMAGE_5 = 22           # W列: 画像URL5
-BS_COL_IMAGE_6 = 23           # X列: 画像URL6
-BS_COL_IMAGE_7 = 24           # Y列: 画像URL7
-BS_COL_IMAGE_8 = 25           # Z列: 画像URL8
-BS_COL_IMAGE_9 = 26           # AA列: 画像URL9
-BS_COL_IMAGE_10 = 27          # AB列: 画像URL10
-# 仕入れ先詳細情報（AC-AG列: 5列）
-BS_COL_SPECS = 28             # AC列: 仕様・スペック
-BS_COL_DESC_EN = 29           # AD列: 商品説明（英語）
-BS_COL_DESC_JA = 30           # AE列: 商品説明（日本語）- AI翻訳
-BS_COL_YEAR = 31              # AF列: 発行年（サイトからスクレイピング）
-BS_COL_MINTAGE = 32           # AG列: 発行数・限定数（サイトからスクレイピング）
+
+# === D列: CM商品名（1列）===
+BS_COL_CM_PRODUCT_NAME = 3    # D列: CM商品名（AI生成）
+
+# === E-Q列: 仕入れ先商品情報（13列）===
+BS_COL_COLORME_URL = 4        # E列: カラーミー商品URL（登録後自動）
+BS_COL_URL = 5                # F列: 仕入れ先商品URL（ユニークキー）
+BS_COL_NAME = 6               # G列: 仕入れ先商品名
+BS_COL_SITE = 7               # H列: 仕入れ先サイト（自動: Bullionstar）
+BS_COL_TOP_CATEGORY = 8       # I列: 最上位カテゴリ
+BS_COL_PARENT_CATEGORY = 9    # J列: 親カテゴリ
+BS_COL_CHILD_CATEGORY = 10    # K列: 子カテゴリ
+BS_COL_COUNTRY = 11           # L列: 製造国
+BS_COL_DESC_EN = 12           # M列: 商品説明（英語）
+BS_COL_SPECS = 13             # N列: 仕様・スペック
+BS_COL_YEAR = 14              # O列: 発行年
+BS_COL_MINTAGE = 15           # P列: 発行数・限定数
+BS_COL_STOCK_STATUS = 16      # Q列: 仕入れ先在庫状況
+
+# === R-X列: 価格情報（7列）===
+BS_COL_PRICE = 17             # R列: 仕入れ先価格（現地通貨）
+BS_COL_PREV_PRICE = 18        # S列: 前回仕入れ価格
+BS_COL_PRICE_CHANGE = 19      # T列: 価格変動率
+BS_COL_CURRENCY = 20          # U列: 取引通貨
+BS_COL_EXCHANGE_TYPE = 21     # V列: 為替種類
+BS_COL_EXCHANGE_RATE = 22     # W列: 為替レート
+BS_COL_PRICE_JPY = 23         # X列: 仕入れ額(日本円)
+
+# === BG-BJ列: 商品説明（4列）===
+BS_COL_EXPL = 58              # BG列: 商品説明（自動生成）
+BS_COL_SIMPLE_EXPL = 59       # BH列: 簡易説明（自動生成）
+BS_COL_SMARTPHONE_EXPL = 60   # BI列: スマホ説明
+BS_COL_MEMO = 61              # BJ列: 備考
+
+# === BK-BT列: 画像URL（10列）===
+BS_COL_IMAGE_1 = 62           # BK列: 画像URL1
+BS_COL_IMAGE_2 = 63           # BL列: 画像URL2
+BS_COL_IMAGE_3 = 64           # BM列: 画像URL3
+BS_COL_IMAGE_4 = 65           # BN列: 画像URL4
+BS_COL_IMAGE_5 = 66           # BO列: 画像URL5
+BS_COL_IMAGE_6 = 67           # BP列: 画像URL6
+BS_COL_IMAGE_7 = 68           # BQ列: 画像URL7
+BS_COL_IMAGE_8 = 69           # BR列: 画像URL8
+BS_COL_IMAGE_9 = 70           # BS列: 画像URL9
+BS_COL_IMAGE_10 = 71          # BT列: 画像URL10
+
+# === CE-CF列: システム情報（2列）===
+BS_COL_SYNC_AT = 82           # CE列: 同期日時
+BS_COL_CREATED_AT = 83        # CF列: 商品作成日時
+
+# 互換用（旧列構造からの移行）- 新構造では存在しないがコードで使用されている
+BS_COL_FIRST_FETCHED = BS_COL_SYNC_AT  # 初回取得日 → 同期日時で代替
+BS_COL_DESC_JA = BS_COL_EXPL           # 日本語説明 → 商品説明で代替
 
 # 商品仕入れ先一覧の列インデックス（35列: A-AI、0-based）
 SP_COL_SUPPLIER_ID = 0        # A列: 仕入れ先商品ID
@@ -130,6 +150,25 @@ def generate_supplier_id(existing_ids: set[str], prefix: str = "SP") -> str:
             except ValueError:
                 pass
     return f"{prefix}-{max_num + 1:06d}"
+
+
+def extract_colorme_id_from_url(url: str) -> str:
+    """
+    カラーミー商品URLから商品IDを抽出
+
+    Args:
+        url: カラーミー商品URL (例: https://www.ybx.jp/?pid=123456)
+
+    Returns:
+        str: 商品ID（抽出失敗時は空文字）
+    """
+    import re
+    if not url:
+        return ""
+    match = re.search(r'pid=(\d+)', url)
+    if match:
+        return match.group(1)
+    return ""
 
 
 def sync_registered_products_to_supplier_list() -> bool:
@@ -254,8 +293,9 @@ def sync_registered_products_to_supplier_list() -> bool:
                     now_str = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
                     update_cells.append((row_idx, SP_COL_LAST_UPDATED + 1, now_str))
 
-                    # S列: カラーミー商品ID（更新があれば）
-                    colorme_id = get_bs_value(bs_row, BS_COL_COLORME_ID)
+                    # S列: カラーミー商品ID（E列のURLから抽出）
+                    colorme_url = get_bs_value(bs_row, BS_COL_COLORME_URL)
+                    colorme_id = extract_colorme_id_from_url(colorme_url)
                     if colorme_id:
                         update_cells.append((row_idx, SP_COL_COLORME_ID + 1, colorme_id))
 
@@ -265,8 +305,8 @@ def sync_registered_products_to_supplier_list() -> bool:
                 supplier_id = generate_supplier_id(existing_ids, prefix="SP")
                 existing_ids.add(supplier_id)
 
-                # ブリオンスター商品ページ一覧（82列: A-CD）から商品仕入れ先一覧（35列: A-AI）にマッピング
-                # BS: A=採用フラグ, B=登録状況, C=ID, D=名前, E=URL, ...
+                # ブリオンスター商品ページ一覧（84列: A-CF）から商品仕入れ先一覧（35列: A-AI）にマッピング
+                # BS: A=採用フラグ, B=登録状況, C=ID, D=CM商品名, E=カラーミーURL, F=仕入れ先URL, G=商品名, ...
                 # SP: A=ID, B=名前, C=URL, D=サイト, ...
                 # 注: BSで削除された列（最終価格更新日時、前回価格、価格変動率、備考）は空欄を設定
                 import datetime
@@ -290,7 +330,7 @@ def sync_registered_products_to_supplier_list() -> bool:
                     now_str,                                                  # P: 最終価格更新日時（現在時刻）
                     "",                                                       # Q: 前回価格（BS側で削除済み、空欄）
                     "",                                                       # R: 価格変動率（BS側で削除済み、空欄）
-                    get_bs_value(bs_row, BS_COL_COLORME_ID),                  # S: カラーミー商品ID
+                    extract_colorme_id_from_url(get_bs_value(bs_row, BS_COL_COLORME_URL)),  # S: カラーミー商品ID（URLから抽出）
                     "",                                                       # T: 備考（BS側で削除済み、空欄）
                     # 画像URL（U-AD列: 10列）
                     get_bs_value(bs_row, BS_COL_IMAGE_1),                     # U: 画像URL1

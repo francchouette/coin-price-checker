@@ -33,13 +33,14 @@ logger = logging.getLogger(__name__)
 PROGRESS_FILE = Path("data/bullionstar_image_upload_progress.json")
 
 # ブリオンスター商品ページ一覧の列インデックス（0-based）
+# 84列構造 (A-CF) - D列にCM商品名追加
 COL_REGISTRATION_STATUS = 1  # B列: カラーミー登録状況
-COL_COLORME_URL = 3          # D列: カラーミー商品URL
-COL_IMAGE_1 = 61             # BJ列: 画像URL1
-COL_IMAGE_10 = 70            # BS列: 画像URL10
-COL_PAGE_TITLE = 71          # BT列: ページタイトル（SEO）
-COL_META_DESC = 72           # BU列: メタディスクリプション（SEO）
-COL_META_KEYWORDS = 73       # BV列: メタキーワード（SEO）
+COL_COLORME_URL = 4          # E列: カラーミー商品URL
+COL_IMAGE_1 = 62             # BK列: 画像URL1
+COL_IMAGE_10 = 71            # BT列: 画像URL10
+COL_PAGE_TITLE = 72          # BU列: ページタイトル（SEO）
+COL_META_DESC = 73           # BV列: メタディスクリプション（SEO）
+COL_META_KEYWORDS = 74       # BW列: メタキーワード（SEO）
 
 # 商品IDと行番号のマッピングを保持
 _product_row_map: dict[int, int] = {}

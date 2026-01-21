@@ -52,118 +52,121 @@ logger = logging.getLogger(__name__)
 JST = timezone(timedelta(hours=9))
 
 # ブリオンスター商品ページ一覧の列インデックス（0-based）
-# 83列構造 (A-CE)
+# 84列構造 (A-CF)
 
 # === A-C列: 管理列（3列）===
 COL_ADOPTED_FLAG = 0       # A列: 採用フラグ
 COL_REGISTRATION_STATUS = 1  # B列: カラーミー登録状況
 COL_SUPPLIER_ID = 2        # C列: 仕入れ先商品ID
 
-# === D-P列: 仕入れ先商品情報（13列）===
-COL_COLORME_URL = 3        # D列: カラーミー商品URL（登録後自動）
-COL_PRODUCT_URL = 4        # E列: 仕入れ先商品URL（ユニークキー）
-COL_PRODUCT_NAME = 5       # F列: 仕入れ先商品名
-COL_SITE = 6               # G列: 仕入れ先サイト（自動: Bullionstar）
-COL_TOP_CATEGORY = 7       # H列: 最上位カテゴリ
-COL_PARENT_CATEGORY = 8    # I列: 親カテゴリ
-COL_CHILD_CATEGORY = 9     # J列: 子カテゴリ
-COL_COUNTRY = 10           # K列: 製造国
-COL_DESC_EN = 11           # L列: 商品説明（英語）
-COL_SPECS = 12             # M列: 仕様・スペック
-COL_YEAR = 13              # N列: 発行年
-COL_MINTAGE = 14           # O列: 発行数・限定数
-COL_STOCK_STATUS = 15      # P列: 仕入れ先在庫状況
+# === D列: CM商品名（1列）===
+COL_CM_PRODUCT_NAME = 3    # D列: CM商品名（AI生成）
 
-# === Q-AG列: 価格情報（17列）===
-COL_PRICE = 16             # Q列: 仕入れ先価格（現地通貨）
-COL_PREV_PRICE = 17        # R列: 前回仕入れ価格
-COL_PRICE_CHANGE = 18      # S列: 価格変動率
-COL_CURRENCY = 19          # T列: 取引通貨
-COL_EXCHANGE_TYPE = 20     # U列: 為替種類
-COL_EXCHANGE_RATE = 21     # V列: 為替レート
-COL_PRICE_JPY = 22         # W列: 仕入れ額(日本円)
-COL_QUANTITY = 23          # X列: 枚数
-COL_TOTAL_PURCHASE = 24    # Y列: 仕入れ合計
-COL_MARGIN_RATE = 25       # Z列: 設定マージン率
-COL_MARGIN_AMOUNT = 26     # AA列: 設定マージン額
-COL_SHIPPING = 27          # AB列: 送料
-COL_MISC_COST = 28         # AC列: 諸経費
-COL_TOTAL_COST = 29        # AD列: 合計原価
-COL_PROPER_PRICE = 30      # AE列: 適正価格
-COL_PROFIT = 31            # AF列: 粗利額
-COL_PROFIT_RATE = 32       # AG列: 粗利率
+# === E-Q列: 仕入れ先商品情報（13列）===
+COL_COLORME_URL = 4        # E列: カラーミー商品URL（登録後自動）
+COL_PRODUCT_URL = 5        # F列: 仕入れ先商品URL（ユニークキー）
+COL_PRODUCT_NAME = 6       # G列: 仕入れ先商品名
+COL_SITE = 7               # H列: 仕入れ先サイト（自動: Bullionstar）
+COL_TOP_CATEGORY = 8       # I列: 最上位カテゴリ
+COL_PARENT_CATEGORY = 9    # J列: 親カテゴリ
+COL_CHILD_CATEGORY = 10    # K列: 子カテゴリ
+COL_COUNTRY = 11           # L列: 製造国
+COL_DESC_EN = 12           # M列: 商品説明（英語）
+COL_SPECS = 13             # N列: 仕様・スペック
+COL_YEAR = 14              # O列: 発行年
+COL_MINTAGE = 15           # P列: 発行数・限定数
+COL_STOCK_STATUS = 16      # Q列: 仕入れ先在庫状況
 
-# === AH-AM列: カラーミー価格情報（6列）===
-COL_CM_SALES_PRICE = 33    # AH列: 販売価格
-COL_CM_REGULAR_PRICE = 34  # AI列: 定価
-COL_CM_MEMBERS_PRICE = 35  # AJ列: 会員価格
-COL_CM_COST = 36           # AK列: 原価
-COL_CM_TAX_INCLUDED = 37   # AL列: 消費税込販売価格
-COL_CM_TAX_AMOUNT = 38     # AM列: 消費税額
+# === R-AH列: 価格情報（17列）===
+COL_PRICE = 17             # R列: 仕入れ先価格（現地通貨）
+COL_PREV_PRICE = 18        # S列: 前回仕入れ価格
+COL_PRICE_CHANGE = 19      # T列: 価格変動率
+COL_CURRENCY = 20          # U列: 取引通貨
+COL_EXCHANGE_TYPE = 21     # V列: 為替種類
+COL_EXCHANGE_RATE = 22     # W列: 為替レート
+COL_PRICE_JPY = 23         # X列: 仕入れ額(日本円)
+COL_QUANTITY = 24          # Y列: 枚数
+COL_TOTAL_PURCHASE = 25    # Z列: 仕入れ合計
+COL_MARGIN_RATE = 26       # AA列: 設定マージン率
+COL_MARGIN_AMOUNT = 27     # AB列: 設定マージン額
+COL_SHIPPING = 28          # AC列: 送料
+COL_MISC_COST = 29         # AD列: 諸経費
+COL_TOTAL_COST = 30        # AE列: 合計原価
+COL_PROPER_PRICE = 31      # AF列: 適正価格
+COL_PROFIT = 32            # AG列: 粗利額
+COL_PROFIT_RATE = 33       # AH列: 粗利率
 
-# === AN-AS列: カテゴリー・グループ（6列）===
-COL_CM_CATEGORY_BIG = 39       # AN列: 大カテゴリーID
-COL_CM_CATEGORY_BIG_NAME = 40  # AO列: 大カテゴリー名称
-COL_CM_CATEGORY_SMALL = 41     # AP列: 小カテゴリーID
-COL_CM_CATEGORY_SMALL_NAME = 42  # AQ列: 小カテゴリー名称
-COL_CM_GROUP_ID = 43           # AR列: グループID
-COL_CM_GROUP_NAME = 44         # AS列: グループ名
+# === AI-AN列: カラーミー価格情報（6列）===
+COL_CM_SALES_PRICE = 34    # AI列: 販売価格
+COL_CM_REGULAR_PRICE = 35  # AJ列: 定価
+COL_CM_MEMBERS_PRICE = 36  # AK列: 会員価格
+COL_CM_COST = 37           # AL列: 原価
+COL_CM_TAX_INCLUDED = 38   # AM列: 消費税込販売価格
+COL_CM_TAX_AMOUNT = 39     # AN列: 消費税額
 
-# === AT列: 型番（1列）===
-COL_CM_MODEL_NUMBER = 45   # AT列: 型番
+# === AO-AT列: カテゴリー・グループ（6列）===
+COL_CM_CATEGORY_BIG = 40       # AO列: 大カテゴリーID
+COL_CM_CATEGORY_BIG_NAME = 41  # AP列: 大カテゴリー名称
+COL_CM_CATEGORY_SMALL = 42     # AQ列: 小カテゴリーID
+COL_CM_CATEGORY_SMALL_NAME = 43  # AR列: 小カテゴリー名称
+COL_CM_GROUP_ID = 44           # AS列: グループID
+COL_CM_GROUP_NAME = 45         # AT列: グループ名
 
-# === AU-BA列: 在庫管理（7列）===
-COL_CM_STOCK = 46          # AU列: 在庫数
-COL_CM_STOCK_MANAGED = 47  # AV列: 在庫管理
-COL_CM_FEW_NUM = 48        # AW列: 残りわずか数
-COL_CM_SOLDOUT_DISPLAY = 49  # AX列: 売切れ表示
-COL_CM_MIN_NUM = 50        # AY列: 最小購入数
-COL_CM_MAX_NUM = 51        # AZ列: 最大購入数
-COL_CM_UNIT = 52           # BA列: 単位
+# === AU列: 型番（1列）===
+COL_CM_MODEL_NUMBER = 46   # AU列: 型番
 
-# === BB-BE列: 送料・配送（4列）===
-COL_CM_DELIVERY_CHARGE = 53  # BB列: 個別送料
-COL_CM_COOL_CHARGE = 54    # BC列: クール便料金
-COL_CM_WEIGHT = 55         # BD列: 重量(g)
-COL_CM_NO_DELIVERY = 56    # BE列: 配送不要
+# === AV-BB列: 在庫管理（7列）===
+COL_CM_STOCK = 47          # AV列: 在庫数
+COL_CM_STOCK_MANAGED = 48  # AW列: 在庫管理
+COL_CM_FEW_NUM = 49        # AX列: 残りわずか数
+COL_CM_SOLDOUT_DISPLAY = 50  # AY列: 売切れ表示
+COL_CM_MIN_NUM = 51        # AZ列: 最小購入数
+COL_CM_MAX_NUM = 52        # BA列: 最大購入数
+COL_CM_UNIT = 53           # BB列: 単位
 
-# === BF-BI列: 商品説明（4列）===
-COL_CM_EXPL = 57           # BF列: 商品説明
-COL_CM_SIMPLE_EXPL = 58    # BG列: 簡易説明
-COL_CM_SMARTPHONE_EXPL = 59  # BH列: スマホ説明
-COL_CM_MEMO = 60           # BI列: 備考
+# === BC-BF列: 送料・配送（4列）===
+COL_CM_DELIVERY_CHARGE = 54  # BC列: 個別送料
+COL_CM_COOL_CHARGE = 55    # BD列: クール便料金
+COL_CM_WEIGHT = 56         # BE列: 重量(g)
+COL_CM_NO_DELIVERY = 57    # BF列: 配送不要
 
-# === BJ-BS列: 画像URL（10列）===
-COL_IMAGE_1 = 61           # BJ列: 画像URL1
-COL_IMAGE_2 = 62           # BK列: 画像URL2
-COL_IMAGE_3 = 63           # BL列: 画像URL3
-COL_IMAGE_4 = 64           # BM列: 画像URL4
-COL_IMAGE_5 = 65           # BN列: 画像URL5
-COL_IMAGE_6 = 66           # BO列: 画像URL6
-COL_IMAGE_7 = 67           # BP列: 画像URL7
-COL_IMAGE_8 = 68           # BQ列: 画像URL8
-COL_IMAGE_9 = 69           # BR列: 画像URL9
-COL_IMAGE_10 = 70          # BS列: 画像URL10
+# === BG-BJ列: 商品説明（4列）===
+COL_CM_EXPL = 58           # BG列: 商品説明
+COL_CM_SIMPLE_EXPL = 59    # BH列: 簡易説明
+COL_CM_SMARTPHONE_EXPL = 60  # BI列: スマホ説明
+COL_CM_MEMO = 61           # BJ列: 備考
 
-# === BT-BV列: SEO項目（3列）===
-COL_CM_PAGE_TITLE = 71     # BT列: ページタイトル
-COL_CM_META_DESC = 72      # BU列: メタディスクリプション
-COL_CM_META_KEYWORDS = 73  # BV列: メタキーワード
+# === BK-BT列: 画像URL（10列）===
+COL_IMAGE_1 = 62           # BK列: 画像URL1
+COL_IMAGE_2 = 63           # BL列: 画像URL2
+COL_IMAGE_3 = 64           # BM列: 画像URL3
+COL_IMAGE_4 = 65           # BN列: 画像URL4
+COL_IMAGE_5 = 66           # BO列: 画像URL5
+COL_IMAGE_6 = 67           # BP列: 画像URL6
+COL_IMAGE_7 = 68           # BQ列: 画像URL7
+COL_IMAGE_8 = 69           # BR列: 画像URL8
+COL_IMAGE_9 = 70           # BS列: 画像URL9
+COL_IMAGE_10 = 71          # BT列: 画像URL10
 
-# === BW-CA列: フラグ・設定（5列）===
-COL_CM_REDUCED_TAX = 74    # BW列: 軽減税率対象
-COL_CM_DIGITAL = 75        # BX列: デジタルコンテンツ
-COL_CM_SUBSCRIPTION = 76   # BY列: 定期購入
-COL_CM_SORT = 77           # BZ列: 表示順
-COL_CM_DISABLED_PAYMENT = 78  # CA列: 利用不可決済
+# === BU-BW列: SEO項目（3列）===
+COL_CM_PAGE_TITLE = 72     # BU列: ページタイトル
+COL_CM_META_DESC = 73      # BV列: メタディスクリプション
+COL_CM_META_KEYWORDS = 74  # BW列: メタキーワード
 
-# === CB-CC列: 掲載期間（2列）===
-COL_CM_START_DATE = 79     # CB列: 掲載開始日時
-COL_CM_END_DATE = 80       # CC列: 掲載終了日時
+# === BX-CB列: フラグ・設定（5列）===
+COL_CM_REDUCED_TAX = 75    # BX列: 軽減税率対象
+COL_CM_DIGITAL = 76        # BY列: デジタルコンテンツ
+COL_CM_SUBSCRIPTION = 77   # BZ列: 定期購入
+COL_CM_SORT = 78           # CA列: 表示順
+COL_CM_DISABLED_PAYMENT = 79  # CB列: 利用不可決済
 
-# === CD-CE列: システム情報（2列）===
-COL_CM_SYNC_AT = 81        # CD列: 同期日時
-COL_CM_CREATED_AT = 82     # CE列: 商品作成日時
+# === CC-CD列: 掲載期間（2列）===
+COL_CM_START_DATE = 80     # CC列: 掲載開始日時
+COL_CM_END_DATE = 81       # CD列: 掲載終了日時
+
+# === CE-CF列: システム情報（2列）===
+COL_CM_SYNC_AT = 82        # CE列: 同期日時
+COL_CM_CREATED_AT = 83     # CF列: 商品作成日時
 
 # デフォルトのカテゴリーID（貴金属コイン）
 DEFAULT_CATEGORY_BIG = 174936    # 大カテゴリー: 金貨・銀貨・プラチナコイン
@@ -303,7 +306,7 @@ def register_adopted_products(
         skip_count = 0
 
         for row_idx, row in target_products:
-            product_name = get_cell_value(row, COL_PRODUCT_NAME)  # D列: 仕入れ先商品名（英語）
+            product_name = get_cell_value(row, COL_PRODUCT_NAME)  # G列: 仕入れ先商品名（英語）
             product_url = get_cell_value(row, COL_PRODUCT_URL)
             supplier_id = get_cell_value(row, COL_SUPPLIER_ID)
 
@@ -328,23 +331,29 @@ def register_adopted_products(
                 skip_count += 1
                 continue
 
-            # CM商品名 - JapaneseProductNameGeneratorで自動生成
-            desc_en = get_cell_value(row, COL_DESC_EN)  # L列: 商品説明（英語）
-            specs = get_cell_value(row, COL_SPECS)      # M列: 仕様・スペック
+            # CM商品名 - D列に既存値があればそれを使用、なければ自動生成
+            existing_cm_name = get_cell_value(row, COL_CM_PRODUCT_NAME)  # D列: CM商品名
+            desc_en = get_cell_value(row, COL_DESC_EN)  # M列: 商品説明（英語）
+            specs = get_cell_value(row, COL_SPECS)      # N列: 仕様・スペック
 
-            # JapaneseProductNameGeneratorで自動生成
-            product_info = {
-                "name": product_name,
-                "specs": specs,
-                "description": desc_en,
-            }
-            cm_product_name = name_generator.generate(product_info, quantity=1)
-            if cm_product_name:
-                logger.info(f"  CM商品名: 自動生成 → {cm_product_name[:50]}...")
+            if existing_cm_name:
+                # D列に既存のCM商品名がある場合はそれを使用
+                cm_product_name = existing_cm_name
+                logger.info(f"  CM商品名: D列の既存値を使用 → {cm_product_name[:50]}...")
             else:
-                # フォールバック: 仕入れ先商品名をそのまま使用
-                cm_product_name = product_name
-                logger.info(f"  CM商品名: フォールバック（仕入れ先商品名を使用）")
+                # JapaneseProductNameGeneratorで自動生成
+                product_info = {
+                    "name": product_name,
+                    "specs": specs,
+                    "description": desc_en,
+                }
+                cm_product_name = name_generator.generate(product_info, quantity=1)
+                if cm_product_name:
+                    logger.info(f"  CM商品名: 自動生成 → {cm_product_name[:50]}...")
+                else:
+                    # フォールバック: 仕入れ先商品名をそのまま使用
+                    cm_product_name = product_name
+                    logger.info(f"  CM商品名: フォールバック（仕入れ先商品名を使用）")
 
             # カテゴリー・グループ自動判定（CategoryDetector使用）
             category_big = 0

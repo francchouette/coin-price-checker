@@ -64,58 +64,62 @@ JST = timezone(timedelta(hours=9))
 
 @dataclass
 class BullionstarProduct:
-    """Bullionstar商品データ（83列対応: A-CE）
+    """Bullionstar商品データ（84列対応: A-CF）
 
     列構造:
     - A-C列: 管理列（採用フラグ、登録状況、仕入れ先商品ID）
-    - D-CE列: 商品情報・カラーミー登録用項目
-    - AN-AS列: カテゴリー・グループ（6列）ID・名称
-    - AT列: 型番
+    - D列: CM商品名（AI生成）
+    - E-CF列: 商品情報・カラーミー登録用項目
+    - AO-AT列: カテゴリー・グループ（6列）ID・名称
+    - AU列: 型番
     """
     # 必須フィールド
-    name: str                          # F列: 仕入れ先商品名
-    url: str                           # E列: 仕入れ先商品URL（ユニークキー）
-    top_category: str                  # H列: 最上位カテゴリ
-    parent_category: str               # I列: 親カテゴリ
-    child_category: str                # J列: 子カテゴリ
-    location: str                      # K列: 製造国
+    name: str                          # G列: 仕入れ先商品名
+    url: str                           # F列: 仕入れ先商品URL（ユニークキー）
+    top_category: str                  # I列: 最上位カテゴリ
+    parent_category: str               # J列: 親カテゴリ
+    child_category: str                # K列: 子カテゴリ
+    location: str                      # L列: 製造国
 
     # 管理列（A-C列）
     adopted_flag: str = "検討中"        # A列: 採用フラグ（デフォルト「検討中」）
     colorme_registration: str = "未登録"  # B列: カラーミー登録状況（デフォルト「未登録」）
     supplier_id: str = ""              # C列: 仕入れ先商品ID (BS-XXXXXX)
 
-    # 仕入れ先商品情報（D-P列）
-    colorme_url: str = ""              # D列: カラーミー商品URL
-    site: str = "Bullionstar"          # G列: 仕入れ先サイト
-    description_en: str = ""           # L列: 商品説明（英語）
-    specs: str = ""                    # M列: 仕様・スペック
-    mint_year: str = ""                # N列: 発行年
-    mintage: str = ""                  # O列: 発行数・限定数
-    in_stock: Optional[bool] = None    # P列: 仕入れ先在庫状況
+    # CM商品名（D列）
+    cm_product_name: str = ""          # D列: CM商品名（AI生成）
 
-    # 価格情報（Q-W列）
-    price: Optional[float] = None      # Q列: 仕入れ先価格（現地通貨）
-    prev_price: float = 0.0            # R列: 前回仕入れ価格
-    currency: str = ""                 # T列: 取引通貨
-    exchange_type: str = "クレカ"       # U列: 為替種類
-    exchange_rate: float = 0.0         # V列: 為替レート
-    price_jpy: float = 0.0             # W列: 仕入れ額(日本円)
+    # 仕入れ先商品情報（E-Q列）
+    colorme_url: str = ""              # E列: カラーミー商品URL
+    site: str = "Bullionstar"          # H列: 仕入れ先サイト
+    description_en: str = ""           # M列: 商品説明（英語）
+    specs: str = ""                    # N列: 仕様・スペック
+    mint_year: str = ""                # O列: 発行年
+    mintage: str = ""                  # P列: 発行数・限定数
+    in_stock: Optional[bool] = None    # Q列: 仕入れ先在庫状況
 
-    # 画像URL（BJ-BS列: 10列）
-    image_url1: str = ""               # BJ列: 画像URL1
-    image_url2: str = ""               # BK列: 画像URL2
-    image_url3: str = ""               # BL列: 画像URL3
-    image_url4: str = ""               # BM列: 画像URL4
-    image_url5: str = ""               # BN列: 画像URL5
-    image_url6: str = ""               # BO列: 画像URL6
-    image_url7: str = ""               # BP列: 画像URL7
-    image_url8: str = ""               # BQ列: 画像URL8
-    image_url9: str = ""               # BR列: 画像URL9
-    image_url10: str = ""              # BS列: 画像URL10
+    # 価格情報（R-X列）
+    price: Optional[float] = None      # R列: 仕入れ先価格（現地通貨）
+    prev_price: float = 0.0            # S列: 前回仕入れ価格
+    currency: str = ""                 # U列: 取引通貨
+    exchange_type: str = "クレカ"       # V列: 為替種類
+    exchange_rate: float = 0.0         # W列: 為替レート
+    price_jpy: float = 0.0             # X列: 仕入れ額(日本円)
 
-    # AT列: 型番（AI生成）
-    model_number: str = ""             # AT列: 型番
+    # 画像URL（BK-BT列: 10列）
+    image_url1: str = ""               # BK列: 画像URL1
+    image_url2: str = ""               # BL列: 画像URL2
+    image_url3: str = ""               # BM列: 画像URL3
+    image_url4: str = ""               # BN列: 画像URL4
+    image_url5: str = ""               # BO列: 画像URL5
+    image_url6: str = ""               # BP列: 画像URL6
+    image_url7: str = ""               # BQ列: 画像URL7
+    image_url8: str = ""               # BR列: 画像URL8
+    image_url9: str = ""               # BS列: 画像URL9
+    image_url10: str = ""              # BT列: 画像URL10
+
+    # AU列: 型番（AI生成）
+    model_number: str = ""             # AU列: 型番
 
     # 内部処理用フィールド（スプレッドシートには直接保存されない）
     fetched_at: str = ""               # 取得日時（内部処理用）
@@ -527,12 +531,12 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
             logger.info("ヘッダー行を追加")
             existing_data = [headers]
 
-        # 既存データをURLでインデックス化（E列=index 4がURL）
+        # 既存データをURLでインデックス化（F列=index 5がURL）
         existing_by_url: dict[str, tuple[int, list[str]]] = {}  # URL -> (行番号, 行データ)
         existing_ids: set[str] = set()  # 既存の仕入れ先商品ID
         for row_idx, row in enumerate(existing_data[1:], start=2):  # ヘッダー行をスキップ、行番号は2から
-            if len(row) > 4 and row[4]:  # E列: URL
-                existing_by_url[row[4]] = (row_idx, row)
+            if len(row) > 5 and row[5]:  # F列: URL
+                existing_by_url[row[5]] = (row_idx, row)
             if len(row) > 2 and row[2]:  # C列: 仕入れ先商品ID
                 existing_ids.add(row[2])
 
@@ -772,119 +776,122 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 if not model_number:
                     model_number = supplier_id
 
-                # 83列構造（A-CE）: カテゴリー名称追加による新列順
+                # 84列構造（A-CF）: D列にCM商品名追加
                 new_row = [
                     # === 管理列（A-C列: 3列）===
                     product.adopted_flag,                           # A: 採用フラグ
                     product.colorme_registration,                   # B: カラーミー登録状況
                     supplier_id,                                    # C: 仕入れ先商品ID
 
-                    # === 仕入れ先商品情報（D-P列: 13列）===
-                    "",                                             # D: カラーミー商品URL（登録後自動）
-                    product.url,                                    # E: 仕入れ先商品URL（ユニークキー）
-                    product.name,                                   # F: 仕入れ先商品名
-                    product.site,                                   # G: 仕入れ先サイト（Bullionstar）
-                    product.top_category,                           # H: 最上位カテゴリ
-                    product.parent_category,                        # I: 親カテゴリ
-                    product.child_category,                         # J: 子カテゴリ
-                    product.location,                               # K: 製造国
-                    product.description_en,                         # L: 商品説明（英語）
-                    product.specs,                                  # M: 仕様・スペック
-                    product.mint_year,                              # N: 発行年
-                    product.mintage,                                # O: 発行数・限定数
-                    stock_status,                                   # P: 仕入れ先在庫状況
+                    # === CM商品名（D列: 1列）===
+                    cm_product_name,                                # D: CM商品名（AI生成）
 
-                    # === 価格情報（Q-AG列: 17列）===
-                    str(product.price) if product.price else "",    # Q: 仕入れ先価格（現地通貨）
-                    "",                                             # R: 前回仕入れ価格
-                    "",                                             # S: 価格変動率（計算式）
-                    product.currency,                               # T: 取引通貨
-                    product.exchange_type,                          # U: 為替種類
-                    # V列: 為替レート - JPYなら1、それ以外は取得した為替レート
+                    # === 仕入れ先商品情報（E-Q列: 13列）===
+                    "",                                             # E: カラーミー商品URL（登録後自動）
+                    product.url,                                    # F: 仕入れ先商品URL（ユニークキー）
+                    product.name,                                   # G: 仕入れ先商品名
+                    product.site,                                   # H: 仕入れ先サイト（Bullionstar）
+                    product.top_category,                           # I: 最上位カテゴリ
+                    product.parent_category,                        # J: 親カテゴリ
+                    product.child_category,                         # K: 子カテゴリ
+                    product.location,                               # L: 製造国
+                    product.description_en,                         # M: 商品説明（英語）
+                    product.specs,                                  # N: 仕様・スペック
+                    product.mint_year,                              # O: 発行年
+                    product.mintage,                                # P: 発行数・限定数
+                    stock_status,                                   # Q: 仕入れ先在庫状況
+
+                    # === 価格情報（R-AH列: 17列）===
+                    str(product.price) if product.price else "",    # R: 仕入れ先価格（現地通貨）
+                    "",                                             # S: 前回仕入れ価格
+                    "",                                             # T: 価格変動率（計算式）
+                    product.currency,                               # U: 取引通貨
+                    product.exchange_type,                          # V: 為替種類
+                    # W列: 為替レート - JPYなら1、それ以外は取得した為替レート
                     "1" if product.currency == "JPY" else (str(product.exchange_rate) if product.exchange_rate else ""),
-                    str(int(product.price_jpy)) if product.price_jpy else "",  # W: 仕入れ額(日本円)
-                    "1",                                            # X: 枚数（デフォルト1）
-                    "",                                             # Y: 仕入れ合計（計算式）
-                    "1.1",                                          # Z: 設定マージン率（デフォルト1.1）
-                    "",                                             # AA: 設定マージン額（手入力）
-                    "100",                                          # AB: 送料（デフォルト100）
-                    "50",                                           # AC: 諸経費（デフォルト50）
-                    "",                                             # AD: 合計原価（計算式）
-                    "",                                             # AE: 適正価格（計算式）
-                    "",                                             # AF: 粗利額（計算式）
-                    "",                                             # AG: 粗利率（計算式）
+                    str(int(product.price_jpy)) if product.price_jpy else "",  # X: 仕入れ額(日本円)
+                    "1",                                            # Y: 枚数（デフォルト1）
+                    "",                                             # Z: 仕入れ合計（計算式）
+                    "1.1",                                          # AA: 設定マージン率（デフォルト1.1）
+                    "",                                             # AB: 設定マージン額（手入力）
+                    "100",                                          # AC: 送料（デフォルト100）
+                    "50",                                           # AD: 諸経費（デフォルト50）
+                    "",                                             # AE: 合計原価（計算式）
+                    "",                                             # AF: 適正価格（計算式）
+                    "",                                             # AG: 粗利額（計算式）
+                    "",                                             # AH: 粗利率（計算式）
 
-                    # === カラーミー価格情報（AH-AM列: 6列）===
-                    "",                                             # AH: 販売価格
-                    "",                                             # AI: 定価
-                    "",                                             # AJ: 会員価格
-                    "",                                             # AK: 原価
-                    "",                                             # AL: 消費税込販売価格
-                    "",                                             # AM: 消費税額
+                    # === カラーミー価格情報（AI-AN列: 6列）===
+                    "",                                             # AI: 販売価格
+                    "",                                             # AJ: 定価
+                    "",                                             # AK: 会員価格
+                    "",                                             # AL: 原価
+                    "",                                             # AM: 消費税込販売価格
+                    "",                                             # AN: 消費税額
 
-                    # === カテゴリー・グループ（AN-AS列: 6列）===
-                    category_big,                                   # AN: 大カテゴリーID（自動判定）
-                    category_big_name,                              # AO: 大カテゴリー名称
-                    category_small,                                 # AP: 小カテゴリーID（自動判定）
-                    category_small_name,                            # AQ: 小カテゴリー名称
-                    group_ids_str,                                  # AR: グループID（自動判定）
-                    group_names_str,                                # AS: グループ名
+                    # === カテゴリー・グループ（AO-AT列: 6列）===
+                    category_big,                                   # AO: 大カテゴリーID（自動判定）
+                    category_big_name,                              # AP: 大カテゴリー名称
+                    category_small,                                 # AQ: 小カテゴリーID（自動判定）
+                    category_small_name,                            # AR: 小カテゴリー名称
+                    group_ids_str,                                  # AS: グループID（自動判定）
+                    group_names_str,                                # AT: グループ名
 
-                    # === 型番（AT列: 1列）===
-                    model_number,                                   # AT: 型番（AI生成、失敗時は仕入れ先商品ID）
+                    # === 型番（AU列: 1列）===
+                    model_number,                                   # AU: 型番（AI生成、失敗時は仕入れ先商品ID）
 
-                    # === 在庫管理（AU-BA列: 7列）===
-                    "10",                                           # AU: 在庫数（デフォルト10）
-                    "する",                                         # AV: 在庫管理（デフォルト「する」）
-                    "3",                                            # AW: 残りわずか数（デフォルト3）
-                    "表示",                                         # AX: 売切れ表示（デフォルト「表示」）
-                    "1",                                            # AY: 最小購入数（デフォルト1）
-                    "10",                                           # AZ: 最大購入数（デフォルト10）
-                    "",                                             # BA: 単位（手入力、空欄可）
+                    # === 在庫管理（AV-BB列: 7列）===
+                    "10",                                           # AV: 在庫数（デフォルト10）
+                    "する",                                         # AW: 在庫管理（デフォルト「する」）
+                    "3",                                            # AX: 残りわずか数（デフォルト3）
+                    "表示",                                         # AY: 売切れ表示（デフォルト「表示」）
+                    "1",                                            # AZ: 最小購入数（デフォルト1）
+                    "10",                                           # BA: 最大購入数（デフォルト10）
+                    "",                                             # BB: 単位（手入力、空欄可）
 
-                    # === 送料・配送（BB-BE列: 4列）===
-                    "1000",                                         # BB: 個別送料（デフォルト1000）
-                    "",                                             # BC: クール便料金（手入力）
-                    "",                                             # BD: 重量(g)（手入力）
-                    "",                                             # BE: 配送不要（手入力）
+                    # === 送料・配送（BC-BF列: 4列）===
+                    "1000",                                         # BC: 個別送料（デフォルト1000）
+                    "",                                             # BD: クール便料金（手入力）
+                    "",                                             # BE: 重量(g)（手入力）
+                    "",                                             # BF: 配送不要（手入力）
 
-                    # === 商品説明（BF-BI列: 4列）===
-                    cm_description,                                 # BF: 商品説明（自動生成）
-                    cm_simple_description,                          # BG: 簡易説明（自動生成）
-                    "",                                             # BH: スマホ説明
-                    "",                                             # BI: 備考
+                    # === 商品説明（BG-BJ列: 4列）===
+                    cm_description,                                 # BG: 商品説明（自動生成）
+                    cm_simple_description,                          # BH: 簡易説明（自動生成）
+                    "",                                             # BI: スマホ説明
+                    "",                                             # BJ: 備考
 
-                    # === 画像URL（BJ-BS列: 10列）===
-                    product.image_url1,                             # BJ: 画像URL1
-                    product.image_url2,                             # BK: 画像URL2
-                    product.image_url3,                             # BL: 画像URL3
-                    product.image_url4,                             # BM: 画像URL4
-                    product.image_url5,                             # BN: 画像URL5
-                    product.image_url6,                             # BO: 画像URL6
-                    product.image_url7,                             # BP: 画像URL7
-                    product.image_url8,                             # BQ: 画像URL8
-                    product.image_url9,                             # BR: 画像URL9
-                    product.image_url10,                            # BS: 画像URL10
+                    # === 画像URL（BK-BT列: 10列）===
+                    product.image_url1,                             # BK: 画像URL1
+                    product.image_url2,                             # BL: 画像URL2
+                    product.image_url3,                             # BM: 画像URL3
+                    product.image_url4,                             # BN: 画像URL4
+                    product.image_url5,                             # BO: 画像URL5
+                    product.image_url6,                             # BP: 画像URL6
+                    product.image_url7,                             # BQ: 画像URL7
+                    product.image_url8,                             # BR: 画像URL8
+                    product.image_url9,                             # BS: 画像URL9
+                    product.image_url10,                            # BT: 画像URL10
 
-                    # === SEO項目（BT-BV列: 3列）===
-                    page_title,                                     # BT: ページタイトル（自動生成）
-                    meta_description,                               # BU: メタディスクリプション（自動生成）
-                    meta_keywords,                                  # BV: メタキーワード（自動生成）
+                    # === SEO項目（BU-BW列: 3列）===
+                    page_title,                                     # BU: ページタイトル（自動生成）
+                    meta_description,                               # BV: メタディスクリプション（自動生成）
+                    meta_keywords,                                  # BW: メタキーワード（自動生成）
 
-                    # === フラグ・設定（BW-CA列: 5列）===
-                    "対象外",                                       # BW: 軽減税率対象（デフォルト「対象外」）
-                    "対象外",                                       # BX: デジタルコンテンツ（デフォルト「対象外」）
-                    "対象外",                                       # BY: 定期購入（デフォルト「対象外」）
-                    "0",                                            # BZ: 表示順（デフォルト0）
-                    "",                                             # CA: 利用不可決済（手入力）
+                    # === フラグ・設定（BX-CB列: 5列）===
+                    "対象外",                                       # BX: 軽減税率対象（デフォルト「対象外」）
+                    "対象外",                                       # BY: デジタルコンテンツ（デフォルト「対象外」）
+                    "対象外",                                       # BZ: 定期購入（デフォルト「対象外」）
+                    "0",                                            # CA: 表示順（デフォルト0）
+                    "",                                             # CB: 利用不可決済（手入力）
 
-                    # === 掲載期間（CB-CC列: 2列）===
-                    "",                                             # CB: 掲載開始日時
-                    "",                                             # CC: 掲載終了日時
+                    # === 掲載期間（CC-CD列: 2列）===
+                    "",                                             # CC: 掲載開始日時
+                    "",                                             # CD: 掲載終了日時
 
-                    # === システム情報（CD-CE列: 2列）※元は3列だが調整===
-                    product.fetched_at,                             # CD: 同期日時（初回取得日時）
-                    product.last_price_updated,                     # CE: 商品更新日時（価格更新日時）
+                    # === システム情報（CE-CF列: 2列）===
+                    product.fetched_at,                             # CE: 同期日時（初回取得日時）
+                    product.last_price_updated,                     # CF: 商品更新日時（価格更新日時）
                 ]
                 new_rows.append(new_row)
 
@@ -1138,8 +1145,8 @@ def get_existing_urls_from_spreadsheet() -> set[str]:
 
     try:
         sheet = client._spreadsheet.worksheet(Config.SHEET_BULLIONSTAR_PRODUCTS)
-        # E列（URL）のみ取得（高速化のため）
-        url_column = sheet.col_values(5)  # E列 = 5
+        # F列（URL）のみ取得（高速化のため）
+        url_column = sheet.col_values(6)  # F列 = 6
         existing_urls = set(url_column[1:])  # ヘッダー行をスキップ
         logger.info(f"既存商品URL: {len(existing_urls)}件")
         return existing_urls
