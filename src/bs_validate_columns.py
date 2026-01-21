@@ -46,7 +46,7 @@ def validate_columns() -> tuple[bool, list[str]]:
         return False, ["スプレッドシートへの接続に失敗しました"]
 
     try:
-        sheet = client.spreadsheet.worksheet(SHEET_NAME)
+        sheet = client._spreadsheet.worksheet(SHEET_NAME)
         # ヘッダー行（1行目）を取得
         header_row = sheet.row_values(1)
         logger.info(f"ヘッダー行を取得: {len(header_row)}列")
@@ -199,7 +199,7 @@ def main():
             return 1
 
         try:
-            sheet = client.spreadsheet.worksheet(SHEET_NAME)
+            sheet = client._spreadsheet.worksheet(SHEET_NAME)
             header_row = sheet.row_values(1)
             print_comparison(header_row)
             return 0
