@@ -237,8 +237,7 @@ class ColorMeImageUploader:
         """
         画像をダウンロードして一時ファイルに保存
 
-        透過画像（アルファチャンネル付き）はPNG形式で保存し、
-        それ以外はJPEG形式で保存する。
+        全ての画像をPNG形式で保存する（透過対応のため）。
 
         Args:
             image_url: 画像URL
@@ -260,24 +259,20 @@ class ColorMeImageUploader:
             # 透過画像かどうか判定
             has_alpha = img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info)
 
+            # 全てPNG形式で保存（透過対応）
             if has_alpha:
-                # 透過画像はPNGで保存
                 if img.mode == 'P':
                     img = img.convert('RGBA')
                 elif img.mode == 'LA':
                     img = img.convert('RGBA')
-
-                temp_file = temp_dir / f"upload_{hash(image_url) & 0xFFFFFFFF}.png"
-                img.save(temp_file, format='PNG', optimize=True)
-                logger.info(f"    → PNG保存（透過あり）: {temp_file.stat().st_size:,} bytes")
             else:
-                # 透過なしはJPEGで保存
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
+                # 透過なしの場合もRGBAに変換（将来の透過処理に対応可能）
+                if img.mode != 'RGBA':
+                    img = img.convert('RGBA')
 
-                temp_file = temp_dir / f"upload_{hash(image_url) & 0xFFFFFFFF}.jpg"
-                img.save(temp_file, format='JPEG', quality=90)
-                logger.info(f"    → JPEG保存: {temp_file.stat().st_size:,} bytes")
+            temp_file = temp_dir / f"upload_{hash(image_url) & 0xFFFFFFFF}.png"
+            img.save(temp_file, format='PNG', optimize=True)
+            logger.info(f"    → PNG保存: {temp_file.stat().st_size:,} bytes")
 
             return temp_file
 
