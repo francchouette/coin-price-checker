@@ -19,7 +19,7 @@ import argparse
 import logging
 import sys
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import timezone, timedelta
 from pathlib import Path
 
 # プロジェクトルートをパスに追加
@@ -65,14 +65,13 @@ def get_cell_int(row: list, index: int, default: int = 1) -> int:
     return default
 
 
-def generate_cm_product_names(dry_run: bool = False, limit: int = None, process_all: bool = False) -> int:
+def generate_cm_product_names(dry_run: bool = False, limit: int = None) -> int:
     """
-    登録済み商品のCM商品名を一括生成
+    D列が空の商品のCM商品名を一括生成
 
     Args:
         dry_run: Trueの場合、実際の更新を行わない
         limit: 処理件数制限（Noneで全件）
-        process_all: Trueの場合、登録済み以外も含めて処理
 
     Returns:
         int: 更新した件数
@@ -97,19 +96,17 @@ def generate_cm_product_names(dry_run: bool = False, limit: int = None, process_
         logger.info(f"総商品数: {len(all_data) - 1}件")
 
         # 対象商品を抽出
-        # 条件: D列（CM商品名）が空で、かつ（登録済み or process_all）
+        # 条件: D列（CM商品名）が空で、商品名がある
         target_rows = []
         for row_idx, row in enumerate(all_data[1:], start=2):  # ヘッダースキップ、行番号は2から
             cm_name = get_cell_value(row, COL_CM_PRODUCT_NAME)
-            registration_status = get_cell_value(row, COL_REGISTRATION_STATUS)
             product_name = get_cell_value(row, COL_PRODUCT_NAME)
 
             # D列が空で、商品名がある場合のみ対象
             if not cm_name and product_name:
-                if process_all or registration_status == "登録済":
-                    target_rows.append((row_idx, row))
+                target_rows.append((row_idx, row))
 
-        logger.info(f"処理対象: {len(target_rows)}件（D列が空の{'全' if process_all else '登録済み'}商品）")
+        logger.info(f"処理対象: {len(target_rows)}件（D列が空の商品）")
 
         if limit:
             target_rows = target_rows[:limit]
@@ -195,12 +192,6 @@ def main():
         help='処理件数制限'
     )
     parser.add_argument(
-        '--all',
-        action='store_true',
-        dest='process_all',
-        help='登録済み以外も含めてD列が空の全商品を処理'
-    )
-    parser.add_argument(
         '-v', '--verbose',
         action='store_true',
         help='詳細ログを出力'
@@ -219,7 +210,7 @@ def main():
     logger.info("CM商品名一括生成")
     logger.info("=" * 60)
     logger.info(f"モード: {'ドライラン' if args.dry_run else '本番'}")
-    logger.info(f"対象: {'全商品（D列空）' if args.process_all else '登録済み商品のみ'}")
+    logger.info(f"対象: D列が空の全商品")
     if args.limit:
         logger.info(f"件数制限: {args.limit}件")
     logger.info("=" * 60)
@@ -227,8 +218,7 @@ def main():
     start_time = time.time()
     count = generate_cm_product_names(
         dry_run=args.dry_run,
-        limit=args.limit,
-        process_all=args.process_all
+        limit=args.limit
     )
     elapsed = time.time() - start_time
 

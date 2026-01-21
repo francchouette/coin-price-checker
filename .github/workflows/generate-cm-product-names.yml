@@ -12,10 +12,6 @@ on:
         description: '処理件数制限（空欄で全件）'
         type: string
         default: ''
-      process_all:
-        description: '登録済み以外も含めて処理'
-        type: boolean
-        default: false
 
 jobs:
   generate:
@@ -58,8 +54,5 @@ jobs:
           fi
           if [ -n "${{ inputs.limit }}" ]; then
             ARGS="$ARGS --limit ${{ inputs.limit }}"
-          fi
-          if [ "${{ inputs.process_all }}" = "true" ]; then
-            ARGS="$ARGS --all"
           fi
           python -m src.generate_cm_product_names $ARGS
