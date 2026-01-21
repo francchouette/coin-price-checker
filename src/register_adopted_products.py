@@ -1,22 +1,23 @@
 """
 採用商品カラーミー登録スクリプト
 
-ブリオンスター商品ページ一覧（83列: A-CE）で A列=「採用」かつ B列≠「登録済」の商品を
+ブリオンスター商品ページ一覧（84列: A-CF）で A列=「採用」かつ B列≠「登録済」の商品を
 カラーミーAPIで自動登録し、登録完了後に以下を実行する：
 
 1. B列（カラーミー登録状況）を「登録済」に更新
-2. D列（カラーミー商品URL）を更新
-3. CC列（同期日時）を更新
+2. E列（カラーミー商品URL）を更新
+3. CE列（同期日時）を更新
 4. 商品仕入れ先一覧シートに同期
 
-シート構造（83列: A-CE）:
+シート構造（84列: A-CF）:
 - A-C列: 管理列（採用フラグ、登録状況、仕入れ先商品ID）
-- D-P列: 仕入れ先商品情報（13列）
-- Q-AG列: 価格情報（17列）
-- AH-AM列: CM商品名、画像URL等
-- AN-AS列: カテゴリー・グループ（ID・名称: 6列）
-- AT列: 型番
-- AU-CE列: カラーミー登録用項目
+- D列: CM商品名（AI生成）
+- E-Q列: 仕入れ先商品情報（13列）
+- R-AH列: 価格情報（17列）
+- AI-AN列: CM価格情報（6列）
+- AO-AT列: カテゴリー・グループ（ID・名称: 6列）
+- AU列: 型番
+- AV-CF列: カラーミー登録用項目
 
 トリガー:
 - A列を「採用」に変更後、このスクリプトを実行
@@ -583,8 +584,8 @@ def register_adopted_products(
                         logger.warning(f"  Playwright処理エラー（続行）: {e}")
 
                 # スプレッドシート更新
-                # 83列構造: B列=登録状況, D列=カラーミー商品URL, CD列=同期日時
-                # カテゴリー・グループ: AN-AS列(6列), 型番: AT列, 商品説明: BF-BG列, SEO: BT-BV列
+                # 84列構造 (A-CF): B列=登録状況, E列=カラーミー商品URL, CE列=同期日時
+                # カテゴリー・グループ: AO-AT列(6列), 型番: AU列, 商品説明: BG-BH列, SEO: BU-BW列
                 timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
                 colorme_url = f"https://www.ybx.jp/?pid={new_product_id}"
                 batch_data = [
@@ -593,22 +594,22 @@ def register_adopted_products(
                         'values': [["登録済"]]
                     },
                     {
-                        'range': f"D{row_idx}",  # D列: カラーミー商品URL
+                        'range': f"E{row_idx}",  # E列: カラーミー商品URL
                         'values': [[colorme_url]]
                     },
                     {
-                        'range': f"CD{row_idx}",  # CD列: 同期日時
+                        'range': f"CE{row_idx}",  # CE列: 同期日時
                         'values': [[timestamp]]
                     }
                 ]
 
-                # カテゴリー・グループ情報をスプレッドシートに保存（AN-AS列: 6列）
+                # カテゴリー・グループ情報をスプレッドシートに保存（AO-AT列: 6列）
                 if category_big:
                     batch_data.append({
-                        'range': f"AN{row_idx}",  # AN列: 大カテゴリーID
+                        'range': f"AO{row_idx}",  # AO列: 大カテゴリーID
                         'values': [[str(category_big)]]
                     })
-                    # AO列: 大カテゴリー名称を取得して保存
+                    # AP列: 大カテゴリー名称を取得して保存
                     cat_big_name = ""
                     for (id_big, id_small), (name_big, name_small) in category_name_map.items():
                         if id_big == category_big:
@@ -616,69 +617,69 @@ def register_adopted_products(
                             break
                     if cat_big_name:
                         batch_data.append({
-                            'range': f"AO{row_idx}",  # AO列: 大カテゴリー名称
+                            'range': f"AP{row_idx}",  # AP列: 大カテゴリー名称
                             'values': [[cat_big_name]]
                         })
                 if category_small:
                     batch_data.append({
-                        'range': f"AP{row_idx}",  # AP列: 小カテゴリーID
+                        'range': f"AQ{row_idx}",  # AQ列: 小カテゴリーID
                         'values': [[str(category_small)]]
                     })
-                    # AQ列: 小カテゴリー名称を取得して保存
+                    # AR列: 小カテゴリー名称を取得して保存
                     cat_small_name = category_name_map.get((category_big, category_small), ("", ""))[1]
                     if cat_small_name:
                         batch_data.append({
-                            'range': f"AQ{row_idx}",  # AQ列: 小カテゴリー名称
+                            'range': f"AR{row_idx}",  # AR列: 小カテゴリー名称
                             'values': [[cat_small_name]]
                         })
                 if group_ids:
                     batch_data.append({
-                        'range': f"AR{row_idx}",  # AR列: グループID
+                        'range': f"AS{row_idx}",  # AS列: グループID
                         # 先頭にシングルクォートを付けてテキストとして保存（桁区切り防止）
                         'values': [["'" + ",".join(str(g) for g in group_ids)]]
                     })
-                    # AS列: グループ名を取得して保存
+                    # AT列: グループ名を取得して保存
                     group_names = [group_name_map.get(g, "") for g in group_ids]
                     group_names = [n for n in group_names if n]  # 空文字を除外
                     if group_names:
                         batch_data.append({
-                            'range': f"AS{row_idx}",  # AS列: グループ名
+                            'range': f"AT{row_idx}",  # AT列: グループ名
                             'values': [[",".join(group_names)]]
                         })
 
-                # 型番をスプレッドシートに保存（AT列）- AI生成された場合のみ
+                # 型番をスプレッドシートに保存（AU列）- AI生成された場合のみ
                 if model_number and not existing_model_number:
                     batch_data.append({
-                        'range': f"AT{row_idx}",  # AT列: 型番
+                        'range': f"AU{row_idx}",  # AU列: 型番
                         'values': [[model_number]]
                     })
 
-                # 商品説明をスプレッドシートに保存（BF-BG列）
+                # 商品説明をスプレッドシートに保存（BG-BH列）
                 if description and not existing_cm_expl:
                     batch_data.append({
-                        'range': f"BF{row_idx}",  # BF列: 商品説明
+                        'range': f"BG{row_idx}",  # BG列: 商品説明
                         'values': [[description]]
                     })
                 if simple_description and not existing_simple_expl:
                     batch_data.append({
-                        'range': f"BG{row_idx}",  # BG列: 簡易説明
+                        'range': f"BH{row_idx}",  # BH列: 簡易説明
                         'values': [[simple_description]]
                     })
 
-                # SEO項目をスプレッドシートに保存（BT-BV列）
+                # SEO項目をスプレッドシートに保存（BU-BW列）
                 if page_title and not existing_page_title:
                     batch_data.append({
-                        'range': f"BT{row_idx}",  # BT列: ページタイトル
+                        'range': f"BU{row_idx}",  # BU列: ページタイトル
                         'values': [[page_title]]
                     })
                 if meta_description and not existing_meta_desc:
                     batch_data.append({
-                        'range': f"BU{row_idx}",  # BU列: メタディスクリプション
+                        'range': f"BV{row_idx}",  # BV列: メタディスクリプション
                         'values': [[meta_description]]
                     })
                 if meta_keywords and not existing_meta_keywords:
                     batch_data.append({
-                        'range': f"BV{row_idx}",  # BV列: メタキーワード
+                        'range': f"BW{row_idx}",  # BW列: メタキーワード
                         'values': [[meta_keywords]]
                     })
 

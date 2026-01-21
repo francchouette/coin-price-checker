@@ -6,8 +6,8 @@
 
 対象条件:
 - B列（カラーミー登録状況）= 「登録済」
-- D列（カラーミー商品URL）がある（商品IDを抽出可能）
-- BJ-BS列（画像URL1-10）に外部URLがある（shop-pro.jp以外）
+- E列（カラーミー商品URL）がある（商品IDを抽出可能）
+- BK-BT列（画像URL1-10）に外部URLがある（shop-pro.jp以外）
 """
 
 import argparse
@@ -170,11 +170,11 @@ def update_image_urls_in_spreadsheet(updates: list[tuple[int, list[str]]]) -> in
                 logger.warning(f"商品ID {product_id} の行番号が見つかりません")
                 continue
 
-            # BJ-BS列（画像URL1-10）を更新
+            # BK-BT列（画像URL1-10）を更新
             # 画像URLを10列分に展開（足りない分は空文字）
             padded_urls = image_urls[:10] + [""] * (10 - len(image_urls[:10]))
-            # BJ列 = 62列目（1-based）
-            range_str = f"BJ{row_idx}:BS{row_idx}"
+            # BK列 = インデックス62（0-based）
+            range_str = f"BK{row_idx}:BT{row_idx}"
             batch_data.append({
                 'range': range_str,
                 'values': [padded_urls]
