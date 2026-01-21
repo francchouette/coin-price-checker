@@ -521,13 +521,13 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 rows=10000,
                 cols=85  # 81列 + 余裕
             )
-            sheet.update('A1:CE1', [headers])
+            sheet.update('A1:CF1', [headers])
             logger.info(f"シート '{sheet_name}' を作成しました")
 
         # 既存データを取得
         existing_data = sheet.get_all_values()
         if not existing_data:
-            sheet.update('A1:CE1', [headers])
+            sheet.update('A1:CF1', [headers])
             logger.info("ヘッダー行を追加")
             existing_data = [headers]
 
@@ -578,9 +578,9 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     logger.debug(f"  行{i}: {len(row)}列, URL={row[4][:50] if len(row) > 4 else 'N/A'}...")
                 try:
                     # append_rowsは列位置がずれる問題があるため、明示的に範囲指定で書き込む
-                    # A列からCE列（83列）に書き込む
+                    # A列からCF列（84列）に書き込む
                     end_row = start_row + len(new_rows_batch) - 1
-                    range_str = f"A{start_row}:CE{end_row}"
+                    range_str = f"A{start_row}:CF{end_row}"
                     logger.info(f"  update準備: 範囲={range_str}")
                     result = sheet.update(values=new_rows_batch, range_name=range_str, value_input_option='USER_ENTERED')
                     logger.info(f"  update完了: {result.get('updatedCells', 0)}セル更新")
