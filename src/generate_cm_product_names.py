@@ -28,41 +28,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.config import Config
 from src.spreadsheet import SpreadsheetClient
 from src.add_product import JapaneseProductNameGenerator
+from src.bs_sheet_columns import Col, get_cell, get_cell_int, cell_ref
 
 logger = logging.getLogger(__name__)
 
 # 日本時間 (JST = UTC+9)
 JST = timezone(timedelta(hours=9))
-
-# ブリオンスター商品ページ一覧の列インデックス（84列: A-CF、0-based）
-COL_ADOPTED_FLAG = 0       # A列: 採用フラグ
-COL_REGISTRATION_STATUS = 1  # B列: カラーミー登録状況
-COL_SUPPLIER_ID = 2        # C列: 仕入れ先商品ID
-COL_CM_PRODUCT_NAME = 3    # D列: CM商品名
-COL_COLORME_URL = 4        # E列: カラーミー商品URL
-COL_PRODUCT_URL = 5        # F列: 仕入れ先商品URL
-COL_PRODUCT_NAME = 6       # G列: 仕入れ先商品名（英語）
-COL_DESC_EN = 12           # M列: 商品説明（英語）
-COL_SPECS = 13             # N列: 仕様・スペック
-COL_QUANTITY = 24          # Y列: 枚数
-
-
-def get_cell_value(row: list, index: int, default: str = "") -> str:
-    """行から安全に値を取得"""
-    if len(row) > index:
-        return str(row[index]).strip()
-    return default
-
-
-def get_cell_int(row: list, index: int, default: int = 1) -> int:
-    """行から安全に整数値を取得"""
-    val = get_cell_value(row, index)
-    if val:
-        try:
-            return int(float(val))
-        except ValueError:
-            pass
-    return default
 
 
 def generate_cm_product_names(dry_run: bool = False, limit: int = None) -> int:
@@ -99,8 +70,8 @@ def generate_cm_product_names(dry_run: bool = False, limit: int = None) -> int:
         # 条件: D列（CM商品名）が空で、商品名がある
         target_rows = []
         for row_idx, row in enumerate(all_data[1:], start=2):  # ヘッダースキップ、行番号は2から
-            cm_name = get_cell_value(row, COL_CM_PRODUCT_NAME)
-            product_name = get_cell_value(row, COL_PRODUCT_NAME)
+            cm_name = get_cell(row, Col.CM_PRODUCT_NAME)
+            product_name = get_cell(row, Col.PRODUCT_NAME)
 
             # D列が空で、商品名がある場合のみ対象
             if not cm_name and product_name:
@@ -122,11 +93,11 @@ def generate_cm_product_names(dry_run: bool = False, limit: int = None) -> int:
         failed_count = 0
 
         for row_idx, row in target_rows:
-            product_name = get_cell_value(row, COL_PRODUCT_NAME)
-            desc_en = get_cell_value(row, COL_DESC_EN)
-            specs = get_cell_value(row, COL_SPECS)
-            quantity = get_cell_int(row, COL_QUANTITY, 1)
-            supplier_id = get_cell_value(row, COL_SUPPLIER_ID)
+            product_name = get_cell(row, Col.PRODUCT_NAME)
+            desc_en = get_cell(row, Col.DESC_EN)
+            specs = get_cell(row, Col.SPECS)
+            quantity = get_cell_int(row, Col.QUANTITY, 1)
+            supplier_id = get_cell(row, Col.SUPPLIER_ID)
 
             # CM商品名を生成
             product_info = {
@@ -138,7 +109,7 @@ def generate_cm_product_names(dry_run: bool = False, limit: int = None) -> int:
 
             if cm_product_name:
                 update_cells.append({
-                    'range': f'D{row_idx}',
+                    'range': cell_ref(Col.CM_PRODUCT_NAME, row_idx),
                     'values': [[cm_product_name]]
                 })
                 generated_count += 1

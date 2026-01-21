@@ -55,6 +55,7 @@ from src.spreadsheet import SpreadsheetClient
 from src.exchange_rate import ExchangeRateClient, WiseRateClient
 from src.add_product import JapaneseProductNameGenerator, CategoryDetector, DescriptionGenerator, SEOGenerator, ModelNumberGenerator
 from src.colorme import ColorMeClient
+from src.bs_sheet_columns import Col, Formula, get_cell, cell_ref, range_ref
 
 logger = logging.getLogger(__name__)
 
@@ -521,24 +522,26 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 rows=10000,
                 cols=85  # 81列 + 余裕
             )
-            sheet.update('A1:CF1', [headers])
+            sheet.update(f'A1:{Col.last_column_letter()}1', [headers])
             logger.info(f"シート '{sheet_name}' を作成しました")
 
         # 既存データを取得
         existing_data = sheet.get_all_values()
         if not existing_data:
-            sheet.update('A1:CF1', [headers])
+            sheet.update(f'A1:{Col.last_column_letter()}1', [headers])
             logger.info("ヘッダー行を追加")
             existing_data = [headers]
 
-        # 既存データをURLでインデックス化（F列=index 5がURL）
+        # 既存データをURLでインデックス化（F列=PRODUCT_URLがURL）
         existing_by_url: dict[str, tuple[int, list[str]]] = {}  # URL -> (行番号, 行データ)
         existing_ids: set[str] = set()  # 既存の仕入れ先商品ID
         for row_idx, row in enumerate(existing_data[1:], start=2):  # ヘッダー行をスキップ、行番号は2から
-            if len(row) > 5 and row[5]:  # F列: URL
-                existing_by_url[row[5]] = (row_idx, row)
-            if len(row) > 2 and row[2]:  # C列: 仕入れ先商品ID
-                existing_ids.add(row[2])
+            url = get_cell(row, Col.PRODUCT_URL)
+            if url:
+                existing_by_url[url] = (row_idx, row)
+            supplier_id = get_cell(row, Col.SUPPLIER_ID)
+            if supplier_id:
+                existing_ids.add(supplier_id)
 
         logger.info(f"既存商品数: {len(existing_by_url)}件")
 
@@ -561,46 +564,16 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 logger.info(f"  append_rows準備: {len(new_rows_batch)}行, 開始行={start_row}")
                 for i, row in enumerate(new_rows_batch):
                     row_num = start_row + i
-                    # 84列構造（D列にCM商品名追加済み）に対応した数式設定
-                    # 列構造: A(0)採用フラグ, B(1)登録状況, C(2)ID, D(3)CM商品名, E(4)CMのURL, F(5)仕入URL,
-                    #        G(6)商品名, H(7)サイト, I-K(8-10)カテゴリ, L(11)製造国, M(12)説明, N(13)仕様,
-                    #        O(14)発行年, P(15)発行数, Q(16)在庫状況, R(17)価格, S(18)前回価格, T(19)変動率,
-                    #        U(20)通貨, V(21)為替種類, W(22)為替レート, X(23)仕入額JPY, Y(24)枚数, Z(25)仕入合計,
-                    #        AA(26)マージン率, AB(27)マージン額, AC(28)送料, AD(29)諸経費, AE(30)合計原価, AF(31)適正価格,
-                    #        AG(32)粗利額, AH(33)粗利率, AI(34)販売価格, AJ(35)定価, AK(36)会員価格, AL(37)原価,
-                    #        AM(38)消費税込販売価格, AN(39)消費税額
-                    # T列(19): 価格変動率 = (R-S)/S*100 (現在価格-前回価格)/前回価格
-                    row[19] = f'=IF(S{row_num}="","",IF(S{row_num}=0,"",(R{row_num}-S{row_num})/S{row_num}*100))'
-                    # Z列(25): 仕入れ合計 = Y(枚数) * X(仕入れ額日本円)
-                    row[25] = f'=Y{row_num}*X{row_num}'
-                    # AE列(30): 合計原価 = Z(仕入れ合計) + AC(送料) + AD(諸経費)
-                    row[30] = f'=Z{row_num}+AC{row_num}+AD{row_num}'
-                    # AF列(31): 適正価格 = ROUNDUP(AE/(2-AA)+AB+AC, -2)
-                    row[31] = f'=ROUNDUP(AE{row_num}/(2-AA{row_num})+AB{row_num}+AC{row_num},-2)'
-                    # AG列(32): 粗利額 = AF - AE
-                    row[32] = f'=AF{row_num}-AE{row_num}'
-                    # AH列(33): 粗利率 = AG/AF
-                    row[33] = f'=IF(AF{row_num}=0,"",AG{row_num}/AF{row_num})'
-                    # AI列(34): 販売価格 = AF
-                    row[34] = f'=AF{row_num}'
-                    # AJ列(35): 定価 = AF
-                    row[35] = f'=AF{row_num}'
-                    # AK列(36): 会員価格 = AF
-                    row[36] = f'=AF{row_num}'
-                    # AL列(37): 原価 = AE
-                    row[37] = f'=AE{row_num}'
-                    # AM列(38): 消費税込販売価格 = AI*1.1
-                    row[38] = f'=AI{row_num}*1.1'
-                    # AN列(39): 消費税額 = AI*0.1
-                    row[39] = f'=AI{row_num}*0.1'
+                    # 84列構造に対応した数式設定（bs_sheet_columns.pyのFormula/Colを使用）
+                    Formula.set_all_formulas(row, row_num)
                 # 各行の列数を確認
                 for i, row in enumerate(new_rows_batch[:3]):
                     logger.debug(f"  行{i}: {len(row)}列, URL={row[4][:50] if len(row) > 4 else 'N/A'}...")
                 try:
                     # append_rowsは列位置がずれる問題があるため、明示的に範囲指定で書き込む
-                    # A列からCF列（84列）に書き込む
+                    # A列から最終列（CF列、84列）に書き込む
                     end_row = start_row + len(new_rows_batch) - 1
-                    range_str = f"A{start_row}:CF{end_row}"
+                    range_str = f"A{start_row}:{Col.last_column_letter()}{end_row}"
                     logger.info(f"  update準備: 範囲={range_str}")
                     result = sheet.update(values=new_rows_batch, range_name=range_str, value_input_option='USER_ENTERED')
                     logger.info(f"  update完了: {result.get('updatedCells', 0)}セル更新")
@@ -1165,8 +1138,8 @@ def get_existing_urls_from_spreadsheet() -> set[str]:
 
     try:
         sheet = client._spreadsheet.worksheet(Config.SHEET_BULLIONSTAR_PRODUCTS)
-        # F列（URL）のみ取得（高速化のため）
-        url_column = sheet.col_values(6)  # F列 = 6
+        # F列（PRODUCT_URL）のみ取得（高速化のため）
+        url_column = sheet.col_values(Col.PRODUCT_URL.index + 1)  # 1-basedインデックス
         existing_urls = set(url_column[1:])  # ヘッダー行をスキップ
         logger.info(f"既存商品URL: {len(existing_urls)}件")
         return existing_urls

@@ -26,21 +26,12 @@ from src.colorme_image_uploader import (
     ColorMeImageUploader,
     UploadProgress,
 )
+from src.bs_sheet_columns import Col, get_cell, range_ref
 
 logger = logging.getLogger(__name__)
 
 # 進捗ファイルパス（ブリオンスター専用）
 PROGRESS_FILE = Path("data/bullionstar_image_upload_progress.json")
-
-# ブリオンスター商品ページ一覧の列インデックス（0-based）
-# 84列構造 (A-CF) - D列にCM商品名追加
-COL_REGISTRATION_STATUS = 1  # B列: カラーミー登録状況
-COL_COLORME_URL = 4          # E列: カラーミー商品URL
-COL_IMAGE_1 = 62             # BK列: 画像URL1
-COL_IMAGE_10 = 71            # BT列: 画像URL10
-COL_PAGE_TITLE = 72          # BU列: ページタイトル（SEO）
-COL_META_DESC = 73           # BV列: メタディスクリプション（SEO）
-COL_META_KEYWORDS = 74       # BW列: メタキーワード（SEO）
 
 # 商品IDと行番号のマッピングを保持
 _product_row_map: dict[int, int] = {}
@@ -94,28 +85,28 @@ def get_products_needing_images() -> list[tuple[int, list[str]]]:
 
         for row_idx, row in enumerate(data[1:], start=2):
             # B列: 登録状況チェック
-            registration_status = row[COL_REGISTRATION_STATUS] if len(row) > COL_REGISTRATION_STATUS else ""
+            registration_status = get_cell(row, Col.REGISTRATION_STATUS)
             if registration_status != "登録済":
                 continue
 
-            # D列: カラーミー商品URLから商品IDを抽出
-            colorme_url = row[COL_COLORME_URL] if len(row) > COL_COLORME_URL else ""
+            # E列: カラーミー商品URLから商品IDを抽出
+            colorme_url = get_cell(row, Col.COLORME_URL)
             product_id = extract_product_id_from_url(colorme_url)
             if not product_id:
                 continue
 
-            # BJ-BS列: 画像URL1-10
+            # BK-BT列: 画像URL1-10
             image_urls = []
-            for i in range(COL_IMAGE_1, COL_IMAGE_10 + 1):
-                url = row[i] if len(row) > i else ""
+            for i in range(Col.IMAGE_1.index, Col.IMAGE_10.index + 1):
+                url = row[i].strip() if len(row) > i and row[i] else ""
                 if url and "shop-pro.jp" not in url:
                     # 外部URLのみ追加（カラーミー登録済みは除外）
                     image_urls.append(url)
 
-            # SEO情報を取得（BT-BV列）
-            page_title = row[COL_PAGE_TITLE] if len(row) > COL_PAGE_TITLE else ""
-            meta_desc = row[COL_META_DESC] if len(row) > COL_META_DESC else ""
-            meta_keywords = row[COL_META_KEYWORDS] if len(row) > COL_META_KEYWORDS else ""
+            # SEO情報を取得（BU-BW列）
+            page_title = get_cell(row, Col.CM_PAGE_TITLE)
+            meta_desc = get_cell(row, Col.CM_META_DESC)
+            meta_keywords = get_cell(row, Col.CM_META_KEYWORDS)
 
             # SEO情報がある場合はマップに保存
             if page_title or meta_desc or meta_keywords:
@@ -173,8 +164,7 @@ def update_image_urls_in_spreadsheet(updates: list[tuple[int, list[str]]]) -> in
             # BK-BT列（画像URL1-10）を更新
             # 画像URLを10列分に展開（足りない分は空文字）
             padded_urls = image_urls[:10] + [""] * (10 - len(image_urls[:10]))
-            # BK列 = インデックス62（0-based）
-            range_str = f"BK{row_idx}:BT{row_idx}"
+            range_str = range_ref(Col.IMAGE_1, Col.IMAGE_10, row_idx)
             batch_data.append({
                 'range': range_str,
                 'values': [padded_urls]
