@@ -561,17 +561,30 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 logger.info(f"  append_rows準備: {len(new_rows_batch)}行, 開始行={start_row}")
                 for i, row in enumerate(new_rows_batch):
                     row_num = start_row + i
+                    # 84列構造（D列にCM商品名追加済み）に対応した数式設定
+                    # S列(18): 価格変動率 = (Q-R)/R*100
                     row[18] = f'=IF(R{row_num}="","",IF(R{row_num}=0,"",(Q{row_num}-R{row_num})/R{row_num}*100))'
-                    row[24] = f'=W{row_num}*X{row_num}'
-                    row[29] = f'=Y{row_num}+AB{row_num}+AC{row_num}'
-                    row[30] = f'=ROUNDUP(AD{row_num}/(2-Z{row_num})+AB{row_num}+AC{row_num},-2)'
+                    # Z列(25): 仕入れ合計 = Y(枚数) * X(仕入れ額日本円)
+                    row[25] = f'=Y{row_num}*X{row_num}'
+                    # AD列(29): 合計原価 = Z(仕入れ合計) + AB(送料) + AC(諸経費)
+                    row[29] = f'=Z{row_num}+AB{row_num}+AC{row_num}'
+                    # AE列(30): 適正価格 = ROUNDUP(AD/(2-AA)+AB+AC, -2)
+                    row[30] = f'=ROUNDUP(AD{row_num}/(2-AA{row_num})+AB{row_num}+AC{row_num},-2)'
+                    # AF列(31): 粗利額 = AE - AD
                     row[31] = f'=AE{row_num}-AD{row_num}'
+                    # AG列(32): 粗利率 = AF/AE
                     row[32] = f'=IF(AE{row_num}=0,"",AF{row_num}/AE{row_num})'
+                    # AH列(33): 販売価格 = AE
                     row[33] = f'=AE{row_num}'
+                    # AI列(34): 定価 = AE
                     row[34] = f'=AE{row_num}'
+                    # AJ列(35): 会員価格 = AE
                     row[35] = f'=AE{row_num}'
+                    # AK列(36): 原価 = AD
                     row[36] = f'=AD{row_num}'
+                    # AL列(37): 消費税込販売価格 = AH*1.1
                     row[37] = f'=AH{row_num}*1.1'
+                    # AM列(38): 消費税額 = AH*0.1
                     row[38] = f'=AH{row_num}*0.1'
                 # 各行の列数を確認
                 for i, row in enumerate(new_rows_batch[:3]):
