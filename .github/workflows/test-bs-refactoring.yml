@@ -62,6 +62,8 @@ jobs:
 
       # テスト1: 列定義検証
       - name: Validate column definitions
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
         run: |
           echo "=== 列定義検証 ==="
           python -m src.bs_validate_columns
