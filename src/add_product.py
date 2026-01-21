@@ -1702,8 +1702,8 @@ class JapaneseProductNameGenerator:
     def _extract_year(self, text: str) -> str:
         """年号を抽出"""
         import re
-        # 2020-2030の範囲で年号を検索
-        match = re.search(r'\b(20[2-3][0-9])\b', text)
+        # 2000-2039の範囲で年号を検索
+        match = re.search(r'\b(20[0-3][0-9])\b', text)
         if match:
             return match.group(1)
         return ""
