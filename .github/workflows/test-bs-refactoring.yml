@@ -14,6 +14,7 @@ on:
           - 'register_adopted_products'
           - 'upload_images'
           - 'generate_names'
+          - 'supplement_ai_content'
       dry_run:
         description: 'ドライラン（実際の変更なし）'
         type: boolean
@@ -124,6 +125,20 @@ jobs:
           echo "=== upload_bullionstar_images.py テスト（status確認のみ）==="
           python -m src.upload_bullionstar_images --status || true
           echo "✅ upload_bullionstar_images.py インポートテスト成功"
+
+      # テスト6: bs_supplement_ai_content.py
+      - name: Test bs_supplement_ai_content.py
+        if: inputs.test_target == 'all' || inputs.test_target == 'supplement_ai_content'
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+        run: |
+          echo "=== bs_supplement_ai_content.py テスト ==="
+          ARGS="--limit ${{ inputs.limit }}"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python -m src.bs_supplement_ai_content $ARGS
+          echo "✅ bs_supplement_ai_content.py テスト成功"
 
       - name: Summary
         run: |
