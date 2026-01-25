@@ -317,7 +317,7 @@ def update_prices(
 
         return {
             "success": success_count,
-            "error": error_count,
+            "failed": error_count,
             "skipped": skipped_count,
         }
 
@@ -394,13 +394,14 @@ def main():
     logger.info("処理完了")
     if "error" not in result:
         logger.info(f"  成功: {result.get('success', 0)}件")
-        logger.info(f"  失敗: {result.get('error', 0)}件")
+        logger.info(f"  失敗: {result.get('failed', 0)}件")
         logger.info(f"  スキップ: {result.get('skipped', 0)}件")
     else:
         logger.error(f"  エラー: {result['error']}")
     logger.info(f"  所要時間: {elapsed:.1f}秒")
     logger.info("=" * 60)
 
+    # 致命的エラーがなければ成功（個別の失敗は許容）
     return 0 if "error" not in result else 1
 
 
