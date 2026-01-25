@@ -1,4 +1,4 @@
-name: "[BS3] 価格・為替レート更新"
+name: "[BS3] 価格・在庫状況更新"
 
 on:
   schedule:
@@ -25,6 +25,10 @@ on:
         options:
           - 'クレカ'
           - 'Wise'
+      pending_only:
+        description: '検討中の商品のみを対象'
+        type: boolean
+        default: true
       dry_run:
         description: 'ドライラン（実際の変更なし）'
         type: boolean
@@ -70,17 +74,21 @@ jobs:
           playwright install chromium
           playwright install-deps chromium
 
-      - name: Update prices
+      - name: Update prices and stock status
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
         run: |
-          echo "=== 価格・為替レート更新 ==="
+          echo "=== 価格・在庫状況更新 ==="
           echo "為替種類: ${{ inputs.exchange_type || 'クレカ' }}"
+          echo "対象: ${{ inputs.pending_only && '検討中の商品のみ' || '全商品' }}"
           echo "ドライラン: ${{ inputs.dry_run || 'false' }}"
           echo "件数制限: ${{ inputs.limit || '全件' }}"
           echo ""
 
           ARGS="--exchange-type ${{ inputs.exchange_type || 'クレカ' }}"
+          if [ "${{ inputs.pending_only }}" = "true" ]; then
+            ARGS="$ARGS --pending-only"
+          fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             ARGS="$ARGS --dry-run"
           fi
@@ -91,14 +99,15 @@ jobs:
           python -m src.bs_update_prices $ARGS
 
           echo ""
-          echo "価格・為替レート更新完了"
+          echo "価格・在庫状況更新完了"
 
       - name: Summary
         run: |
           echo "========================================"
-          echo "  価格・為替レート更新完了"
+          echo "  価格・在庫状況更新完了"
           echo "========================================"
           echo "  為替種類: ${{ inputs.exchange_type || 'クレカ' }}"
+          echo "  対象: ${{ inputs.pending_only && '検討中の商品のみ' || '全商品' }}"
           echo "  ドライラン: ${{ inputs.dry_run || 'false' }}"
           echo "  件数制限: ${{ inputs.limit || '全件' }}"
           echo "========================================"

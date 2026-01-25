@@ -1,26 +1,28 @@
 """
-価格のみ更新スクリプト
+価格・在庫状況更新スクリプト
 
-既存商品の価格・為替レートのみを再取得・再計算する軽量スクリプト。
+既存商品の価格・為替レート・在庫状況を再取得・再計算する軽量スクリプト。
 新規商品の追加やAI生成コンテンツの更新は行わない。
 
-為替変動が多いため、4時間毎に実行して価格を最新に保つ。
+為替変動が多いため、4時間毎に実行して価格・在庫を最新に保つ。
 
 更新対象列:
-- Q列: 仕入れ先在庫状況
+- Q列: 仕入れ先在庫状況（In Stock / Out of Stock）
 - R列: 仕入れ先価格（現地通貨）
 - S列: 前回仕入れ価格
+- U列: 取引通貨
 - V列: 為替種類
 - W列: 為替レート
 - X列: 仕入れ額(日本円)
 
 使用方法:
-    python -m src.bs_update_prices [--limit N] [--dry-run] [--exchange-type {クレカ,Wise}]
+    python -m src.bs_update_prices [--limit N] [--dry-run] [--exchange-type {クレカ,Wise}] [--registered-only]
 
 オプション:
     --limit N: 処理件数制限（テスト用）
     --dry-run: 実際の更新を行わない（確認用）
     --exchange-type: 為替種類（デフォルト: クレカ）
+    --pending-only: 検討中の商品のみを対象（デフォルト: 全商品）
 """
 
 import argparse
@@ -95,18 +97,20 @@ def fetch_exchange_rates(currencies: list[str], exchange_type: str = "クレカ"
 def update_prices(
     dry_run: bool = False,
     limit: Optional[int] = None,
-    exchange_type: str = "クレカ"
-) -> int:
+    exchange_type: str = "クレカ",
+    pending_only: bool = False
+) -> dict:
     """
-    既存商品の価格・為替レートを更新
+    既存商品の価格・為替レート・在庫状況を更新
 
     Args:
         dry_run: Trueの場合、実際の更新を行わない
         limit: 処理件数制限（Noneで全件）
         exchange_type: 為替種類（"クレカ" または "Wise"）
+        pending_only: Trueの場合、検討中の商品のみを対象
 
     Returns:
-        int: 更新した件数
+        dict: 更新結果の統計
     """
     # Playwrightのインポート確認
     try:
@@ -132,14 +136,25 @@ def update_prices(
 
         logger.info(f"総商品数: {len(all_data) - 1}件")
 
-        # 価格更新対象を抽出（URLがある全商品）
+        # 価格更新対象を抽出
         target_rows = []
         for row_idx, row in enumerate(all_data[1:], start=2):  # ヘッダースキップ、行番号は2から
             url = get_cell(row, Col.PRODUCT_URL)
-            if url:
-                target_rows.append((row_idx, row, url))
+            if not url:
+                continue
 
-        logger.info(f"価格更新対象: {len(target_rows)}件")
+            # 検討中のみモードの場合、A列が「検討中」の商品のみ対象
+            if pending_only:
+                adopted_flag = get_cell(row, Col.ADOPTED_FLAG)
+                if adopted_flag != "検討中":
+                    continue
+
+            target_rows.append((row_idx, row, url))
+
+        if pending_only:
+            logger.info(f"価格更新対象: {len(target_rows)}件（検討中の商品のみ）")
+        else:
+            logger.info(f"価格更新対象: {len(target_rows)}件（全商品）")
 
         if limit:
             target_rows = target_rows[:limit]
@@ -276,7 +291,12 @@ def update_prices(
 
             browser.close()
 
+        # 在庫状況の統計
+        in_stock_count = sum(1 for c in update_cells if c.get('values', [['']])[0][0] == 'In Stock')
+        out_of_stock_count = sum(1 for c in update_cells if c.get('values', [['']])[0][0] == 'Out of Stock')
+
         logger.info(f"\n価格取得完了: 成功={success_count}件, 失敗={error_count}件, スキップ={skipped_count}件")
+        logger.info(f"在庫状況: In Stock={in_stock_count // 7}件, Out of Stock={out_of_stock_count // 7}件")
 
         # スプレッドシートを更新
         if not dry_run and update_cells:
@@ -295,13 +315,17 @@ def update_prices(
             logger.info("\n[ドライラン] 実際の更新は行いませんでした")
             logger.info(f"更新予定: {len(update_cells)}セル")
 
-        return success_count
+        return {
+            "success": success_count,
+            "error": error_count,
+            "skipped": skipped_count,
+        }
 
     except Exception as e:
         logger.error(f"エラーが発生しました: {e}")
         import traceback
         traceback.print_exc()
-        return 0
+        return {"error": str(e)}
 
 
 def main():
@@ -328,6 +352,11 @@ def main():
         help='為替種類'
     )
     parser.add_argument(
+        '--pending-only',
+        action='store_true',
+        help='検討中の商品のみを対象'
+    )
+    parser.add_argument(
         '-v', '--verbose',
         action='store_true',
         help='詳細ログを出力'
@@ -343,29 +372,36 @@ def main():
     )
 
     logger.info("=" * 60)
-    logger.info("価格のみ更新")
+    logger.info("価格・在庫状況更新")
     logger.info("=" * 60)
     logger.info(f"モード: {'ドライラン' if args.dry_run else '本番'}")
     logger.info(f"為替種類: {args.exchange_type}")
+    logger.info(f"対象: {'検討中の商品のみ' if args.pending_only else '全商品'}")
     if args.limit:
         logger.info(f"件数制限: {args.limit}件")
     logger.info("=" * 60)
 
     start_time = time.time()
-    count = update_prices(
+    result = update_prices(
         dry_run=args.dry_run,
         limit=args.limit,
-        exchange_type=args.exchange_type
+        exchange_type=args.exchange_type,
+        pending_only=args.pending_only
     )
     elapsed = time.time() - start_time
 
     logger.info("=" * 60)
     logger.info("処理完了")
-    logger.info(f"  更新件数: {count}件")
+    if "error" not in result:
+        logger.info(f"  成功: {result.get('success', 0)}件")
+        logger.info(f"  失敗: {result.get('error', 0)}件")
+        logger.info(f"  スキップ: {result.get('skipped', 0)}件")
+    else:
+        logger.error(f"  エラー: {result['error']}")
     logger.info(f"  所要時間: {elapsed:.1f}秒")
     logger.info("=" * 60)
 
-    return 0 if count >= 0 else 1
+    return 0 if "error" not in result else 1
 
 
 if __name__ == "__main__":
