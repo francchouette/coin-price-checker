@@ -1,4 +1,4 @@
-name: "[BS1] Bullionstar Products"
+name: "[BS1] 商品一覧取得（新規・価格・AI生成）"
 
 on:
   schedule:
