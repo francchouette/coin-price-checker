@@ -119,7 +119,8 @@ class BullionstarScraper(BaseScraper):
             logger.warning("価格テーブルから価格を取得できませんでした。JSON-LDから取得を試みます...")
             price = self._extract_price_from_json_ld()
             if price is not None:
-                self._is_out_of_stock = True  # JSON-LDから取得 = 在庫切れの可能性が高い
+                # 注: JSON-LDから価格を取得しても在庫切れとは限らない
+                # 在庫状態はページ上の表示から別途判定する
                 return price
 
             return None
@@ -243,19 +244,11 @@ class BullionstarScraper(BaseScraper):
         """
         在庫状態を確認する
 
-        _is_out_of_stockフラグが設定されている場合は在庫なしを返す
-        （JSON-LDから価格を取得した場合 = 価格テーブルがない = 在庫切れ）
-
-        それ以外はstatus属性で判定:
+        ページ上の在庫表示（status属性）から判定:
         - IN_STOCK: 在庫あり
         - IN_TRANSIT: 入荷予定（PRE-SALE）- 購入可能なので在庫ありとして扱う
         - UNAVAILABLE: 在庫なし
         """
-        # JSON-LDから価格を取得した場合は在庫切れ
-        if self._is_out_of_stock:
-            logger.info("在庫状態: Out of Stock（JSON-LDから価格取得のため）")
-            return False
-
         try:
             element = self.page.query_selector(self.STOCK_SELECTOR)
             if element:
