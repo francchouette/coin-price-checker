@@ -174,6 +174,19 @@ def update_prices(
         success_count = 0
         error_count = 0
         skipped_count = 0
+        in_stock_count = 0
+        out_of_stock_count = 0
+        total_saved_count = 0  # スプレッドシートに保存済みの商品数
+
+        # 100商品ごとにスプレッドシートに保存する関数
+        def flush_updates():
+            nonlocal update_cells, total_saved_count
+            if not dry_run and update_cells:
+                sheet.batch_update(update_cells, value_input_option='RAW')
+                total_saved_count += len(update_cells) // 7  # 1商品あたり約7セル
+                logger.info(f"  [中間保存] {total_saved_count}商品をスプレッドシートに保存しました")
+                time.sleep(1)  # API制限対策
+            update_cells = []
 
         # Playwrightでスクレイピング
         with sync_playwright() as p:
@@ -212,6 +225,10 @@ def update_prices(
 
                     # 在庫状況
                     stock_status = "In Stock" if result.in_stock else "Out of Stock"
+                    if result.in_stock:
+                        in_stock_count += 1
+                    else:
+                        out_of_stock_count += 1
 
                     # 為替レート適用
                     currency = result.currency.upper() if result.currency else "SGD"
@@ -280,6 +297,10 @@ def update_prices(
                     scraper.reset_extra_fields()
                     success_count += 1
 
+                    # 100商品ごとにスプレッドシートに保存（エラー時のデータ損失を防ぐ）
+                    if success_count % 100 == 0:
+                        flush_updates()
+
                     # レート制限対策
                     time.sleep(random.uniform(0.5, 1.5))
 
@@ -291,29 +312,20 @@ def update_prices(
 
             browser.close()
 
-        # 在庫状況の統計
-        in_stock_count = sum(1 for c in update_cells if c.get('values', [['']])[0][0] == 'In Stock')
-        out_of_stock_count = sum(1 for c in update_cells if c.get('values', [['']])[0][0] == 'Out of Stock')
+        # 残りのデータを保存
+        if update_cells:
+            if not dry_run:
+                sheet.batch_update(update_cells, value_input_option='RAW')
+                total_saved_count += len(update_cells) // 7
+                logger.info(f"  [最終保存] 残り{len(update_cells) // 7}商品をスプレッドシートに保存しました")
 
         logger.info(f"\n価格取得完了: 成功={success_count}件, 失敗={error_count}件, スキップ={skipped_count}件")
-        logger.info(f"在庫状況: In Stock={in_stock_count // 7}件, Out of Stock={out_of_stock_count // 7}件")
+        logger.info(f"在庫状況: In Stock={in_stock_count}件, Out of Stock={out_of_stock_count}件")
 
-        # スプレッドシートを更新
-        if not dry_run and update_cells:
-            logger.info(f"\nスプレッドシートを更新中... ({len(update_cells)}セル)")
-
-            # バッチ更新（100件ずつ）
-            batch_size = 100
-            for i in range(0, len(update_cells), batch_size):
-                batch = update_cells[i:i + batch_size]
-                sheet.batch_update(batch, value_input_option='RAW')
-                logger.info(f"  更新完了: {min(i + batch_size, len(update_cells))}/{len(update_cells)}セル")
-                time.sleep(1)  # API制限対策
-
-            logger.info(f"スプレッドシート更新完了")
-        elif dry_run:
+        if dry_run:
             logger.info("\n[ドライラン] 実際の更新は行いませんでした")
-            logger.info(f"更新予定: {len(update_cells)}セル")
+        else:
+            logger.info(f"\nスプレッドシート更新完了: 合計{total_saved_count}商品")
 
         return {
             "success": success_count,
