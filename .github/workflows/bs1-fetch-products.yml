@@ -1,9 +1,9 @@
-name: "BS1 Fetch Products"
+name: "BS1 Get New Products"
 
 on:
-  # 6時間ごとに実行（JST 8, 14, 20, 2時）
+  # 毎日JST 6:00に実行（UTC 21:00）
   schedule:
-    - cron: '0 23,5,11,17 * * *'
+    - cron: '0 21 * * *'
 
   # 手動実行を許可
   workflow_dispatch:

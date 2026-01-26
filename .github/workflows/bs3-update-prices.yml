@@ -1,4 +1,4 @@
-name: "BS3 Price Stock Update"
+name: "BS3 Update Price and Stock"
 
 on:
   # 4時間ごとに実行（JST 8, 12, 16, 20, 0, 4時）
