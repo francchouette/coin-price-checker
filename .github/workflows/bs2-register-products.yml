@@ -1,7 +1,7 @@
-name: "[BS2] 採用商品をカラーミーに登録"
+name: "BS2 Register Products"
 
 on:
-  # 手動実行
+  # 手動実行を許可
   workflow_dispatch:
     inputs:
       dry_run:
