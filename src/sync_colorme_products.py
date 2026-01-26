@@ -109,6 +109,7 @@ def row_to_update_data(row: list) -> dict:
             updates["stocks"] = stocks
 
     # 表示連動（E列の値に応じて処理）
+    # ただし、B列=「掲載しない」の場合は常に掲載しない（E列より優先）
     display_state_map = {
         "掲載する": "showing",
         "掲載しない": "hidden",
@@ -116,7 +117,14 @@ def row_to_update_data(row: list) -> dict:
         "会員のみ購入可": "sale_for_members",
     }
 
-    if display_sync_mode == "連動" or display_sync_mode.upper() == "ON":
+    # B列の掲載設定を取得
+    display_setting = get_cell(row, Col.DISPLAY_SETTING)
+
+    # B列=「掲載しない」の場合は、E列の設定に関係なく常に掲載しない
+    if display_setting == "掲載しない":
+        updates["display_state"] = "hidden"
+        log_parts.append("表示: 掲載しない（B列で固定）")
+    elif display_sync_mode == "連動" or display_sync_mode.upper() == "ON":
         # 在庫に連動（在庫あり=表示、なし=非表示）
         if is_in_stock:
             updates["display_state"] = "showing"
@@ -132,14 +140,12 @@ def row_to_update_data(row: list) -> dict:
         log_parts.append("表示: 掲載しない")
     elif display_sync_mode == "変更しない" or display_sync_mode.upper() == "OFF" or not display_sync_mode:
         # E列が「変更しない」「OFF」または空欄の場合はB列の値を使用
-        display_state_ja = get_cell(row, Col.DISPLAY_SETTING)
-        if display_state_ja in display_state_map:
-            updates["display_state"] = display_state_map[display_state_ja]
+        if display_setting in display_state_map:
+            updates["display_state"] = display_state_map[display_setting]
     else:
         # その他の値はB列の掲載設定を使用
-        display_state_ja = get_cell(row, Col.DISPLAY_SETTING)
-        if display_state_ja in display_state_map:
-            updates["display_state"] = display_state_map[display_state_ja]
+        if display_setting in display_state_map:
+            updates["display_state"] = display_state_map[display_setting]
 
     # 在庫管理
     stock_managed_str = get_cell(row, Col.STOCK_MANAGED)

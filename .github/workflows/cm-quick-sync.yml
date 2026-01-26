@@ -1,13 +1,13 @@
-name: ColorMe Product Management
+name: "CM Quick Sync"
 
 on:
   # 手動実行
   workflow_dispatch:
 
 jobs:
-  manage-products:
+  quick-sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
 
     permissions:
       contents: read
@@ -35,48 +35,43 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install Playwright browsers
-        run: |
-          python -m playwright install chromium
-          python -m playwright install-deps chromium
-
       # ========================================
-      # フルサイクル: ダウンロード → 価格取得 → 同期
+      # クイック同期: 価格取得なし（高速）
       # ========================================
-      - name: "[Full Cycle] Step 1: Download products from ColorMe"
-        env:
-          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
-          GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
-          BRIGHTDATA_BROWSER_WS: ${{ secrets.BRIGHTDATA_BROWSER_WS }}
-        run: |
-          echo "📥 [1/3] カラーミーから商品をダウンロード（価格自動取得あり）..."
-          python -m src.download_colorme_products --fetch-prices
-
-      - name: "[Full Cycle] Step 2: Sync products to ColorMe"
+      - name: "[Quick Sync] Step 1: Download products from ColorMe"
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
           GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
         run: |
-          echo "📤 [2/3] A列「更新」の商品をカラーミーに同期中..."
+          echo "📥 [1/2] カラーミーから商品をダウンロード（価格取得なし）..."
+          python -m src.download_colorme_products
+
+      - name: "[Quick Sync] Step 2: Sync products to ColorMe"
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
+          GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
+        run: |
+          echo "📤 [2/2] A列「更新」の商品をカラーミーに同期中..."
           echo "  → トリガー: A列（同期モード）= 更新"
           python -m src.sync_colorme_products --verbose
 
-      - name: "[Full Cycle] Step 3: Summary"
+      - name: "[Quick Sync] Summary"
         run: |
-          echo "✅ [3/3] フルサイクル完了"
+          echo "✅ クイック同期完了"
           echo ""
           echo "=== トリガー列の説明 ==="
           echo "A列（同期モード）: 「更新」の商品のみカラーミーに同期"
-          echo "BV列（価格更新ON/OFF）: ONの商品のみ価格を更新"
-          echo "BW列（在庫連動ON/OFF）: ONの商品のみ在庫を連動"
-          echo "BX列（表示連動）: 表示状態の連動設定"
+          echo "B列（掲載設定）: 「掲載しない」は最優先で適用"
+          echo "C列（価格更新ON/OFF）: ONの商品のみ価格を更新"
+          echo "D列（在庫連動ON/OFF）: ONの商品のみ在庫を連動"
+          echo "E列（表示連動）: 在庫状況に応じて表示/非表示を切替"
 
       - name: Notify on failure
         if: failure()
         uses: actions/github-script@v7
         with:
           script: |
-            const message = `❌ ColorMe Product Management が失敗しました\n\nRepository: ${context.repo.owner}/${context.repo.repo}\nWorkflow: ${context.workflow}\nRun: ${context.runNumber}\n\nログ: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const message = `❌ CM Quick Sync が失敗しました\n\nRepository: ${context.repo.owner}/${context.repo.repo}\nWorkflow: ${context.workflow}\nRun: ${context.runNumber}\n\nログ: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             console.log(message);
