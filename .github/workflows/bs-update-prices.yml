@@ -2,19 +2,8 @@ name: "[BS3] 価格・在庫状況更新"
 
 on:
   schedule:
-    # 4時間毎に実行（1日6回）
-    # JST 02:00 (UTC 17:00)
-    - cron: '0 17 * * *'
-    # JST 06:00 (UTC 21:00)
-    - cron: '0 21 * * *'
-    # JST 10:00 (UTC 01:00)
-    - cron: '0 1 * * *'
-    # JST 14:00 (UTC 05:00)
-    - cron: '0 5 * * *'
-    # JST 18:00 (UTC 09:00)
-    - cron: '0 9 * * *'
-    # JST 22:00 (UTC 13:00)
-    - cron: '0 13 * * *'
+    # テスト: 毎分実行（動作確認後に4時間毎に戻す）
+    - cron: '* * * * *'
   workflow_dispatch:
     inputs:
       exchange_type:
