@@ -2,7 +2,7 @@ name: "[BS3] 価格・在庫状況更新"
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # 4時間ごと（UTC: 0,4,8,12,16,20時）
+    - cron: '50 9 * * *'  # テスト: UTC 09:50 に実行（確認後 '0 */4 * * *' に戻す）
   workflow_dispatch:
     inputs:
       exchange_type:
