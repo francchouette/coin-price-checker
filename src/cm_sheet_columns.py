@@ -1,5 +1,5 @@
 """
-新カラーミー商品管理シートの列定義（89列: A-CK）
+新カラーミー商品管理シートの列定義（77列: A-BY）
 
 全てのカラーミー商品管理スクリプトはこのファイルから列情報をインポートする。
 列構造が変更された場合、このファイルのみ修正すればOK。
@@ -18,6 +18,13 @@
 
     # 数式内での列参照
     formula = f'={Col.PROPER_PRICE.letter}{row_num}'
+
+変更履歴:
+    - 2024-XX: 初版（89列: A-CK）
+    - 2024-XX: 77列に削減（A-BY）
+      - 削除: M-T列（最上位カテゴリ〜発行数・限定数）8列
+      - 削除: AU-AV列（小カテゴリーID・小カテゴリー名）2列
+      - 削除: CJ-CK列（商品作成日時・商品更新日時）2列
 """
 
 from dataclasses import dataclass
@@ -28,7 +35,7 @@ from typing import Any
 class Column:
     """列情報を保持するイミュータブルなデータクラス"""
     index: int      # 0-based インデックス（row[index]で使用）
-    letter: str     # 列文字 (A, B, ..., CK)（数式・範囲指定で使用）
+    letter: str     # 列文字 (A, B, ..., BY)（数式・範囲指定で使用）
     name: str       # 列名（ドキュメント・ログ用）
 
 
@@ -50,7 +57,7 @@ def _col(index: int, name: str) -> Column:
 
 class Col:
     """
-    新カラーミー商品管理シートの全89列定義（A-CK）
+    新カラーミー商品管理シートの全77列定義（A-BY）
 
     使用方法:
         Col.SYNC_MODE.index  -> 0
@@ -71,122 +78,123 @@ class Col:
     NAME = _col(7, "商品名")
     COLORME_URL = _col(8, "カラーミー商品URL")
 
-    # === J-O列: 仕入れ先基本情報（6列）===
+    # === J-L列: 仕入れ先基本情報（3列）===
+    # ※M-T列（最上位カテゴリ〜発行数・限定数）8列を削除
     SUPPLIER_URL = _col(9, "仕入れ先商品URL")
     SUPPLIER_NAME = _col(10, "仕入れ先商品名")
     SUPPLIER_SITE = _col(11, "仕入れ先サイト")
-    TOP_CATEGORY = _col(12, "最上位カテゴリ")
-    PARENT_CATEGORY = _col(13, "親カテゴリ")
-    CHILD_CATEGORY = _col(14, "子カテゴリ")
 
-    # === P-T列: 仕入れ先商品詳細（5列）===
-    COUNTRY = _col(15, "製造国")
-    DESCRIPTION_EN = _col(16, "商品説明（英語）")
-    SPECS = _col(17, "仕様・スペック")
-    MINT_YEAR = _col(18, "発行年")
-    MINTAGE = _col(19, "発行数・限定数")
+    # === M-Q列: 仕入れ先価格情報（5列）===
+    # ※旧U-Y列から移動（インデックス調整: -8）
+    SUPPLIER_STOCK = _col(12, "仕入れ先在庫状況")
+    SUPPLIER_PRICE = _col(13, "仕入れ先価格（現地通貨）")
+    PREV_PRICE = _col(14, "前回仕入れ価格")
+    PRICE_CHANGE_RATE = _col(15, "価格変動率")
+    CURRENCY = _col(16, "取引通貨")
 
-    # === U-Y列: 仕入れ先価格情報（5列）===
-    SUPPLIER_STOCK = _col(20, "仕入れ先在庫状況")
-    SUPPLIER_PRICE = _col(21, "仕入れ先価格（現地通貨）")
-    PREV_PRICE = _col(22, "前回仕入れ価格")
-    PRICE_CHANGE_RATE = _col(23, "価格変動率")
-    CURRENCY = _col(24, "取引通貨")
+    # === R-AD列: 価格計算（13列）===
+    # ※旧Z-AL列から移動（インデックス調整: -8）
+    EXCHANGE_TYPE = _col(17, "為替種類")
+    EXCHANGE_RATE = _col(18, "為替レート")
+    PURCHASE_PRICE_JPY = _col(19, "仕入れ額(日本円)")
+    QUANTITY = _col(20, "枚数")
+    PURCHASE_TOTAL = _col(21, "仕入れ合計")
+    MARGIN_RATE = _col(22, "設定マージン率")
+    MARGIN_AMOUNT = _col(23, "設定マージン額")
+    SHIPPING = _col(24, "送料")
+    FEE = _col(25, "諸経費")
+    TOTAL_COST = _col(26, "合計原価")
+    PROPER_PRICE = _col(27, "適正価格")
+    GROSS_PROFIT = _col(28, "粗利額")
+    GROSS_PROFIT_RATE = _col(29, "粗利率")
 
-    # === Z-AL列: 価格計算（13列）===
-    EXCHANGE_TYPE = _col(25, "為替種類")
-    EXCHANGE_RATE = _col(26, "為替レート")
-    PURCHASE_PRICE_JPY = _col(27, "仕入れ額(日本円)")
-    QUANTITY = _col(28, "枚数")
-    PURCHASE_TOTAL = _col(29, "仕入れ合計")
-    MARGIN_RATE = _col(30, "設定マージン率")
-    MARGIN_AMOUNT = _col(31, "設定マージン額")
-    SHIPPING = _col(32, "送料")
-    FEE = _col(33, "諸経費")
-    TOTAL_COST = _col(34, "合計原価")
-    PROPER_PRICE = _col(35, "適正価格")
-    GROSS_PROFIT = _col(36, "粗利額")
-    GROSS_PROFIT_RATE = _col(37, "粗利率")
+    # === AE-AJ列: カラーミー価格情報（6列）===
+    # ※旧AM-AR列から移動（インデックス調整: -8）
+    SALES_PRICE = _col(30, "販売価格")
+    REGULAR_PRICE = _col(31, "定価")
+    MEMBERS_PRICE = _col(32, "会員価格")
+    COST = _col(33, "原価")
+    TAX_INCLUDED_PRICE = _col(34, "消費税込販売価格")
+    TAX_AMOUNT = _col(35, "消費税額")
 
-    # === AM-AR列: カラーミー価格情報（6列）===
-    SALES_PRICE = _col(38, "販売価格")
-    REGULAR_PRICE = _col(39, "定価")
-    MEMBERS_PRICE = _col(40, "会員価格")
-    COST = _col(41, "原価")
-    TAX_INCLUDED_PRICE = _col(42, "消費税込販売価格")
-    TAX_AMOUNT = _col(43, "消費税額")
+    # === AK-AN列: カテゴリー・グループ（4列）===
+    # ※旧AS-AX列から移動（インデックス調整: -8）
+    # ※小カテゴリーID・小カテゴリー名（2列）を削除
+    CATEGORY_ID_BIG = _col(36, "大カテゴリーID")
+    CATEGORY_NAME_BIG = _col(37, "大カテゴリー名称")
+    GROUP_IDS = _col(38, "グループID")
+    GROUP_NAMES = _col(39, "グループ名")
 
-    # === AS-AX列: カテゴリー・グループ（6列）===
-    CATEGORY_ID_BIG = _col(44, "大カテゴリーID")
-    CATEGORY_NAME_BIG = _col(45, "大カテゴリー名称")
-    CATEGORY_ID_SMALL = _col(46, "小カテゴリーID")
-    CATEGORY_NAME_SMALL = _col(47, "小カテゴリー名")
-    GROUP_IDS = _col(48, "グループID")
-    GROUP_NAMES = _col(49, "グループ名")
+    # === AO列: 型番（1列）===
+    # ※旧AY列から移動（インデックス調整: -10）
+    MODEL_NUMBER = _col(40, "型番")
 
-    # === AY列: 型番（1列）===
-    MODEL_NUMBER = _col(50, "型番")
+    # === AP-AV列: 在庫管理（7列）===
+    # ※旧AZ-BF列から移動（インデックス調整: -10）
+    STOCKS = _col(41, "在庫数")
+    STOCK_MANAGED = _col(42, "在庫管理")
+    FEW_NUM = _col(43, "残りわずか数")
+    SOLDOUT_DISPLAY = _col(44, "売切れ表示")
+    MIN_NUM = _col(45, "最小購入数")
+    MAX_NUM = _col(46, "最大購入数")
+    UNIT = _col(47, "単位")
 
-    # === AZ-BF列: 在庫管理（7列）===
-    STOCKS = _col(51, "在庫数")
-    STOCK_MANAGED = _col(52, "在庫管理")
-    FEW_NUM = _col(53, "残りわずか数")
-    SOLDOUT_DISPLAY = _col(54, "売切れ表示")
-    MIN_NUM = _col(55, "最小購入数")
-    MAX_NUM = _col(56, "最大購入数")
-    UNIT = _col(57, "単位")
+    # === AW-AZ列: 送料・配送（4列）===
+    # ※旧BG-BJ列から移動（インデックス調整: -10）
+    DELIVERY_CHARGE = _col(48, "個別送料")
+    COOL_CHARGE = _col(49, "クール便料金")
+    WEIGHT = _col(50, "重量(g)")
+    NO_DELIVERY = _col(51, "配送不要")
 
-    # === BG-BJ列: 送料・配送（4列）===
-    DELIVERY_CHARGE = _col(58, "個別送料")
-    COOL_CHARGE = _col(59, "クール便料金")
-    WEIGHT = _col(60, "重量(g)")
-    NO_DELIVERY = _col(61, "配送不要")
+    # === BA-BD列: 商品説明（4列）===
+    # ※旧BK-BN列から移動（インデックス調整: -10）
+    EXPL = _col(52, "商品説明")
+    SIMPLE_EXPL = _col(53, "簡易説明")
+    MOBILE_EXPL = _col(54, "スマホ説明")
+    MEMO = _col(55, "備考")
 
-    # === BK-BN列: 商品説明（4列）===
-    EXPL = _col(62, "商品説明")
-    SIMPLE_EXPL = _col(63, "簡易説明")
-    MOBILE_EXPL = _col(64, "スマホ説明")
-    MEMO = _col(65, "備考")
+    # === BE-BN列: 画像（10列）===
+    # ※旧BO-BX列から移動（インデックス調整: -10）
+    MAIN_IMAGE = _col(56, "メイン画像URL")
+    THUMBNAIL = _col(57, "サムネイルURL")
+    IMAGE_URL_1 = _col(58, "画像URL1")
+    IMAGE_URL_2 = _col(59, "画像URL2")
+    IMAGE_URL_3 = _col(60, "画像URL3")
+    IMAGE_URL_4 = _col(61, "画像URL4")
+    IMAGE_URL_5 = _col(62, "画像URL5")
+    IMAGE_URL_6 = _col(63, "画像URL6")
+    IMAGE_URL_7 = _col(64, "画像URL7")
+    IMAGE_URL_8 = _col(65, "画像URL8")
 
-    # === BO-BX列: 画像（10列）===
-    MAIN_IMAGE = _col(66, "メイン画像URL")
-    THUMBNAIL = _col(67, "サムネイルURL")
-    IMAGE_URL_1 = _col(68, "画像URL1")
-    IMAGE_URL_2 = _col(69, "画像URL2")
-    IMAGE_URL_3 = _col(70, "画像URL3")
-    IMAGE_URL_4 = _col(71, "画像URL4")
-    IMAGE_URL_5 = _col(72, "画像URL5")
-    IMAGE_URL_6 = _col(73, "画像URL6")
-    IMAGE_URL_7 = _col(74, "画像URL7")
-    IMAGE_URL_8 = _col(75, "画像URL8")
+    # === BO-BQ列: SEO（3列）===
+    # ※旧BY-CA列から移動（インデックス調整: -10）
+    PAGE_TITLE = _col(66, "ページタイトル")
+    META_DESC = _col(67, "メタディスクリプション")
+    META_KEYWORDS = _col(68, "メタキーワード")
 
-    # === BY-CA列: SEO（3列）===
-    PAGE_TITLE = _col(76, "ページタイトル")
-    META_DESC = _col(77, "メタディスクリプション")
-    META_KEYWORDS = _col(78, "メタキーワード")
+    # === BR-BV列: フラグ（5列）===
+    # ※旧CB-CF列から移動（インデックス調整: -10）
+    REDUCED_TAX = _col(69, "軽減税率対象")
+    DIGITAL_CONTENT = _col(70, "デジタルコンテンツ")
+    SUBSCRIPTION = _col(71, "定期購入")
+    DISPLAY_ORDER = _col(72, "表示順")
+    DISABLED_PAYMENTS = _col(73, "利用不可決済")
 
-    # === CB-CF列: フラグ（5列）===
-    REDUCED_TAX = _col(79, "軽減税率対象")
-    DIGITAL_CONTENT = _col(80, "デジタルコンテンツ")
-    SUBSCRIPTION = _col(81, "定期購入")
-    DISPLAY_ORDER = _col(82, "表示順")
-    DISABLED_PAYMENTS = _col(83, "利用不可決済")
+    # === BW-BX列: 掲載期間（2列）===
+    # ※旧CG-CH列から移動（インデックス調整: -10）
+    START_DATE = _col(74, "掲載開始日時")
+    END_DATE = _col(75, "掲載終了日時")
 
-    # === CG-CH列: 掲載期間（2列）===
-    START_DATE = _col(84, "掲載開始日時")
-    END_DATE = _col(85, "掲載終了日時")
-
-    # === CI-CK列: システム情報（3列）===
-    SYNC_DATETIME = _col(86, "同期日時")
-    CREATED_DATE = _col(87, "商品作成日時")
-    UPDATED_DATE = _col(88, "商品更新日時")
+    # === BY列: システム情報（1列）===
+    # ※旧CI-CK列から移動、商品作成/更新日時を削除（インデックス調整: -10、-2列）
+    SYNC_DATETIME = _col(76, "同期日時")
 
     # 画像列の範囲（便利定数）
     IMAGE_FIRST = MAIN_IMAGE
     IMAGE_LAST = IMAGE_URL_8
 
-    # 総列数
-    TOTAL_COLUMNS = 89
+    # 総列数（89列 - 12列 = 77列）
+    TOTAL_COLUMNS = 77
 
     @classmethod
     def all_columns(cls) -> list[Column]:
@@ -204,7 +212,7 @@ class Col:
     @classmethod
     def last_column_letter(cls) -> str:
         """最終列の文字を返す（範囲指定用）"""
-        return cls.UPDATED_DATE.letter  # CK
+        return cls.SYNC_DATETIME.letter  # BY
 
     @classmethod
     def headers(cls) -> list[str]:
@@ -257,12 +265,12 @@ def range_ref(col_start: Column, col_end: Column, row_num: int) -> str:
 
 
 def col_range_ref(col_start: Column, col_end: Column, row_start: int, row_end: int) -> str:
-    """2次元範囲の参照文字列を生成 (例: "A1:CK100")"""
+    """2次元範囲の参照文字列を生成 (例: "A1:BY100")"""
     return f"{col_start.letter}{row_start}:{col_end.letter}{row_end}"
 
 
 def full_row_range(row_num: int) -> str:
-    """行全体の範囲を生成 (例: "A2:CK2")"""
+    """行全体の範囲を生成 (例: "A2:BY2")"""
     return f"A{row_num}:{Col.last_column_letter()}{row_num}"
 
 
@@ -322,51 +330,3 @@ class Formula:
         """L列: 仕入れ先サイト"""
         j = Col.SUPPLIER_URL.letter
         return f'=IFERROR(INDEX(商品仕入れ先一覧!$D:$D,MATCH(${j}{row_num},商品仕入れ先一覧!$C:$C,0)),"")'
-
-    @staticmethod
-    def top_category(row_num: int) -> str:
-        """M列: 最上位カテゴリ"""
-        j = Col.SUPPLIER_URL.letter
-        return f'=IFERROR(INDEX(商品仕入れ先一覧!$E:$E,MATCH(${j}{row_num},商品仕入れ先一覧!$C:$C,0)),"")'
-
-    @staticmethod
-    def parent_category(row_num: int) -> str:
-        """N列: 親カテゴリ"""
-        j = Col.SUPPLIER_URL.letter
-        return f'=IFERROR(INDEX(商品仕入れ先一覧!$F:$F,MATCH(${j}{row_num},商品仕入れ先一覧!$C:$C,0)),"")'
-
-    @staticmethod
-    def child_category(row_num: int) -> str:
-        """O列: 子カテゴリ"""
-        j = Col.SUPPLIER_URL.letter
-        return f'=IFERROR(INDEX(商品仕入れ先一覧!$G:$G,MATCH(${j}{row_num},商品仕入れ先一覧!$C:$C,0)),"")'
-
-    @staticmethod
-    def country(row_num: int) -> str:
-        """P列: 製造国"""
-        j = Col.SUPPLIER_URL.letter
-        return f'=IFERROR(INDEX(商品仕入れ先一覧!$H:$H,MATCH(${j}{row_num},商品仕入れ先一覧!$C:$C,0)),"")'
-
-    @staticmethod
-    def description_en(row_num: int) -> str:
-        """Q列: 商品説明（英語）"""
-        j = Col.SUPPLIER_URL.letter
-        return f'=IFERROR(INDEX(商品仕入れ先一覧!$AF:$AF,MATCH(${j}{row_num},商品仕入れ先一覧!$C:$C,0)),"")'
-
-    @staticmethod
-    def specs(row_num: int) -> str:
-        """R列: 仕様・スペック"""
-        j = Col.SUPPLIER_URL.letter
-        return f'=IFERROR(INDEX(商品仕入れ先一覧!$AE:$AE,MATCH(${j}{row_num},商品仕入れ先一覧!$C:$C,0)),"")'
-
-    @staticmethod
-    def mint_year(row_num: int) -> str:
-        """S列: 発行年"""
-        j = Col.SUPPLIER_URL.letter
-        return f'=IFERROR(INDEX(商品仕入れ先一覧!$AH:$AH,MATCH(${j}{row_num},商品仕入れ先一覧!$C:$C,0)),"")'
-
-    @staticmethod
-    def mintage(row_num: int) -> str:
-        """T列: 発行数・限定数"""
-        j = Col.SUPPLIER_URL.letter
-        return f'=IFERROR(INDEX(商品仕入れ先一覧!$AI:$AI,MATCH(${j}{row_num},商品仕入れ先一覧!$C:$C,0)),"")'

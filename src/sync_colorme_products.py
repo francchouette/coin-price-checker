@@ -73,13 +73,12 @@ def row_to_update_data(row: list) -> dict:
             updates["cost"] = proper_price          # 原価
             log_parts.append(f"価格: {proper_price:,}円（適正価格から一括更新）")
 
-    # カテゴリー
+    # カテゴリー（大カテゴリーのみ使用、小カテゴリーは削除されました）
     category_id_big = get_cell_int(row, Col.CATEGORY_ID_BIG)
-    category_id_small = get_cell_int(row, Col.CATEGORY_ID_SMALL)
     if category_id_big > 0:
         updates["category"] = {
             "id_big": category_id_big,
-            "id_small": category_id_small
+            "id_small": 0
         }
 
     # 型番

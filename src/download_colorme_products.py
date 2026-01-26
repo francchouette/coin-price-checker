@@ -19,6 +19,13 @@ from .shops import ScrapedData
 from .exchange_rate import ExchangeRateClient, WiseRateClient
 from .cm_sheet_columns import Col, get_cell, preserve_or_set, Formula
 
+# 削除された列への後方互換性のためのダミー定義（スクレイピング結果を無視）
+# ※以下の列は新カラーミー商品管理シートから削除されました
+# - TOP_CATEGORY, PARENT_CATEGORY, CHILD_CATEGORY
+# - COUNTRY, DESCRIPTION_EN, SPECS, MINT_YEAR, MINTAGE
+# - CATEGORY_ID_SMALL, CATEGORY_NAME_SMALL
+# - CREATED_DATE, UPDATED_DATE
+
 # ロギング設定
 logging.basicConfig(
     level=logging.INFO,
@@ -345,10 +352,9 @@ def main():
         for product in products:
             product_id = product.get("id", 0)
 
-            # カテゴリー情報
+            # カテゴリー情報（大カテゴリーのみ使用、小カテゴリーは削除されました）
             category = product.get("category") or {}
             category_id_big = category.get("id_big", 0) if isinstance(category, dict) else 0
-            category_id_small = category.get("id_small", 0) if isinstance(category, dict) else 0
 
             # グループID（テキストとして扱うため先頭にシングルクォートを付ける）
             group_ids = product.get("group_ids") or []
@@ -381,7 +387,7 @@ def main():
             }
             display_state = display_state_map.get(display_state_api, display_state_api)
 
-            # 89列分のデータを作成（A-CK列）
+            # 77列分のデータを作成（A-BY列）
             row = [""] * Col.TOTAL_COLUMNS
 
             # 既存データがあれば仕入れ先情報を保持
@@ -409,22 +415,12 @@ def main():
             row[Col.NAME.index] = product.get("name", "")
             row[Col.COLORME_URL.index] = f"https://ybx.jp/?pid={product_id}"
 
-            # === J-O列: 仕入れ先基本情報 ===
+            # === J-L列: 仕入れ先基本情報 ===
             row[Col.SUPPLIER_URL.index] = preserve_or_set(existing_row, Col.SUPPLIER_URL, "", old_row_num, new_row_num)
             row[Col.SUPPLIER_NAME.index] = preserve_or_set(existing_row, Col.SUPPLIER_NAME, Formula.supplier_name(new_row_num), old_row_num, new_row_num)
             row[Col.SUPPLIER_SITE.index] = preserve_or_set(existing_row, Col.SUPPLIER_SITE, Formula.supplier_site(new_row_num), old_row_num, new_row_num)
-            row[Col.TOP_CATEGORY.index] = preserve_or_set(existing_row, Col.TOP_CATEGORY, Formula.top_category(new_row_num), old_row_num, new_row_num)
-            row[Col.PARENT_CATEGORY.index] = preserve_or_set(existing_row, Col.PARENT_CATEGORY, Formula.parent_category(new_row_num), old_row_num, new_row_num)
-            row[Col.CHILD_CATEGORY.index] = preserve_or_set(existing_row, Col.CHILD_CATEGORY, Formula.child_category(new_row_num), old_row_num, new_row_num)
 
-            # === P-T列: 仕入れ先商品詳細 ===
-            row[Col.COUNTRY.index] = preserve_or_set(existing_row, Col.COUNTRY, Formula.country(new_row_num), old_row_num, new_row_num)
-            row[Col.DESCRIPTION_EN.index] = preserve_or_set(existing_row, Col.DESCRIPTION_EN, Formula.description_en(new_row_num), old_row_num, new_row_num)
-            row[Col.SPECS.index] = preserve_or_set(existing_row, Col.SPECS, Formula.specs(new_row_num), old_row_num, new_row_num)
-            row[Col.MINT_YEAR.index] = preserve_or_set(existing_row, Col.MINT_YEAR, Formula.mint_year(new_row_num), old_row_num, new_row_num)
-            row[Col.MINTAGE.index] = preserve_or_set(existing_row, Col.MINTAGE, Formula.mintage(new_row_num), old_row_num, new_row_num)
-
-            # === U-Y列: 仕入れ先価格情報 ===
+            # === M-Q列: 仕入れ先価格情報 ===
             row[Col.SUPPLIER_STOCK.index] = preserve_or_set(existing_row, Col.SUPPLIER_STOCK, "", old_row_num, new_row_num)
             row[Col.SUPPLIER_PRICE.index] = preserve_or_set(existing_row, Col.SUPPLIER_PRICE, "", old_row_num, new_row_num)
             row[Col.PREV_PRICE.index] = preserve_or_set(existing_row, Col.PREV_PRICE, "", old_row_num, new_row_num)
@@ -445,31 +441,22 @@ def main():
                 scraped_with_extras = price_data[supplier_url]
                 scraped = scraped_with_extras.scraped_data
                 if not scraped.error:
-                    # P-T列: 仕入れ先商品詳細の更新（スクレイピング結果から）
-                    if scraped_with_extras.location and not is_formula(row[Col.COUNTRY.index]):
-                        row[Col.COUNTRY.index] = scraped_with_extras.location
-                    if scraped_with_extras.description_en and not is_formula(row[Col.DESCRIPTION_EN.index]):
-                        row[Col.DESCRIPTION_EN.index] = scraped_with_extras.description_en
-                    if scraped_with_extras.specs and not is_formula(row[Col.SPECS.index]):
-                        row[Col.SPECS.index] = scraped_with_extras.specs
-                    if scraped_with_extras.mint_year and not is_formula(row[Col.MINT_YEAR.index]):
-                        row[Col.MINT_YEAR.index] = scraped_with_extras.mint_year
-                    if scraped_with_extras.mintage and not is_formula(row[Col.MINTAGE.index]):
-                        row[Col.MINTAGE.index] = scraped_with_extras.mintage
+                    # ※P-T列（製造国〜発行数）は削除されたため、スクレイピング結果は使用しない
+                    # 仕入れ先詳細情報は「商品仕入れ先一覧」シートで管理
 
-                    # U列: 仕入れ先在庫状況
+                    # M列: 仕入れ先在庫状況
                     if not is_formula(row[Col.SUPPLIER_STOCK.index]):
                         row[Col.SUPPLIER_STOCK.index] = "In Stock" if scraped.in_stock else "Out of Stock"
 
-                    # V列: 仕入れ先価格
+                    # N列: 仕入れ先価格
                     if not is_formula(row[Col.SUPPLIER_PRICE.index]):
-                        # 前回価格をW列に保存
+                        # 前回価格をO列に保存
                         if not is_formula(row[Col.PREV_PRICE.index]):
                             prev_val = get_cell(existing_row, Col.SUPPLIER_PRICE)
                             row[Col.PREV_PRICE.index] = prev_val
                         row[Col.SUPPLIER_PRICE.index] = str(scraped.price)
 
-                    # Y列: 通貨
+                    # Q列: 通貨
                     old_currency = row[Col.CURRENCY.index]
                     row[Col.CURRENCY.index] = scraped.currency
                     if old_currency != scraped.currency:
@@ -478,7 +465,7 @@ def main():
                         else:
                             logger.info(f"  商品ID {product_id}: 通貨更新 {old_currency} -> {scraped.currency}")
 
-                    # X列: 価格変動率
+                    # P列: 価格変動率
                     if not is_formula(row[Col.PRICE_CHANGE_RATE.index]):
                         prev_price_str = get_cell(existing_row, Col.SUPPLIER_PRICE)
                         if prev_price_str and not is_formula(prev_price_str):
@@ -490,14 +477,14 @@ def main():
                             except ValueError:
                                 pass
 
-            # === Z-AL列: 価格計算 ===
+            # === R-AD列: 価格計算 ===
             for col in [Col.EXCHANGE_TYPE, Col.EXCHANGE_RATE, Col.PURCHASE_PRICE_JPY,
                         Col.QUANTITY, Col.PURCHASE_TOTAL, Col.MARGIN_RATE, Col.MARGIN_AMOUNT,
                         Col.SHIPPING, Col.FEE, Col.TOTAL_COST, Col.PROPER_PRICE,
                         Col.GROSS_PROFIT, Col.GROSS_PROFIT_RATE]:
                 row[col.index] = preserve_or_set(existing_row, col, "", old_row_num, new_row_num)
 
-            # AA列（為替レート）を自動更新
+            # S列（為替レート）を自動更新
             if not is_formula(row[Col.EXCHANGE_RATE.index]):
                 currency_val = row[Col.CURRENCY.index]
                 if is_formula(currency_val):
@@ -521,7 +508,7 @@ def main():
                         row[Col.EXCHANGE_RATE.index] = str(round(exchange_rates[rate_key], 4))
                         logger.info(f"  商品ID {product_id}: 為替レート更新 {rate_key} = {row[Col.EXCHANGE_RATE.index]}")
 
-            # === AM-AR列: カラーミー価格情報 ===
+            # === AE-AJ列: カラーミー価格情報 ===
             row[Col.SALES_PRICE.index] = preserve_or_set(existing_row, Col.SALES_PRICE, str(product.get("sales_price") or product.get("price") or 0), old_row_num, new_row_num, preserve_existing=False)
             row[Col.REGULAR_PRICE.index] = preserve_or_set(existing_row, Col.REGULAR_PRICE, str(product.get("price") or 0), old_row_num, new_row_num, preserve_existing=False)
             row[Col.MEMBERS_PRICE.index] = preserve_or_set(existing_row, Col.MEMBERS_PRICE, str(product.get("members_price") or 0), old_row_num, new_row_num, preserve_existing=False)
@@ -529,18 +516,17 @@ def main():
             row[Col.TAX_INCLUDED_PRICE.index] = preserve_or_set(existing_row, Col.TAX_INCLUDED_PRICE, "", old_row_num, new_row_num)
             row[Col.TAX_AMOUNT.index] = preserve_or_set(existing_row, Col.TAX_AMOUNT, "", old_row_num, new_row_num)
 
-            # === AS-AX列: カテゴリー・グループ ===
+            # === AK-AN列: カテゴリー・グループ ===
+            # ※小カテゴリーID・小カテゴリー名は削除されました
             row[Col.CATEGORY_ID_BIG.index] = preserve_or_set(existing_row, Col.CATEGORY_ID_BIG, str(category_id_big) if category_id_big else "", old_row_num, new_row_num)
             row[Col.CATEGORY_NAME_BIG.index] = preserve_or_set(existing_row, Col.CATEGORY_NAME_BIG, "", old_row_num, new_row_num)
-            row[Col.CATEGORY_ID_SMALL.index] = preserve_or_set(existing_row, Col.CATEGORY_ID_SMALL, str(category_id_small) if category_id_small else "", old_row_num, new_row_num)
-            row[Col.CATEGORY_NAME_SMALL.index] = preserve_or_set(existing_row, Col.CATEGORY_NAME_SMALL, "", old_row_num, new_row_num)
             row[Col.GROUP_IDS.index] = preserve_or_set(existing_row, Col.GROUP_IDS, group_ids_str, old_row_num, new_row_num)
             row[Col.GROUP_NAMES.index] = preserve_or_set(existing_row, Col.GROUP_NAMES, "", old_row_num, new_row_num)
 
-            # === AY列: 型番 ===
+            # === AO列: 型番 ===
             row[Col.MODEL_NUMBER.index] = preserve_or_set(existing_row, Col.MODEL_NUMBER, product.get("model_number", "") or "", old_row_num, new_row_num)
 
-            # === AZ-BF列: 在庫管理 ===
+            # === AP-AV列: 在庫管理 ===
             row[Col.STOCKS.index] = preserve_or_set(existing_row, Col.STOCKS, str(product.get("stocks") or 0), old_row_num, new_row_num, preserve_existing=False)
             row[Col.STOCK_MANAGED.index] = preserve_or_set(existing_row, Col.STOCK_MANAGED, "する" if product.get("stock_managed", True) else "しない", old_row_num, new_row_num, preserve_existing=False)
             row[Col.FEW_NUM.index] = preserve_or_set(existing_row, Col.FEW_NUM, str(product.get("few_num") or 0), old_row_num, new_row_num, preserve_existing=False)
@@ -550,19 +536,19 @@ def main():
             row[Col.MAX_NUM.index] = preserve_or_set(existing_row, Col.MAX_NUM, str(product.get("max_num") or 0), old_row_num, new_row_num, preserve_existing=False)
             row[Col.UNIT.index] = preserve_or_set(existing_row, Col.UNIT, product.get("unit", "") or "", old_row_num, new_row_num, preserve_existing=False)
 
-            # === BG-BJ列: 送料・配送 ===
+            # === AW-AZ列: 送料・配送 ===
             row[Col.DELIVERY_CHARGE.index] = preserve_or_set(existing_row, Col.DELIVERY_CHARGE, str(product.get("delivery_charge") or 0), old_row_num, new_row_num)
             row[Col.COOL_CHARGE.index] = preserve_or_set(existing_row, Col.COOL_CHARGE, "", old_row_num, new_row_num)
             row[Col.WEIGHT.index] = preserve_or_set(existing_row, Col.WEIGHT, "", old_row_num, new_row_num)
             row[Col.NO_DELIVERY.index] = preserve_or_set(existing_row, Col.NO_DELIVERY, "", old_row_num, new_row_num)
 
-            # === BK-BN列: 商品説明 ===
+            # === BA-BD列: 商品説明 ===
             row[Col.EXPL.index] = preserve_or_set(existing_row, Col.EXPL, product.get("expl", "") or "", old_row_num, new_row_num)
             row[Col.SIMPLE_EXPL.index] = preserve_or_set(existing_row, Col.SIMPLE_EXPL, product.get("simple_expl", "") or "", old_row_num, new_row_num)
             row[Col.MOBILE_EXPL.index] = preserve_or_set(existing_row, Col.MOBILE_EXPL, "", old_row_num, new_row_num)
             row[Col.MEMO.index] = preserve_or_set(existing_row, Col.MEMO, "", old_row_num, new_row_num)
 
-            # === BO-BX列: 画像 ===
+            # === BE-BN列: 画像 ===
             image_cols = [Col.MAIN_IMAGE, Col.THUMBNAIL, Col.IMAGE_URL_1, Col.IMAGE_URL_2,
                           Col.IMAGE_URL_3, Col.IMAGE_URL_4, Col.IMAGE_URL_5, Col.IMAGE_URL_6,
                           Col.IMAGE_URL_7, Col.IMAGE_URL_8]
@@ -570,28 +556,25 @@ def main():
                 img_url = image_urls[i] if i < len(image_urls) else ""
                 row[col.index] = preserve_or_set(existing_row, col, img_url, old_row_num, new_row_num)
 
-            # === BY-CA列: SEO ===
+            # === BO-BQ列: SEO ===
             row[Col.PAGE_TITLE.index] = preserve_or_set(existing_row, Col.PAGE_TITLE, "", old_row_num, new_row_num)
             row[Col.META_DESC.index] = preserve_or_set(existing_row, Col.META_DESC, "", old_row_num, new_row_num)
             row[Col.META_KEYWORDS.index] = preserve_or_set(existing_row, Col.META_KEYWORDS, "", old_row_num, new_row_num)
 
-            # === CB-CF列: フラグ ===
+            # === BR-BV列: フラグ ===
             row[Col.REDUCED_TAX.index] = preserve_or_set(existing_row, Col.REDUCED_TAX, "", old_row_num, new_row_num)
             row[Col.DIGITAL_CONTENT.index] = preserve_or_set(existing_row, Col.DIGITAL_CONTENT, "", old_row_num, new_row_num)
             row[Col.SUBSCRIPTION.index] = preserve_or_set(existing_row, Col.SUBSCRIPTION, "", old_row_num, new_row_num)
             row[Col.DISPLAY_ORDER.index] = preserve_or_set(existing_row, Col.DISPLAY_ORDER, "", old_row_num, new_row_num)
             row[Col.DISABLED_PAYMENTS.index] = preserve_or_set(existing_row, Col.DISABLED_PAYMENTS, "", old_row_num, new_row_num)
 
-            # === CG-CH列: 掲載期間 ===
+            # === BW-BX列: 掲載期間 ===
             row[Col.START_DATE.index] = preserve_or_set(existing_row, Col.START_DATE, "", old_row_num, new_row_num)
             row[Col.END_DATE.index] = preserve_or_set(existing_row, Col.END_DATE, "", old_row_num, new_row_num)
 
-            # === CI-CK列: システム情報 ===
+            # === BY列: システム情報 ===
+            # ※商品作成日時・商品更新日時は削除されました
             row[Col.SYNC_DATETIME.index] = preserve_or_set(existing_row, Col.SYNC_DATETIME, now, old_row_num, new_row_num, preserve_existing=False)
-            make_date = product.get("make_date", "")
-            row[Col.CREATED_DATE.index] = preserve_or_set(existing_row, Col.CREATED_DATE, make_date if make_date else "", old_row_num, new_row_num, preserve_existing=False)
-            update_date = product.get("update_date", "")
-            row[Col.UPDATED_DATE.index] = preserve_or_set(existing_row, Col.UPDATED_DATE, update_date if update_date else "", old_row_num, new_row_num, preserve_existing=False)
 
             # 既存商品か新規商品かで振り分け
             if is_existing:
