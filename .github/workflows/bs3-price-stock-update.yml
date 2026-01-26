@@ -1,0 +1,101 @@
+name: "[BS3] 価格・在庫状況更新"
+
+on:
+  schedule:
+    - cron: '0 10 * * *'  # テスト: UTC 10:00 に実行（確認後 '0 */4 * * *' に戻す）
+  workflow_dispatch:
+    inputs:
+      exchange_type:
+        description: '為替種類'
+        type: choice
+        required: false
+        default: 'クレカ'
+        options:
+          - 'クレカ'
+          - 'Wise'
+      pending_only:
+        description: '検討中の商品のみを対象'
+        type: boolean
+        default: true
+      dry_run:
+        description: 'ドライラン（実際の変更なし）'
+        type: boolean
+        default: false
+      limit:
+        description: '処理件数制限（空欄で全件）'
+        type: string
+        default: ''
+
+jobs:
+  update-prices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6時間
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/613320899872/locations/global/workloadIdentityPools/github-actions-pool/providers/github'
+          service_account: 'spreadsheet-access@coin-price-tracker-479614.iam.gserviceaccount.com'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: |
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: Update prices and stock status
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+        run: |
+          echo "=== 価格・在庫状況更新 ==="
+          echo "為替種類: ${{ inputs.exchange_type || 'クレカ' }}"
+          echo "対象: ${{ inputs.pending_only && '検討中の商品のみ' || '全商品' }}"
+          echo "ドライラン: ${{ inputs.dry_run || 'false' }}"
+          echo "件数制限: ${{ inputs.limit || '全件' }}"
+          echo ""
+
+          ARGS="--exchange-type ${{ inputs.exchange_type || 'クレカ' }}"
+          if [ "${{ inputs.pending_only }}" = "true" ]; then
+            ARGS="$ARGS --pending-only"
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          if [ -n "${{ inputs.limit }}" ]; then
+            ARGS="$ARGS --limit ${{ inputs.limit }}"
+          fi
+
+          python -m src.bs_update_prices $ARGS
+
+          echo ""
+          echo "価格・在庫状況更新完了"
+
+      - name: Summary
+        run: |
+          echo "========================================"
+          echo "  価格・在庫状況更新完了"
+          echo "========================================"
+          echo "  為替種類: ${{ inputs.exchange_type || 'クレカ' }}"
+          echo "  対象: ${{ inputs.pending_only && '検討中の商品のみ' || '全商品' }}"
+          echo "  ドライラン: ${{ inputs.dry_run || 'false' }}"
+          echo "  件数制限: ${{ inputs.limit || '全件' }}"
+          echo "========================================"
