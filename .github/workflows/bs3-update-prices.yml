@@ -1,9 +1,9 @@
-name: "[BS3] 価格・在庫状況更新"
+name: "BS3 Price Stock Update"
 
 on:
-  # テスト: UTC 10:15 に実行（確認後 '0 */4 * * *' に戻す）
+  # 4時間ごとに実行
   schedule:
-    - cron: '15 10 * * *'
+    - cron: '0 */4 * * *'
 
   # 手動実行を許可
   workflow_dispatch:
