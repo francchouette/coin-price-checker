@@ -143,10 +143,6 @@ def supplement_ai_content(
         except Exception as e:
             logger.warning(f"カテゴリー判定器の初期化エラー: {e}")
 
-    if target in ("all", "model"):
-        model_generator = ModelNumberGenerator()
-        logger.info("型番生成器を初期化")
-
     if target in ("all", "description"):
         desc_generator = DescriptionGenerator()
         logger.info("商品説明生成器を初期化")
@@ -165,6 +161,16 @@ def supplement_ai_content(
             return {"processed": 0}
 
         logger.info(f"総商品数: {len(all_data) - 1}件")
+
+        # 型番生成時は既存の型番を収集して重複チェック
+        if target in ("all", "model"):
+            existing_model_numbers = set()
+            for row in all_data[1:]:
+                model_num = get_cell(row, Col.CM_MODEL_NUMBER)
+                if model_num:
+                    existing_model_numbers.add(model_num)
+            model_generator = ModelNumberGenerator(existing_model_numbers)
+            logger.info(f"型番生成器を初期化（既存型番: {len(existing_model_numbers)}件）")
 
         # 補完対象の商品を抽出
         target_rows = []
@@ -262,6 +268,7 @@ def supplement_ai_content(
             supplier_id = get_cell(row, Col.SUPPLIER_ID)
             product_name = get_cell(row, Col.PRODUCT_NAME)
             product_url = get_cell(row, Col.PRODUCT_URL)
+            supplier_site = get_cell(row, Col.SITE)  # 仕入れ先サイト（型番生成用）
             desc_en = get_cell(row, Col.DESC_EN)
             specs = get_cell(row, Col.SPECS)
             price_jpy = get_cell(row, Col.PRICE_JPY)
@@ -374,10 +381,10 @@ def supplement_ai_content(
                     stats["category_failed"] += 1
                     logger.warning(f"    カテゴリー判定エラー: {e}")
 
-            # 4. 型番の生成
+            # 4. 型番の生成（仕入れ先コード付き、重複チェックあり）
             if needs["model"] and model_generator:
-                logger.info("  型番を生成中...")
-                model_number = model_generator.generate(product_info, quantity)
+                logger.info(f"  型番を生成中... (仕入れ先: {supplier_site or '不明'})")
+                model_number = model_generator.generate(product_info, quantity, supplier_site)
                 if model_number:
                     update_cells.append({
                         'range': cell_ref(Col.CM_MODEL_NUMBER, row_idx),
@@ -388,6 +395,8 @@ def supplement_ai_content(
                 else:
                     stats["model_failed"] += 1
                     logger.warning("    型番の生成に失敗")
+                # API制限回避のため待機
+                time.sleep(3)
 
             # 5. 商品説明の生成
             if needs["description"] and desc_generator:
@@ -452,6 +461,27 @@ def supplement_ai_content(
 
             stats["processed"] += 1
 
+            # 10件ごとに中間保存（エラー時のデータ損失を防ぐ）
+            if not dry_run and stats["processed"] % 10 == 0 and update_cells:
+                logger.info(f"  [中間保存] {stats['processed']}件処理完了 - スプレッドシートに保存中...")
+                # リトライ付きで保存（gspreadが入力を変更するので毎回コピー）
+                import copy
+                for retry in range(3):
+                    try:
+                        cells_copy = copy.deepcopy(update_cells)
+                        sheet.batch_update(cells_copy, value_input_option='RAW')
+                        logger.info(f"  [中間保存] {len(update_cells)}セルを保存しました")
+                        update_cells = []  # 保存後にクリア
+                        break
+                    except Exception as e:
+                        if retry < 2:
+                            logger.warning(f"  [中間保存] 保存エラー（リトライ {retry + 1}/3）: {e}")
+                            time.sleep(5)
+                        else:
+                            logger.error(f"  [中間保存] 保存エラー（最終）: {e}")
+                            update_cells = []  # 失敗してもクリア（次の10件で再度試行）
+                time.sleep(1)  # API制限対策
+
             # API制限対策：各商品の処理後に少し待機
             time.sleep(0.5)
 
@@ -464,19 +494,22 @@ def supplement_ai_content(
         logger.info(f"  商品説明: 成功 {stats['desc_generated']}件, 失敗 {stats['desc_failed']}件")
         logger.info(f"  SEO情報: 成功 {stats['seo_generated']}件, 失敗 {stats['seo_failed']}件")
 
-        # スプレッドシートを更新
+        # 残りのセルをスプレッドシートに保存
         if not dry_run and update_cells:
-            logger.info(f"\nスプレッドシートを更新中... ({len(update_cells)}セル)")
-
-            # バッチ更新（100件ずつ）
-            batch_size = 100
-            for i in range(0, len(update_cells), batch_size):
-                batch = update_cells[i:i + batch_size]
-                sheet.batch_update(batch, value_input_option='RAW')
-                logger.info(f"  更新完了: {min(i + batch_size, len(update_cells))}/{len(update_cells)}件")
-                time.sleep(1)  # API制限対策
-
-            logger.info(f"更新完了: {len(update_cells)}セル")
+            logger.info(f"\n[最終保存] 残りのセルをスプレッドシートに保存中... ({len(update_cells)}セル)")
+            import copy
+            for retry in range(3):
+                try:
+                    cells_copy = copy.deepcopy(update_cells)
+                    sheet.batch_update(cells_copy, value_input_option='RAW')
+                    logger.info(f"[最終保存] 完了: {len(update_cells)}セル")
+                    break
+                except Exception as e:
+                    if retry < 2:
+                        logger.warning(f"[最終保存] 保存エラー（リトライ {retry + 1}/3）: {e}")
+                        time.sleep(5)
+                    else:
+                        logger.error(f"[最終保存] 保存エラー（最終）: {e}")
         elif dry_run:
             logger.info(f"\n[ドライラン] 実際の更新は行いませんでした（{len(update_cells)}セル予定）")
 

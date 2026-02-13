@@ -195,7 +195,7 @@ export COLORME_ACCESS_TOKEN="your-token-here"
 
 | 列 | 名称 | 値 | 動作 |
 |----|------|-----|------|
-| C | 価格更新ON/OFF | ON/OFF | ONの場合のみ価格をカラーミーに更新 |
+| C | 価格更新ON/OFF | ON/OFF | OFFの場合のみ価格更新をスキップ（デフォルトは更新あり） |
 | D | 在庫連動ON/OFF | ON | U列（仕入れ先在庫）に連動して在庫数を設定 |
 | E | 表示連動 | 連動 | U列に連動して表示/非表示を切替 |
 | U | 仕入れ先在庫状況 | In Stock / Out of Stock | D列・E列の判定基準 |
@@ -240,3 +240,12 @@ python -m src.register_adopted_products --limit 5
 # 仕入れ先一覧同期をスキップ
 python -m src.register_adopted_products --skip-sync
 ```
+
+### モニタリング
+
+長時間実行するバックグラウンドタスク（商品登録等）には、必ず `monitor.sh` を提供すること。
+
+- テンプレート: `monitor.sh`
+- ログパスをタスクの出力ファイルに書き換えて使用
+- 機能: リアルタイム更新（5秒間隔）、プログレスバー、成功/失敗カウント、プロセス状態、直近ログ表示
+- 実行: `bash monitor.sh`（Ctrl+C で終了）

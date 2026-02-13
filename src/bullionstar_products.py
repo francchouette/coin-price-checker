@@ -466,11 +466,11 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
         logger.error("スプレッドシートへの接続に失敗しました")
         return False
 
-    # AI生成器を初期化
+    # AI生成器を初期化（型番生成器は既存データ取得後に初期化）
     name_generator = JapaneseProductNameGenerator()
     description_generator = DescriptionGenerator()
     seo_generator = SEOGenerator()
-    model_number_generator = ModelNumberGenerator()
+    model_number_generator = None  # 既存データ取得後に初期化
 
     # カテゴリー判定器を初期化（カラーミーAPIが必要）
     category_detector = None
@@ -544,6 +544,15 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                 existing_ids.add(supplier_id)
 
         logger.info(f"既存商品数: {len(existing_by_url)}件")
+
+        # 既存の型番を収集して重複チェック用にModelNumberGeneratorを初期化
+        existing_model_numbers = set()
+        for row in existing_data[1:]:
+            model_num = get_cell(row, Col.CM_MODEL_NUMBER)
+            if model_num:
+                existing_model_numbers.add(model_num)
+        model_number_generator = ModelNumberGenerator(existing_model_numbers)
+        logger.info(f"型番生成器を初期化（既存型番: {len(existing_model_numbers)}件）")
 
         # 新規追加行と更新行を分類
         new_rows = []
@@ -750,16 +759,17 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     except Exception as e:
                         logger.debug(f"  SEO生成エラー: {e}")
 
-                # 型番を自動生成（AQ列）
+                # 型番を自動生成（AQ列）- 仕入れ先コード付き、重複チェックあり
                 model_number = ""
-                if model_number_generator.genai_model:
+                if model_number_generator and model_number_generator.genai_model:
                     try:
                         model_info = {
                             "name": product.name,
                             "specs": product.specs or "",
                             "description": product.description_en or "",
                         }
-                        model_number = model_number_generator.generate(model_info, quantity=1)
+                        # 仕入れ先サイト "Bullionstar" を渡して型番に仕入れ先コード(01)を含める
+                        model_number = model_number_generator.generate(model_info, quantity=1, supplier_site="Bullionstar")
                         if model_number:
                             logger.debug(f"  型番: AI生成 → {model_number}")
                     except Exception as e:

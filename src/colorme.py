@@ -387,6 +387,11 @@ class ColorMeClient:
         if not updates:
             return True
 
+        # group_idsが文字列の場合はリストに変換
+        if "group_ids" in updates and isinstance(updates["group_ids"], str):
+            raw = updates["group_ids"].lstrip("'").strip()
+            updates["group_ids"] = [int(g.strip()) for g in raw.split(",") if g.strip().isdigit() and int(g.strip()) > 0]
+
         # ドライランモードの場合は実際の更新をスキップ
         if self.dry_run:
             logger.info(f"[ドライラン] 商品更新スキップ: 商品ID {product_id} → {updates}")
@@ -761,16 +766,17 @@ class ColorMeClient:
         if product.model_number:
             updates["model_number"] = product.model_number
 
-        # カテゴリー
+        # カテゴリー（API仕様: フラット形式で送信）
         if product.category_id_big > 0:
-            updates["category"] = {
-                "id_big": product.category_id_big,
-                "id_small": product.category_id_small or 0
-            }
+            updates["category_id_big"] = product.category_id_big
 
         # グループ
         if product.group_ids:
-            updates["group_ids"] = product.group_ids
+            gids = product.group_ids
+            if isinstance(gids, str):
+                raw = gids.lstrip("'").strip()
+                gids = [int(g.strip()) for g in raw.split(",") if g.strip().isdigit() and int(g.strip()) > 0]
+            updates["group_ids"] = gids
 
         # 価格情報（T列: 販売適正価格を優先）
         if product.selling_price > 0:
@@ -866,10 +872,7 @@ class ColorMeClient:
             "name": product.name,
             "price": product.regular_price,  # 定価
             "sales_price": product.current_price if product.current_price > 0 else product.regular_price,  # 販売価格
-            "category": {
-                "id_big": product.category_id_big,
-                "id_small": product.category_id_small or 0
-            },
+            "category_id_big": product.category_id_big,  # API仕様: フラット形式で送信
             "stocks": product.stock_quantity,
             "stock_managed": product.stock_managed,
             "display_state": "showing" if product.display_control in ("表示", "showing", "") else "hidden",
@@ -887,7 +890,11 @@ class ColorMeClient:
         if product.model_number:
             product_data["model_number"] = product.model_number
         if product.group_ids:
-            product_data["group_ids"] = product.group_ids
+            gids = product.group_ids
+            if isinstance(gids, str):
+                raw = gids.lstrip("'").strip()
+                gids = [int(g.strip()) for g in raw.split(",") if g.strip().isdigit() and int(g.strip()) > 0]
+            product_data["group_ids"] = gids
         if product.few_num > 0:
             product_data["few_num"] = product.few_num
         if product.min_num > 1:
@@ -933,7 +940,11 @@ class ColorMeClient:
             if product.simple_expl:
                 update_data["simple_expl"] = product.simple_expl
             if product.group_ids:
-                update_data["group_ids"] = product.group_ids
+                gids = product.group_ids
+                if isinstance(gids, str):
+                    raw = gids.lstrip("'").strip()
+                    gids = [int(g.strip()) for g in raw.split(",") if g.strip().isdigit() and int(g.strip()) > 0]
+                update_data["group_ids"] = gids
             # 在庫数と型番も更新APIで再設定（新規登録時に反映されない場合があるため）
             if product.stock_quantity >= 0:
                 update_data["stocks"] = product.stock_quantity

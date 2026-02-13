@@ -1,0 +1,87 @@
+name: "CM Price Only Sync"
+
+on:
+  # 手動実行
+  workflow_dispatch:
+
+  # 定期実行（4時間ごと: JST 0,4,8,12,16,20時）
+  schedule:
+    - cron: '0 15,19,23,3,7,11 * * *'
+
+jobs:
+  price-only-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/613320899872/locations/global/workloadIdentityPools/github-actions-pool/providers/github'
+          service_account: 'spreadsheet-access@coin-price-tracker-479614.iam.gserviceaccount.com'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: |
+          python -m playwright install chromium
+          python -m playwright install-deps chromium
+
+      # ========================================
+      # 価格のみ同期: スクレイピング → 価格同期
+      # ========================================
+      - name: "[Price Only] Step 1: Fetch supplier prices"
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          BRIGHTDATA_BROWSER_WS: ${{ secrets.BRIGHTDATA_BROWSER_WS }}
+        run: |
+          echo "📊 [1/2] 仕入れ先から価格・在庫を取得中..."
+          python -m src.fetch_supplier_prices --verbose
+
+      - name: "Wait for formula recalculation"
+        run: |
+          echo "⏳ Google Sheetsの数式再計算を待機中（10秒）..."
+          sleep 10
+
+      - name: "[Price Only] Step 2: Sync prices to ColorMe"
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          COLORME_ACCESS_TOKEN: ${{ secrets.COLORME_ACCESS_TOKEN }}
+        run: |
+          echo "📤 [2/2] 価格・在庫・表示状態のみカラーミーに同期中..."
+          python -m src.sync_colorme_products --price-only --verbose
+
+      - name: Summary
+        run: |
+          echo "✅ 価格のみ同期 完了"
+          echo ""
+          echo "=== 同期内容 ==="
+          echo "- 仕入れ先価格・在庫状況の取得"
+          echo "- 為替レートの更新"
+          echo "- カラーミーへ: 価格、在庫数、表示状態のみ"
+          echo "- スキップ: 商品名、カテゴリー、型番、説明文、送料等"
+
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const message = `❌ CM Price Only Sync が失敗しました\n\nRepository: ${context.repo.owner}/${context.repo.repo}\nWorkflow: ${context.workflow}\nRun: ${context.runNumber}\n\nログ: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            console.log(message);

@@ -1783,11 +1783,32 @@ class ModelNumberGenerator:
     型番をAI（Claude API）で自動生成するクラス
 
     命名規則:
-    - コイン: ITM-{年号}-{国コード}-{カテゴリ}-{シリーズ}-{枚数}
-      例: ITM-2026-GBR-SCJ-BRT-100
-    - インゴット: ITM-{国コード}-{カテゴリ}-{メーカー}-{数量}-{重量}
-      例: ITM-CH-GIJ-PAM-001-100G
+    - コイン: ITM-{年号}-{国コード}-{カテゴリ}-{シリーズ}-{仕入れ先コード}-{枚数}
+      例: ITM-2026-GBR-SCJ-BRT-01-100
+    - インゴット: ITM-{国コード}-{カテゴリ}-{メーカー}-{仕入れ先コード}-{数量}-{重量}
+      例: ITM-CH-GIJ-PAM-01-001-100G
+
+    仕入れ先コード:
+    - 01: Bullionstar
+    - 02: APMEX
+    - 03: JM Bullion
+    - 04: SD Bullion
+    - 05: Money Metals
+    - 99: その他
     """
+
+    # 仕入れ先コードマッピング（他社にはわからない形式）
+    SUPPLIER_CODES = {
+        "bullionstar": "01",
+        "apmex": "02",
+        "jm bullion": "03",
+        "jmbullion": "03",
+        "sd bullion": "04",
+        "sdbullion": "04",
+        "money metals": "05",
+        "moneymetals": "05",
+    }
+    DEFAULT_SUPPLIER_CODE = "99"
 
     # 型番生成用プロンプト
     PROMPT_TEMPLATE = """あなたは貴金属商品の型番を生成するエキスパートです。
@@ -1799,14 +1820,17 @@ class ModelNumberGenerator:
 - 仕様: {specs}
 - 説明: {description}
 - 数量: {quantity}
+- 仕入れ先コード: {supplier_code}
 
 ## 命名規則
 
 ### コイン（年号付き）の場合:
-ITM-{{年号}}-{{国コード}}-{{カテゴリ}}-{{シリーズ}}-{{枚数3桁}}
+ITM-{{年号}}-{{国コード}}-{{カテゴリ}}-{{シリーズ}}-{{仕入れ先コード}}-{{枚数3桁}}
+※仕入れ先コードは商品情報で指定された値をそのまま使用
 
 ### インゴット/バーの場合:
-ITM-{{国コード}}-{{カテゴリ}}-{{メーカー}}-{{数量3桁}}-{{重量}}
+ITM-{{国コード}}-{{カテゴリ}}-{{メーカー}}-{{仕入れ先コード}}-{{数量3桁}}-{{重量}}
+※仕入れ先コードは商品情報で指定された値をそのまま使用
 
 ## コード一覧
 
@@ -1869,16 +1893,24 @@ ITM-{{国コード}}-{{カテゴリ}}-{{メーカー}}-{{数量3桁}}-{{重量}}
 - 1OZ（オンス、31g相当）
 
 ## 例
-- "2026 1 oz Silver Britannia" (5枚) → ITM-2026-GBR-SCJ-BRT-005
-- "PAMP Suisse 100g Gold Bar" (1本) → ITM-CH-GIJ-PAM-001-100G
-- "2024 1 oz Silver Dragon Round USA" (5枚) → ITM-2024-USA-SCJ-DRG-005
+- "2026 1 oz Silver Britannia" (5枚, 仕入れ先コード=01) → ITM-2026-GBR-SCJ-BRT-01-005
+- "PAMP Suisse 100g Gold Bar" (1本, 仕入れ先コード=01) → ITM-CH-GIJ-PAM-01-001-100G
+- "2024 1 oz Silver Dragon Round USA" (5枚, 仕入れ先コード=02) → ITM-2024-USA-SCJ-DRG-02-005
 
 ## 出力形式
 型番のみを1行で出力してください。説明は不要です。
+仕入れ先コードは必ず指定された値（{supplier_code}）を使用してください。
 """
 
-    def __init__(self):
+    def __init__(self, existing_model_numbers: set = None):
+        """
+        型番生成器を初期化
+
+        Args:
+            existing_model_numbers: 既存の型番セット（重複チェック用）
+        """
         self.genai_model = None
+        self.existing_model_numbers = existing_model_numbers or set()
         try:
             import vertexai
             from vertexai.generative_models import GenerativeModel
@@ -1888,41 +1920,137 @@ ITM-{{国コード}}-{{カテゴリ}}-{{メーカー}}-{{数量3桁}}-{{重量}}
         except Exception as e:
             logger.warning(f"型番生成器: Vertex AI初期化エラー: {e}")
 
-    def generate(self, product_info: dict, quantity: int = 1) -> str:
+    def set_existing_model_numbers(self, existing_model_numbers: set):
+        """既存の型番セットを設定（後から追加する場合用）"""
+        self.existing_model_numbers = existing_model_numbers
+
+    def add_existing_model_number(self, model_number: str):
+        """既存の型番を追加（生成後に呼び出す）"""
+        if model_number:
+            self.existing_model_numbers.add(model_number)
+
+    def get_supplier_code(self, supplier_site: str) -> str:
+        """
+        仕入れ先サイト名から仕入れ先コードを取得
+
+        Args:
+            supplier_site: 仕入れ先サイト名（例: "Bullionstar", "APMEX"）
+
+        Returns:
+            str: 仕入れ先コード（例: "01", "02"）
+        """
+        if not supplier_site:
+            return self.DEFAULT_SUPPLIER_CODE
+
+        supplier_lower = supplier_site.lower().strip()
+        return self.SUPPLIER_CODES.get(supplier_lower, self.DEFAULT_SUPPLIER_CODE)
+
+    def _make_unique(self, model_number: str) -> str:
+        """
+        重複チェックを行い、必要ならサフィックスを追加
+
+        Args:
+            model_number: 生成された型番
+
+        Returns:
+            str: ユニークな型番
+        """
+        if not model_number:
+            return model_number
+
+        if model_number not in self.existing_model_numbers:
+            return model_number
+
+        # 重複している場合、サフィックスを追加
+        suffixes = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        for suffix in suffixes:
+            unique_number = f"{model_number}-{suffix}"
+            if unique_number not in self.existing_model_numbers:
+                logger.info(f"  型番重複検出: {model_number} → {unique_number}")
+                return unique_number
+
+        # 26個超えた場合は連番
+        for i in range(2, 100):
+            unique_number = f"{model_number}-{i:02d}"
+            if unique_number not in self.existing_model_numbers:
+                logger.info(f"  型番重複検出: {model_number} → {unique_number}")
+                return unique_number
+
+        logger.warning(f"型番のユニーク化に失敗: {model_number}")
+        return model_number
+
+    def generate(self, product_info: dict, quantity: int = 1, supplier_site: str = "") -> str:
         """
         商品情報から型番をAIで生成する
 
         Args:
             product_info: スクレイピングで取得した商品情報
             quantity: 枚数/本数
+            supplier_site: 仕入れ先サイト名（例: "Bullionstar"）
 
         Returns:
-            str: 型番 (例: ITM-2026-GBR-SCJ-BRT-100)
+            str: 型番 (例: ITM-2026-GBR-SCJ-BRT-01-100)
         """
         if not self.genai_model:
             logger.warning("Vertex AI Geminiが初期化されていません。型番生成をスキップします。")
             return ""
 
+        # 仕入れ先コードを取得
+        supplier_code = self.get_supplier_code(supplier_site)
+
         prompt = self.PROMPT_TEMPLATE.format(
             product_name=product_info.get("name", ""),
             specs=product_info.get("specs", ""),
             description=product_info.get("description", "")[:500],  # 長すぎる場合は切り詰め
-            quantity=quantity
+            quantity=quantity,
+            supplier_code=supplier_code
         )
 
-        try:
-            response = self.genai_model.generate_content(prompt)
-            model_number = response.text.strip()
-            # 型番形式の検証（ITM-で始まる）
-            if model_number.startswith("ITM-"):
-                return model_number
-            else:
-                logger.warning(f"不正な型番形式: {model_number}")
-                return ""
+        import time
+        import signal
 
-        except Exception as e:
-            logger.error(f"型番生成エラー: {e}")
-            return ""
+        def timeout_handler(signum, frame):
+            raise TimeoutError("Vertex AI API call timed out")
+
+        max_retries = 3
+        timeout_seconds = 120
+
+        for attempt in range(max_retries):
+            try:
+                # タイムアウト設定（Unix系のみ）
+                old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(timeout_seconds)
+
+                try:
+                    # APIを呼び出し
+                    response = self.genai_model.generate_content(prompt)
+                finally:
+                    # タイムアウトを解除
+                    signal.alarm(0)
+                    signal.signal(signal.SIGALRM, old_handler)
+
+                model_number = response.text.strip()
+                # 型番形式の検証（ITM-で始まる）
+                if model_number.startswith("ITM-"):
+                    # 重複チェックとユニーク化
+                    unique_model_number = self._make_unique(model_number)
+                    # 生成した型番を既存リストに追加
+                    self.add_existing_model_number(unique_model_number)
+                    return unique_model_number
+                else:
+                    logger.warning(f"不正な型番形式: {model_number}")
+                    return ""
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 10 * (attempt + 1)  # 10秒, 20秒と増加
+                    logger.warning(f"型番生成エラー（リトライ {attempt + 1}/{max_retries}）: {e}")
+                    logger.info(f"  {wait_time}秒待機後にリトライ...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"型番生成エラー（最終）: {e}")
+                    return ""
+        return ""
 
 
 def get_incomplete_rows(sheet_client: SpreadsheetClient) -> list[dict]:

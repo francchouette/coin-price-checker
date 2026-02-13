@@ -81,7 +81,7 @@ function triggerGitHubAction(workflowFileName, inputs = {}) {
       '   値: GitHubのPersonal Access Token',
       SpreadsheetApp.getUi().ButtonSet.OK
     );
-    return false;
+    return { success: false, error: 'GitHub Tokenが設定されていません' };
   }
 
   const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/actions/workflows/${workflowFileName}/dispatches`;
@@ -105,16 +105,17 @@ function triggerGitHubAction(workflowFileName, inputs = {}) {
   try {
     const response = UrlFetchApp.fetch(url, options);
     const statusCode = response.getResponseCode();
+    const responseText = response.getContentText();
 
     if (statusCode === 204) {
-      return true;
+      return { success: true };
     } else {
-      Logger.log(`GitHub API Error: ${statusCode} - ${response.getContentText()}`);
-      return false;
+      Logger.log(`GitHub API Error: ${statusCode} - ${responseText}`);
+      return { success: false, error: `HTTP ${statusCode}: ${responseText}` };
     }
   } catch (e) {
     Logger.log(`Error triggering GitHub Action: ${e.message}`);
-    return false;
+    return { success: false, error: e.message };
   }
 }
 
@@ -384,10 +385,10 @@ function cmSyncPrices() {
 /**
  * 結果メッセージを表示
  */
-function showResultMessage(success, actionName) {
+function showResultMessage(result, actionName) {
   const ui = SpreadsheetApp.getUi();
 
-  if (success) {
+  if (result.success) {
     ui.alert(
       '🚀 処理開始',
       `${actionName}を開始しました。\n\n` +
@@ -400,6 +401,8 @@ function showResultMessage(success, actionName) {
     ui.alert(
       '❌ エラー',
       `${actionName}の開始に失敗しました。\n\n` +
+      '【エラー詳細】\n' +
+      `${result.error || '不明なエラー'}\n\n` +
       '【確認事項】\n' +
       '・GitHub Tokenが正しく設定されているか\n' +
       '・Tokenに workflow 権限があるか\n' +

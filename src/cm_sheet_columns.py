@@ -289,7 +289,7 @@ def preserve_or_set(existing_row: list, col: Column, new_value: str,
         if cell_str.startswith("="):
             # 数式の場合は行番号を調整
             return _adjust_formula_row(cell_str, old_row_num, new_row_num)
-        elif preserve_existing and cell_value:
+        elif preserve_existing and cell_str != "":
             return cell_str
     return new_value
 

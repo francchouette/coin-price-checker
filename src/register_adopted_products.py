@@ -58,6 +58,30 @@ DEFAULT_CATEGORY_BIG = 174936    # 大カテゴリー: 金貨・銀貨・プラ�
 DEFAULT_CATEGORY_SMALL = 174938  # 小カテゴリー: その他金貨
 
 
+def batch_update_with_retry(sheet, batch_data: list, max_retries: int = 3, retry_delay: int = 10):
+    """
+    スプレッドシートのbatch_updateをリトライ付きで実行
+
+    ネットワークエラーや認証トークン更新エラーを回避するため、
+    失敗時にリトライを行う
+    """
+    import copy
+    for attempt in range(max_retries):
+        try:
+            # gspreadはbatch_dataを変更するため、コピーを使用
+            data_copy = copy.deepcopy(batch_data)
+            sheet.batch_update(data_copy, value_input_option='RAW')
+            return True
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logger.warning(f"  スプレッドシート更新エラー（リトライ {attempt + 1}/{max_retries}）: {e}")
+                logger.info(f"  {retry_delay}秒後にリトライ...")
+                time.sleep(retry_delay)
+            else:
+                logger.error(f"  スプレッドシート更新エラー（最終）: {e}")
+                raise
+
+
 def map_category(top_category: str, parent_category: str, child_category: str) -> tuple[int, int]:
     """
     Bullionstarカテゴリーをカラーミーカテゴリーにマッピング
@@ -83,9 +107,10 @@ def map_category(top_category: str, parent_category: str, child_category: str) -
     return (DEFAULT_CATEGORY_BIG, DEFAULT_CATEGORY_SMALL)
 
 
-def register_adopted_products(
+async def register_adopted_products(
     dry_run: bool = False,
-    limit: Optional[int] = None
+    limit: Optional[int] = None,
+    upload_images: bool = False
 ) -> tuple[int, int, int]:
     """
     採用商品をカラーミーに登録
@@ -93,6 +118,7 @@ def register_adopted_products(
     Args:
         dry_run: Trueの場合、実際の登録は行わない
         limit: 処理する最大件数（デバッグ用）
+        upload_images: Trueの場合、Playwright経由で画像をアップロード
 
     Returns:
         (登録成功数, 登録失敗数, スキップ数)
@@ -135,11 +161,10 @@ def register_adopted_products(
         logger.warning(f"カテゴリー/グループ取得エラー: {e}")
         logger.warning("カテゴリー自動判定は無効化されます")
 
-    # AI生成器を初期化（商品説明・SEO・商品名・型番）
+    # AI生成器を初期化（商品説明・SEO・商品名）
     description_generator = DescriptionGenerator()
     seo_generator = SEOGenerator()
     name_generator = JapaneseProductNameGenerator()
-    model_number_generator = ModelNumberGenerator()
 
     try:
         # ブリオンスター商品ページ一覧シートを取得
@@ -149,6 +174,15 @@ def register_adopted_products(
         if len(bs_data) <= 1:
             logger.info("ブリオンスター商品ページ一覧にデータがありません")
             return (0, 0, 0)
+
+        # 既存の型番を収集して重複チェック用にModelNumberGeneratorを初期化
+        existing_model_numbers = set()
+        for row in bs_data[1:]:
+            model_num = get_cell(row, Col.CM_MODEL_NUMBER)
+            if model_num:
+                existing_model_numbers.add(model_num)
+        model_number_generator = ModelNumberGenerator(existing_model_numbers)
+        logger.info(f"型番生成器を初期化（既存型番: {len(existing_model_numbers)}件）")
 
         # A列=「採用」かつ B列≠「登録済」の商品をフィルタ
         target_products = []
@@ -172,393 +206,420 @@ def register_adopted_products(
         error_count = 0
         skip_count = 0
 
-        for row_idx, row in target_products:
-            product_name = get_cell(row, Col.PRODUCT_NAME)  # G列: 仕入れ先商品名（英語）
-            product_url = get_cell(row, Col.PRODUCT_URL)
-            supplier_id = get_cell(row, Col.SUPPLIER_ID)
+        # Playwright用ブラウザセッションを1回だけ起動（全商品で再利用）
+        uploader = None
+        if upload_images:
+            uploader = ColorMeImageUploader(headless=True)
+            await uploader.__aenter__()
+            logger.info("Playwrightブラウザセッション開始（全商品で再利用）")
 
-            logger.info(f"処理中: {product_name[:50]}... (行{row_idx})")
+        try:
+            for row_idx, row in target_products:
+                product_name = get_cell(row, Col.PRODUCT_NAME)  # G列: 仕入れ先商品名（英語）
+                product_url = get_cell(row, Col.PRODUCT_URL)
+                supplier_id = get_cell(row, Col.SUPPLIER_ID)
+                supplier_site = get_cell(row, Col.SITE)  # H列: 仕入れ先サイト（型番生成用）
 
-            # 必須情報チェック
-            if not product_name:
-                logger.warning(f"  スキップ: 商品名がありません (行{row_idx})")
-                skip_count += 1
-                continue
+                logger.info(f"処理中: {product_name[:50]}... (行{row_idx})")
 
-            # 価格情報取得
-            price_jpy = get_cell_float(row, Col.PRICE_JPY)
-            if price_jpy <= 0:
-                # 日本円換算価格がない場合は計算を試みる
-                price = get_cell_float(row, Col.PRICE)
-                exchange_rate = get_cell_float(row, Col.EXCHANGE_RATE, 1.0)
-                price_jpy = price * exchange_rate
+                # 必須情報チェック
+                if not product_name:
+                    logger.warning(f"  スキップ: 商品名がありません (行{row_idx})")
+                    skip_count += 1
+                    continue
 
-            if price_jpy <= 0:
-                logger.warning(f"  スキップ: 価格情報がありません (行{row_idx})")
-                skip_count += 1
-                continue
+                # 価格情報取得
+                price_jpy = get_cell_float(row, Col.PRICE_JPY)
+                if price_jpy <= 0:
+                    # 日本円換算価格がない場合は計算を試みる
+                    price = get_cell_float(row, Col.PRICE)
+                    exchange_rate = get_cell_float(row, Col.EXCHANGE_RATE, 1.0)
+                    price_jpy = price * exchange_rate
 
-            # CM商品名 - D列に既存値があればそれを使用、なければ自動生成
-            existing_cm_name = get_cell(row, Col.CM_PRODUCT_NAME)  # D列: CM商品名
-            desc_en = get_cell(row, Col.DESC_EN)  # M列: 商品説明（英語）
-            specs = get_cell(row, Col.SPECS)      # N列: 仕様・スペック
+                if price_jpy <= 0:
+                    logger.warning(f"  スキップ: 価格情報がありません (行{row_idx})")
+                    skip_count += 1
+                    continue
 
-            if existing_cm_name:
-                # D列に既存のCM商品名がある場合はそれを使用
-                cm_product_name = existing_cm_name
-                logger.info(f"  CM商品名: D列の既存値を使用 → {cm_product_name[:50]}...")
-            else:
-                # JapaneseProductNameGeneratorで自動生成
-                product_info = {
-                    "name": product_name,
-                    "specs": specs,
-                    "description": desc_en,
-                }
-                cm_product_name = name_generator.generate(product_info, quantity=1)
-                if cm_product_name:
-                    logger.info(f"  CM商品名: 自動生成 → {cm_product_name[:50]}...")
+                # CM商品名 - D列に既存値があればそれを使用、なければ自動生成
+                existing_cm_name = get_cell(row, Col.CM_PRODUCT_NAME)  # D列: CM商品名
+                desc_en = get_cell(row, Col.DESC_EN)  # M列: 商品説明（英語）
+                specs = get_cell(row, Col.SPECS)      # N列: 仕様・スペック
+
+                if existing_cm_name:
+                    # D列に既存のCM商品名がある場合はそれを使用
+                    cm_product_name = existing_cm_name
+                    logger.info(f"  CM商品名: D列の既存値を使用 → {cm_product_name[:50]}...")
                 else:
-                    # フォールバック: 仕入れ先商品名をそのまま使用
-                    cm_product_name = product_name
-                    logger.info(f"  CM商品名: フォールバック（仕入れ先商品名を使用）")
+                    # JapaneseProductNameGeneratorで自動生成
+                    product_info = {
+                        "name": product_name,
+                        "specs": specs,
+                        "description": desc_en,
+                    }
+                    cm_product_name = name_generator.generate(product_info, quantity=1)
+                    if cm_product_name:
+                        logger.info(f"  CM商品名: 自動生成 → {cm_product_name[:50]}...")
+                    else:
+                        # フォールバック: 仕入れ先商品名をそのまま使用
+                        cm_product_name = product_name
+                        logger.info(f"  CM商品名: フォールバック（仕入れ先商品名を使用）")
 
-            # カテゴリー・グループ自動判定（CategoryDetector使用）
-            category_big = 0
-            category_small = 0
-            group_ids = []
+                # カテゴリー・グループ自動判定（CategoryDetector使用）
+                category_big = 0
+                category_small = 0
+                group_ids = []
 
-            # まずスプレッドシートの既存値を確認
-            existing_cat_big = get_cell(row, Col.CM_CATEGORY_BIG)
-            existing_cat_small = get_cell(row, Col.CM_CATEGORY_SMALL)
-            existing_group_id = get_cell(row, Col.CM_GROUP_ID)
+                # まずスプレッドシートの既存値を確認
+                existing_cat_big = get_cell(row, Col.CM_CATEGORY_BIG)
+                existing_cat_small = get_cell(row, Col.CM_CATEGORY_SMALL)
+                existing_group_id = get_cell(row, Col.CM_GROUP_ID)
 
-            if existing_cat_big:
-                # 既存値がある場合はそれを使用
-                try:
-                    category_big = int(existing_cat_big)
-                    category_small = int(existing_cat_small) if existing_cat_small else 0
-                    if existing_group_id:
-                        # 先頭のシングルクォート（テキスト保存用）を除去
-                        group_id_str = existing_group_id.lstrip("'")
-                        group_ids = [int(g.strip()) for g in group_id_str.split(",") if g.strip().isdigit()]
-                    logger.info(f"  カテゴリー(既存値使用): 大={category_big}, 小={category_small}, グループ={group_ids}")
-                except ValueError as e:
-                    logger.warning(f"  カテゴリー解析エラー: {e}")
-                    pass
+                if existing_cat_big:
+                    # 既存値がある場合はそれを使用
+                    try:
+                        category_big = int(existing_cat_big)
+                        category_small = int(existing_cat_small) if existing_cat_small else 0
+                        if existing_group_id:
+                            # 先頭のシングルクォート（テキスト保存用）を除去
+                            group_id_str = existing_group_id.lstrip("'")
+                            group_ids = [int(g.strip()) for g in group_id_str.split(",") if g.strip().isdigit()]
+                        logger.info(f"  カテゴリー(既存値使用): 大={category_big}, 小={category_small}, グループ={group_ids}")
+                    except ValueError as e:
+                        logger.warning(f"  カテゴリー解析エラー: {e}")
+                        pass
 
-            if not category_big:
-                # CategoryDetectorで自動判定
-                if category_detector:
-                    category_big, category_small, group_ids = category_detector.detect(product_name, product_url)
-                    logger.info(f"  カテゴリー(自動判定): 大={category_big}, 小={category_small}, グループ={group_ids}")
+                if not category_big:
+                    # CategoryDetectorで自動判定
+                    if category_detector:
+                        category_big, category_small, group_ids = category_detector.detect(product_name, product_url)
+                        logger.info(f"  カテゴリー(自動判定): 大={category_big}, 小={category_small}, グループ={group_ids}")
+                    else:
+                        # フォールバック: 従来のmap_category関数を使用
+                        top_cat = get_cell(row, Col.TOP_CATEGORY)
+                        parent_cat = get_cell(row, Col.PARENT_CATEGORY)
+                        category_big, category_small = map_category(top_cat, parent_cat, "")
+                        logger.info(f"  カテゴリー(フォールバック): 大={category_big}, 小={category_small}")
+
+                # 商品説明（BC列）- 既存値があればそれを使用、なければAI生成
+                # desc_en, specsは上で取得済み
+
+                # カラーミー用説明（BC列）をチェック
+                existing_cm_expl = get_cell(row, Col.CM_EXPL)
+                existing_simple_expl = get_cell(row, Col.CM_SIMPLE_EXPL)
+
+                # SEO項目（BR-BT列）をチェック
+                existing_page_title = get_cell(row, Col.CM_PAGE_TITLE)
+                existing_meta_desc = get_cell(row, Col.CM_META_DESC)
+                existing_meta_keywords = get_cell(row, Col.CM_META_KEYWORDS)
+
+                description = ""
+                simple_description = ""
+                page_title = ""
+                meta_description = ""
+                meta_keywords = ""
+
+                # 商品説明の取得またはAI生成
+                if existing_cm_expl:
+                    # 既存値があればそれを使用
+                    description = existing_cm_expl
+                    simple_description = existing_simple_expl
+                    logger.info(f"  商品説明: 既存値を使用")
                 else:
-                    # フォールバック: 従来のmap_category関数を使用
-                    top_cat = get_cell(row, Col.TOP_CATEGORY)
-                    parent_cat = get_cell(row, Col.PARENT_CATEGORY)
-                    category_big, category_small = map_category(top_cat, parent_cat, "")
-                    logger.info(f"  カテゴリー(フォールバック): 大={category_big}, 小={category_small}")
-
-            # 商品説明（BC列）- 既存値があればそれを使用、なければAI生成
-            # desc_en, specsは上で取得済み
-
-            # カラーミー用説明（BC列）をチェック
-            existing_cm_expl = get_cell(row, Col.CM_EXPL)
-            existing_simple_expl = get_cell(row, Col.CM_SIMPLE_EXPL)
-
-            # SEO項目（BR-BT列）をチェック
-            existing_page_title = get_cell(row, Col.CM_PAGE_TITLE)
-            existing_meta_desc = get_cell(row, Col.CM_META_DESC)
-            existing_meta_keywords = get_cell(row, Col.CM_META_KEYWORDS)
-
-            description = ""
-            simple_description = ""
-            page_title = ""
-            meta_description = ""
-            meta_keywords = ""
-
-            # 商品説明の取得またはAI生成
-            if existing_cm_expl:
-                # 既存値があればそれを使用
-                description = existing_cm_expl
-                simple_description = existing_simple_expl
-                logger.info(f"  商品説明: 既存値を使用")
-            else:
-                # AI生成を試みる
-                product_info = {
-                    "name": product_name,
-                    "price": int(price_jpy),
-                    "currency": "JPY",
-                    "description": desc_en or "",
-                    "specs": specs
-                }
-
-                if description_generator.genai_model:
-                    description, simple_description = description_generator.generate(product_info)
-                    if description:
-                        logger.info(f"  商品説明: AI生成成功 ({len(description)}文字)")
-
-                # フォールバック: 仕入れ先情報から構築
-                if not description:
-                    description = desc_en or ""
-                    if specs and description:
-                        description = f"{specs}\n\n{description}"
-                    elif specs:
-                        description = specs
-
-            # SEO項目の取得またはAI生成
-            if existing_page_title:
-                page_title = existing_page_title
-                meta_description = existing_meta_desc
-                meta_keywords = existing_meta_keywords
-                logger.info(f"  SEO項目: 既存値を使用")
-            else:
-                if seo_generator.genai_model:
+                    # AI生成を試みる
                     product_info = {
                         "name": product_name,
                         "price": int(price_jpy),
+                        "currency": "JPY",
                         "description": desc_en or "",
                         "specs": specs
                     }
-                    page_title, meta_description, meta_keywords = seo_generator.generate(product_info)
-                    if page_title:
-                        logger.info(f"  SEO項目: AI生成成功")
 
-            # 型番生成（AQ列）- 既存値があればそれを使用、なければAI生成
-            existing_model_number = get_cell(row, Col.CM_MODEL_NUMBER)
-            model_number = ""
+                    if description_generator.genai_model:
+                        description, simple_description = description_generator.generate(product_info)
+                        if description:
+                            logger.info(f"  商品説明: AI生成成功 ({len(description)}文字)")
 
-            if existing_model_number:
-                model_number = existing_model_number
-                logger.info(f"  型番: 既存値を使用 → {model_number}")
-            else:
-                # ModelNumberGeneratorでAI生成
-                quantity = int(get_cell_float(row, Col.QUANTITY, 1.0)) or 1
-                product_info_for_model = {
-                    "name": product_name,
-                    "specs": specs,
-                    "description": desc_en or "",
-                }
-                model_number = model_number_generator.generate(product_info_for_model, quantity)
-                if model_number:
-                    logger.info(f"  型番: AI生成成功 → {model_number}")
+                    # フォールバック: 仕入れ先情報から構築
+                    if not description:
+                        description = desc_en or ""
+                        if specs and description:
+                            description = f"{specs}\n\n{description}"
+                        elif specs:
+                            description = specs
+
+                # SEO項目の取得またはAI生成
+                if existing_page_title:
+                    page_title = existing_page_title
+                    meta_description = existing_meta_desc
+                    meta_keywords = existing_meta_keywords
+                    logger.info(f"  SEO項目: 既存値を使用")
                 else:
-                    # フォールバック: 仕入れ先商品IDを使用
-                    model_number = supplier_id
-                    logger.info(f"  型番: フォールバック（仕入れ先ID使用） → {model_number}")
+                    if seo_generator.genai_model:
+                        product_info = {
+                            "name": product_name,
+                            "price": int(price_jpy),
+                            "description": desc_en or "",
+                            "specs": specs
+                        }
+                        page_title, meta_description, meta_keywords = seo_generator.generate(product_info)
+                        if page_title:
+                            logger.info(f"  SEO項目: AI生成成功")
 
-            # 画像URL取得（BK-BT列: 画像URL1-10）
-            image_urls = []
-            # 画像URL1-10（BK-BT列: Col.IMAGE_1〜Col.IMAGE_10）
-            for i in range(10):
-                img_idx = Col.IMAGE_1.index + i
-                img_url = row[img_idx].strip() if img_idx < len(row) and row[img_idx] else ""
-                if img_url and img_url not in image_urls:
-                    image_urls.append(img_url)
+                # 型番生成（AQ列）- 既存値があればそれを使用、なければAI生成
+                existing_model_number = get_cell(row, Col.CM_MODEL_NUMBER)
+                model_number = ""
 
-            # 価格関連情報を取得（スプレッドシートの値を優先）
-            # AH列: 販売価格, AI列: 定価, AJ列: 会員価格, AK列: 原価
-            sales_price = int(get_cell_float(row, Col.CM_SALES_PRICE))
-            regular_price = int(get_cell_float(row, Col.CM_REGULAR_PRICE))
-            members_price = int(get_cell_float(row, Col.CM_MEMBERS_PRICE))
-            cost = int(get_cell_float(row, Col.CM_COST))
-            delivery_charge = int(get_cell_float(row, Col.CM_DELIVERY_CHARGE))
-
-            # スプレッドシートに値がない場合はデフォルト計算
-            if sales_price <= 0:
-                # 販売価格（マージン10%を加算）
-                sales_price = int(price_jpy * 1.1)
-            if regular_price <= 0:
-                # 定価は販売価格と同じ
-                regular_price = sales_price
-            if cost <= 0:
-                # 原価は仕入れ価格
-                cost = int(price_jpy)
-
-            logger.info(f"  価格: 販売={sales_price:,}, 定価={regular_price:,}, 会員={members_price:,}, 原価={cost:,}, 個別送料={delivery_charge:,}")
-
-            # ColorMeProduct作成
-            colorme_product = ColorMeProduct(
-                product_id=0,  # 新規登録
-                name=cm_product_name,  # CM商品名（日本語）を使用
-                current_price=sales_price,  # 販売価格
-                colorme_url="",
-                source_url=product_url,
-                quantity=1,
-                margin_rate=1.1,
-                regular_price=regular_price,  # 定価
-                members_price=members_price,  # 会員価格
-                cost=cost,  # 原価
-                delivery_charge=delivery_charge,  # 個別送料
-                category_id_big=category_big,
-                category_id_small=category_small,
-                group_ids=group_ids,  # グループIDを追加
-                stock_quantity=10,  # デフォルト在庫数
-                stock_managed=True,
-                soldout_display=True,
-                display_control="表示",
-                expl=description,
-                simple_expl=simple_description,  # 簡易説明
-                page_title=page_title,  # ページタイトル（SEO）
-                meta_description=meta_description,  # メタディスクリプション（SEO）
-                meta_keywords=meta_keywords,  # メタキーワード（SEO）
-                image_urls=image_urls[:10],
-                model_number=model_number,  # 型番（AI生成または仕入れ先ID）
-            )
-
-            if dry_run:
-                logger.info(f"  [DRY-RUN] 登録予定: {cm_product_name[:30]}... 価格: ¥{sales_price:,}")
-                logger.info(f"    カテゴリー: 大={category_big}, 小={category_small}, グループ={group_ids}")
-                success_count += 1
-                continue
-
-            # カラーミーAPI登録
-            new_product_id, error = colorme_client.create_product(colorme_product)
-
-            if new_product_id > 0:
-                logger.info(f"  登録成功: カラーミー商品ID={new_product_id}")
-
-                # Playwright経由で個別送料とSEO項目を設定
-                # （カラーミーAPIでは個別送料とSEO項目が設定できないため）
-                playwright_updates_needed = delivery_charge > 0 or page_title or meta_description or meta_keywords
-                if playwright_updates_needed:
-                    logger.info(f"  Playwright経由で追加設定を適用中...")
-                    try:
-                        async def apply_playwright_updates():
-                            async with ColorMeImageUploader(headless=True) as uploader:
-                                # 個別送料を設定
-                                if delivery_charge > 0:
-                                    success, error = await uploader.update_delivery_charge(new_product_id, delivery_charge)
-                                    if success:
-                                        logger.info(f"    個別送料設定成功: {delivery_charge}円")
-                                    else:
-                                        logger.warning(f"    個別送料設定失敗: {error}")
-
-                                # SEO項目を設定
-                                if page_title or meta_description or meta_keywords:
-                                    success, error = await uploader.update_seo_fields(
-                                        new_product_id,
-                                        page_title=page_title,
-                                        meta_description=meta_description,
-                                        meta_keywords=meta_keywords
-                                    )
-                                    if success:
-                                        logger.info(f"    SEO項目設定成功")
-                                    else:
-                                        logger.warning(f"    SEO項目設定失敗: {error}")
-
-                        asyncio.run(apply_playwright_updates())
-                    except Exception as e:
-                        logger.warning(f"  Playwright処理エラー（続行）: {e}")
-
-                # スプレッドシート更新
-                # 84列構造 (A-CF): B列=登録状況, E列=カラーミー商品URL, CE列=同期日時
-                # カテゴリー・グループ: AO-AT列(6列), 型番: AU列, 商品説明: BG-BH列, SEO: BU-BW列
-                timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
-                colorme_url = f"https://www.ybx.jp/?pid={new_product_id}"
-                batch_data = [
-                    {
-                        'range': cell_ref(Col.REGISTRATION_STATUS, row_idx),  # B列: カラーミー登録状況
-                        'values': [["登録済"]]
-                    },
-                    {
-                        'range': cell_ref(Col.COLORME_URL, row_idx),  # E列: カラーミー商品URL
-                        'values': [[colorme_url]]
-                    },
-                    {
-                        'range': cell_ref(Col.CM_SYNC_AT, row_idx),  # CE列: 同期日時
-                        'values': [[timestamp]]
+                if existing_model_number:
+                    model_number = existing_model_number
+                    logger.info(f"  型番: 既存値を使用 → {model_number}")
+                else:
+                    # ModelNumberGeneratorでAI生成（仕入れ先コード付き、重複チェックあり）
+                    quantity = int(get_cell_float(row, Col.QUANTITY, 1.0)) or 1
+                    product_info_for_model = {
+                        "name": product_name,
+                        "specs": specs,
+                        "description": desc_en or "",
                     }
-                ]
+                    model_number = model_number_generator.generate(product_info_for_model, quantity, supplier_site)
+                    if model_number:
+                        logger.info(f"  型番: AI生成成功 → {model_number}")
+                    else:
+                        # フォールバック: 仕入れ先商品IDを使用
+                        model_number = supplier_id
+                        logger.info(f"  型番: フォールバック（仕入れ先ID使用） → {model_number}")
 
-                # カテゴリー・グループ情報をスプレッドシートに保存（AO-AT列: 6列）
-                if category_big:
-                    batch_data.append({
-                        'range': cell_ref(Col.CM_CATEGORY_BIG, row_idx),  # AO列: 大カテゴリーID
-                        'values': [[str(category_big)]]
-                    })
-                    # AP列: 大カテゴリー名称を取得して保存
-                    cat_big_name = ""
-                    for (id_big, id_small), (name_big, name_small) in category_name_map.items():
-                        if id_big == category_big:
-                            cat_big_name = name_big
-                            break
-                    if cat_big_name:
+                # 画像URL取得（BK-BT列: 画像URL1-10）
+                image_urls = []
+                # 画像URL1-10（BK-BT列: Col.IMAGE_1〜Col.IMAGE_10）
+                for i in range(10):
+                    img_idx = Col.IMAGE_1.index + i
+                    img_url = row[img_idx].strip() if img_idx < len(row) and row[img_idx] else ""
+                    if img_url and img_url not in image_urls:
+                        image_urls.append(img_url)
+
+                # 価格関連情報を取得（スプレッドシートの値を優先）
+                # AH列: 販売価格, AI列: 定価, AJ列: 会員価格, AK列: 原価
+                sales_price = int(get_cell_float(row, Col.CM_SALES_PRICE))
+                regular_price = int(get_cell_float(row, Col.CM_REGULAR_PRICE))
+                members_price = int(get_cell_float(row, Col.CM_MEMBERS_PRICE))
+                cost = int(get_cell_float(row, Col.CM_COST))
+                delivery_charge = int(get_cell_float(row, Col.CM_DELIVERY_CHARGE))
+
+                # スプレッドシートに値がない場合はデフォルト計算
+                if sales_price <= 0:
+                    # 販売価格（マージン10%を加算）
+                    sales_price = int(price_jpy * 1.1)
+                if regular_price <= 0:
+                    # 定価は販売価格と同じ
+                    regular_price = sales_price
+                if cost <= 0:
+                    # 原価は仕入れ価格
+                    cost = int(price_jpy)
+
+                logger.info(f"  価格: 販売={sales_price:,}, 定価={regular_price:,}, 会員={members_price:,}, 原価={cost:,}, 個別送料={delivery_charge:,}")
+
+                # ColorMeProduct作成
+                colorme_product = ColorMeProduct(
+                    product_id=0,  # 新規登録
+                    name=cm_product_name,  # CM商品名（日本語）を使用
+                    current_price=sales_price,  # 販売価格
+                    colorme_url="",
+                    source_url=product_url,
+                    quantity=1,
+                    margin_rate=1.1,
+                    regular_price=regular_price,  # 定価
+                    members_price=members_price,  # 会員価格
+                    cost=cost,  # 原価
+                    delivery_charge=delivery_charge,  # 個別送料
+                    category_id_big=category_big,
+                    category_id_small=category_small,
+                    group_ids=group_ids,  # グループIDを追加
+                    stock_quantity=10,  # デフォルト在庫数
+                    stock_managed=True,
+                    soldout_display=True,
+                    display_control="表示",
+                    expl=description,
+                    simple_expl=simple_description,  # 簡易説明
+                    page_title=page_title,  # ページタイトル（SEO）
+                    meta_description=meta_description,  # メタディスクリプション（SEO）
+                    meta_keywords=meta_keywords,  # メタキーワード（SEO）
+                    image_urls=image_urls[:10],
+                    model_number=model_number,  # 型番（AI生成または仕入れ先ID）
+                )
+
+                if dry_run:
+                    logger.info(f"  [DRY-RUN] 登録予定: {cm_product_name[:30]}... 価格: ¥{sales_price:,}")
+                    logger.info(f"    カテゴリー: 大={category_big}, 小={category_small}, グループ={group_ids}")
+                    success_count += 1
+                    continue
+
+                # カラーミーAPI登録
+                new_product_id, error = colorme_client.create_product(colorme_product)
+
+                if new_product_id > 0:
+                    logger.info(f"  登録成功: カラーミー商品ID={new_product_id}")
+
+                    # Playwright経由で個別送料、SEO項目、画像アップロードを設定
+                    # （カラーミーAPIでは個別送料とSEO項目が設定できない、画像アップロードも非対応）
+                    needs_delivery = delivery_charge > 0
+                    needs_seo = page_title or meta_description or meta_keywords
+                    needs_images = upload_images and image_urls
+                    playwright_updates_needed = needs_delivery or needs_seo or needs_images
+
+                    if playwright_updates_needed and uploader:
+                        logger.info(f"  Playwright経由で追加設定を適用中...")
+                        try:
+                            # 個別送料を設定
+                            if needs_delivery:
+                                success, error = await uploader.update_delivery_charge(new_product_id, delivery_charge)
+                                if success:
+                                    logger.info(f"    個別送料設定成功: {delivery_charge}円")
+                                else:
+                                    logger.warning(f"    個別送料設定失敗: {error}")
+
+                            # SEO項目を設定
+                            if needs_seo:
+                                success, error = await uploader.update_seo_fields(
+                                    new_product_id,
+                                    page_title=page_title,
+                                    meta_description=meta_description,
+                                    meta_keywords=meta_keywords
+                                )
+                                if success:
+                                    logger.info(f"    SEO項目設定成功")
+                                else:
+                                    logger.warning(f"    SEO項目設定失敗: {error}")
+
+                            # 画像アップロード（--upload-images指定時のみ）
+                            if needs_images:
+                                logger.info(f"    画像アップロード中（{len(image_urls)}枚）...")
+                                result = await uploader.upload_product_images(new_product_id, image_urls)
+                                if result.success:
+                                    logger.info(f"    画像アップロード成功: {len(result.uploaded_urls)}枚")
+                                else:
+                                    logger.warning(f"    画像アップロード失敗: {result.error_message}")
+                        except Exception as e:
+                            logger.warning(f"  Playwright処理エラー（続行）: {e}")
+
+                    # スプレッドシート更新
+                    # 84列構造 (A-CF): B列=登録状況, E列=カラーミー商品URL, CE列=同期日時
+                    # カテゴリー・グループ: AO-AT列(6列), 型番: AU列, 商品説明: BG-BH列, SEO: BU-BW列
+                    timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+                    colorme_url = f"https://www.ybx.jp/?pid={new_product_id}"
+                    batch_data = [
+                        {
+                            'range': cell_ref(Col.REGISTRATION_STATUS, row_idx),  # B列: カラーミー登録状況
+                            'values': [["登録済"]]
+                        },
+                        {
+                            'range': cell_ref(Col.COLORME_URL, row_idx),  # E列: カラーミー商品URL
+                            'values': [[colorme_url]]
+                        },
+                        {
+                            'range': cell_ref(Col.CM_SYNC_AT, row_idx),  # CE列: 同期日時
+                            'values': [[timestamp]]
+                        }
+                    ]
+
+                    # カテゴリー・グループ情報をスプレッドシートに保存（AO-AT列: 6列）
+                    if category_big:
                         batch_data.append({
-                            'range': cell_ref(Col.CM_CATEGORY_BIG_NAME, row_idx),  # AP列: 大カテゴリー名称
-                            'values': [[cat_big_name]]
+                            'range': cell_ref(Col.CM_CATEGORY_BIG, row_idx),  # AO列: 大カテゴリーID
+                            'values': [[str(category_big)]]
                         })
-                if category_small:
-                    batch_data.append({
-                        'range': cell_ref(Col.CM_CATEGORY_SMALL, row_idx),  # AQ列: 小カテゴリーID
-                        'values': [[str(category_small)]]
-                    })
-                    # AR列: 小カテゴリー名称を取得して保存
-                    cat_small_name = category_name_map.get((category_big, category_small), ("", ""))[1]
-                    if cat_small_name:
+                        # AP列: 大カテゴリー名称を取得して保存
+                        cat_big_name = ""
+                        for (id_big, id_small), (name_big, name_small) in category_name_map.items():
+                            if id_big == category_big:
+                                cat_big_name = name_big
+                                break
+                        if cat_big_name:
+                            batch_data.append({
+                                'range': cell_ref(Col.CM_CATEGORY_BIG_NAME, row_idx),  # AP列: 大カテゴリー名称
+                                'values': [[cat_big_name]]
+                            })
+                    if category_small:
                         batch_data.append({
-                            'range': cell_ref(Col.CM_CATEGORY_SMALL_NAME, row_idx),  # AR列: 小カテゴリー名称
-                            'values': [[cat_small_name]]
+                            'range': cell_ref(Col.CM_CATEGORY_SMALL, row_idx),  # AQ列: 小カテゴリーID
+                            'values': [[str(category_small)]]
                         })
-                if group_ids:
-                    batch_data.append({
-                        'range': cell_ref(Col.CM_GROUP_ID, row_idx),  # AS列: グループID
-                        # 先頭にシングルクォートを付けてテキストとして保存（桁区切り防止）
-                        'values': [["'" + ",".join(str(g) for g in group_ids)]]
-                    })
-                    # AT列: グループ名を取得して保存
-                    group_names = [group_name_map.get(g, "") for g in group_ids]
-                    group_names = [n for n in group_names if n]  # 空文字を除外
-                    if group_names:
+                        # AR列: 小カテゴリー名称を取得して保存
+                        cat_small_name = category_name_map.get((category_big, category_small), ("", ""))[1]
+                        if cat_small_name:
+                            batch_data.append({
+                                'range': cell_ref(Col.CM_CATEGORY_SMALL_NAME, row_idx),  # AR列: 小カテゴリー名称
+                                'values': [[cat_small_name]]
+                            })
+                    if group_ids:
                         batch_data.append({
-                            'range': cell_ref(Col.CM_GROUP_NAME, row_idx),  # AT列: グループ名
-                            'values': [[",".join(group_names)]]
+                            'range': cell_ref(Col.CM_GROUP_ID, row_idx),  # AS列: グループID
+                            # 先頭にシングルクォートを付けてテキストとして保存（桁区切り防止）
+                            'values': [["'" + ",".join(str(g) for g in group_ids)]]
+                        })
+                        # AT列: グループ名を取得して保存
+                        group_names = [group_name_map.get(g, "") for g in group_ids]
+                        group_names = [n for n in group_names if n]  # 空文字を除外
+                        if group_names:
+                            batch_data.append({
+                                'range': cell_ref(Col.CM_GROUP_NAME, row_idx),  # AT列: グループ名
+                                'values': [[",".join(group_names)]]
+                            })
+
+                    # 型番をスプレッドシートに保存（AU列）- AI生成された場合のみ
+                    if model_number and not existing_model_number:
+                        batch_data.append({
+                            'range': cell_ref(Col.CM_MODEL_NUMBER, row_idx),  # AU列: 型番
+                            'values': [[model_number]]
                         })
 
-                # 型番をスプレッドシートに保存（AU列）- AI生成された場合のみ
-                if model_number and not existing_model_number:
-                    batch_data.append({
-                        'range': cell_ref(Col.CM_MODEL_NUMBER, row_idx),  # AU列: 型番
-                        'values': [[model_number]]
-                    })
+                    # 商品説明をスプレッドシートに保存（BG-BH列）
+                    if description and not existing_cm_expl:
+                        batch_data.append({
+                            'range': cell_ref(Col.CM_EXPL, row_idx),  # BG列: 商品説明
+                            'values': [[description]]
+                        })
+                    if simple_description and not existing_simple_expl:
+                        batch_data.append({
+                            'range': cell_ref(Col.CM_SIMPLE_EXPL, row_idx),  # BH列: 簡易説明
+                            'values': [[simple_description]]
+                        })
 
-                # 商品説明をスプレッドシートに保存（BG-BH列）
-                if description and not existing_cm_expl:
-                    batch_data.append({
-                        'range': cell_ref(Col.CM_EXPL, row_idx),  # BG列: 商品説明
-                        'values': [[description]]
-                    })
-                if simple_description and not existing_simple_expl:
-                    batch_data.append({
-                        'range': cell_ref(Col.CM_SIMPLE_EXPL, row_idx),  # BH列: 簡易説明
-                        'values': [[simple_description]]
-                    })
+                    # SEO項目をスプレッドシートに保存（BU-BW列）
+                    if page_title and not existing_page_title:
+                        batch_data.append({
+                            'range': cell_ref(Col.CM_PAGE_TITLE, row_idx),  # BU列: ページタイトル
+                            'values': [[page_title]]
+                        })
+                    if meta_description and not existing_meta_desc:
+                        batch_data.append({
+                            'range': cell_ref(Col.CM_META_DESC, row_idx),  # BV列: メタディスクリプション
+                            'values': [[meta_description]]
+                        })
+                    if meta_keywords and not existing_meta_keywords:
+                        batch_data.append({
+                            'range': cell_ref(Col.CM_META_KEYWORDS, row_idx),  # BW列: メタキーワード
+                            'values': [[meta_keywords]]
+                        })
 
-                # SEO項目をスプレッドシートに保存（BU-BW列）
-                if page_title and not existing_page_title:
-                    batch_data.append({
-                        'range': cell_ref(Col.CM_PAGE_TITLE, row_idx),  # BU列: ページタイトル
-                        'values': [[page_title]]
-                    })
-                if meta_description and not existing_meta_desc:
-                    batch_data.append({
-                        'range': cell_ref(Col.CM_META_DESC, row_idx),  # BV列: メタディスクリプション
-                        'values': [[meta_description]]
-                    })
-                if meta_keywords and not existing_meta_keywords:
-                    batch_data.append({
-                        'range': cell_ref(Col.CM_META_KEYWORDS, row_idx),  # BW列: メタキーワード
-                        'values': [[meta_keywords]]
-                    })
+                    try:
+                        batch_update_with_retry(bs_sheet, batch_data)
+                    except Exception as e:
+                        logger.error(f"  スプレッドシート更新失敗（続行）: {e}")
 
-                bs_sheet.batch_update(batch_data, value_input_option='RAW')
+                    success_count += 1
+                else:
+                    logger.error(f"  登録失敗: {error}")
+                    error_count += 1
 
-                success_count += 1
-            else:
-                logger.error(f"  登録失敗: {error}")
-                error_count += 1
+                # API制限対策: 1秒待機
+                time.sleep(1)
 
-            # API制限対策: 1秒待機
-            time.sleep(1)
+        finally:
+            # Playwrightブラウザセッションを終了
+            if uploader:
+                await uploader.__aexit__(None, None, None)
+                logger.info("Playwrightブラウザセッション終了")
 
         return (success_count, error_count, skip_count)
 
@@ -576,6 +637,7 @@ def main():
     )
     parser.add_argument("--dry-run", action="store_true", help="実際の登録は行わない")
     parser.add_argument("--limit", type=int, help="処理する最大件数")
+    parser.add_argument("--upload-images", action="store_true", help="画像アップロードを有効化（デフォルト: OFF）")
     parser.add_argument("--verbose", "-v", action="store_true", help="詳細ログ出力")
     parser.add_argument("--skip-sync", action="store_true", help="仕入れ先一覧同期をスキップ")
 
@@ -593,6 +655,8 @@ def main():
     logger.info("採用商品カラーミー自動登録開始")
     if args.dry_run:
         logger.info("※ ドライランモード（実際の登録は行いません）")
+    if args.upload_images:
+        logger.info("※ 画像アップロード有効")
     logger.info("=" * 60)
 
     start_time = datetime.now()
@@ -609,10 +673,11 @@ def main():
         sys.exit(1)
 
     # 採用商品をカラーミーに登録
-    success, error, skip = register_adopted_products(
+    success, error, skip = asyncio.run(register_adopted_products(
         dry_run=args.dry_run,
-        limit=args.limit
-    )
+        limit=args.limit,
+        upload_images=args.upload_images
+    ))
 
     logger.info("-" * 60)
     logger.info(f"カラーミー登録結果: 成功={success}件, 失敗={error}件, スキップ={skip}件")
