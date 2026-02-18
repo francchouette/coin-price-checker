@@ -154,6 +154,9 @@ class Config:
     SHEET_MASTER_BRITANNIA: str = "商品マスタ_Britannia"
     SHEET_MASTER_APMEX: str = "商品マスタ_APMEX"
 
+    # APMEX商品ページ一覧シート名
+    SHEET_APMEX_PRODUCTS: str = "APMEX商品ページ一覧"
+
     # APMEXカテゴリーシート名
     SHEET_APMEX_CATEGORIES: str = "APMEXカテゴリー"
 
