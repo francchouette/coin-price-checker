@@ -9,8 +9,9 @@ APMEXの全商品ページURLとカテゴリー情報を取得し、
   bs_sheet_columns.py の Col / Formula をそのまま使用する。
 
 取得方式:
-  Bright Data Browser API 経由で HTML スクレイピング。
-  APMEX は Cloudflare によるボット検出があるため必須。
+  直接HTTPリクエスト（requests）でスクレイピング。
+  カテゴリ一覧: XHR（X-Requested-With: XMLHttpRequest）でJSON取得
+  商品詳細: Schema.org JSON-LD + HTML解析
 
 コマンド例:
   python -m src.apmex_products
@@ -19,16 +20,18 @@ APMEXの全商品ページURLとカテゴリー情報を取得し、
 """
 
 import argparse
-import asyncio
+import json
 import logging
 import re
+import signal
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
+import requests
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -46,7 +49,6 @@ from src.add_product import (
 from src.colorme import ColorMeClient
 from src.bs_sheet_columns import Col, Formula, get_cell, cell_ref
 from src.bullionstar_products import generate_supplier_id
-from src.crawl_apmex import BrightDataBrowserClient, parse_html_products
 
 logger = logging.getLogger(__name__)
 
@@ -56,19 +58,110 @@ JST = timezone(timedelta(hours=9))
 # カテゴリ定義
 # ---------------------------------------------------------------------------
 APMEX_CATEGORIES = [
-    {"slug": "25000/gold-coins", "name": "gold-coins", "top": "Gold", "parent": "Gold Coins"},
-    {"slug": "26000/silver-coins", "name": "silver-coins", "top": "Silver", "parent": "Silver Coins"},
-    {"slug": "27000/platinum", "name": "platinum", "top": "Platinum", "parent": "Platinum Coins"},
-    {"slug": "28000/palladium", "name": "palladium", "top": "Palladium", "parent": "Palladium Coins"},
-    {"slug": "29000/copper", "name": "copper", "top": "Copper", "parent": "Copper Coins"},
-    {"slug": "35000/gold-bars", "name": "gold-bars", "top": "Gold", "parent": "Gold Bars"},
-    {"slug": "36000/silver-bars", "name": "silver-bars", "top": "Silver", "parent": "Silver Bars"},
-    {"slug": "37000/platinum-bars", "name": "platinum-bars", "top": "Platinum", "parent": "Platinum Bars"},
-    {"slug": "38000/palladium-bars", "name": "palladium-bars", "top": "Palladium", "parent": "Palladium Bars"},
+    {"slug": "10010/gold-coins", "name": "gold-coins", "top": "Gold", "parent": "Gold Coins"},
+    {"slug": "20005/silver-coins", "name": "silver-coins", "top": "Silver", "parent": "Silver Coins"},
+    {"slug": "30040/platinum-coins", "name": "platinum-coins", "top": "Platinum", "parent": "Platinum Coins"},
+    {"slug": "32603/palladium-coins", "name": "palladium-coins", "top": "Palladium", "parent": "Palladium Coins"},
+    {"slug": "34001/copper-bullion", "name": "copper-bullion", "top": "Copper", "parent": "Copper Coins"},
+    {"slug": "19000/gold-bars-rounds", "name": "gold-bars", "top": "Gold", "parent": "Gold Bars"},
+    {"slug": "25400/silver-bars", "name": "silver-bars", "top": "Silver", "parent": "Silver Bars"},
+    {"slug": "32050/platinum-bars-rounds", "name": "platinum-bars", "top": "Platinum", "parent": "Platinum Bars"},
+    {"slug": "33500/palladium-bars-rounds", "name": "palladium-bars", "top": "Palladium", "parent": "Palladium Bars"},
 ]
 
 BASE_URL = "https://www.apmex.com"
-WAIT_SELECTOR = ".mod-product-card, [class*='product-item'], .product-list"
+
+# HTTP セッション設定
+_HTTP_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+                  'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Connection': 'keep-alive',
+}
+
+
+def _create_http_session() -> requests.Session:
+    """APMEX直接アクセス用HTTPセッションを作成"""
+    session = requests.Session()
+    session.headers.update(_HTTP_HEADERS)
+    return session
+
+
+# ---------------------------------------------------------------------------
+# AI生成タイムアウトユーティリティ
+# ---------------------------------------------------------------------------
+AI_TIMEOUT_SECONDS = 60
+
+
+def _run_with_timeout(func, *args, timeout=AI_TIMEOUT_SECONDS, default=None, **kwargs):
+    """関数をタイムアウト付きで実行する。タイムアウト時はdefaultを返す。"""
+    def _handler(signum, frame):
+        raise TimeoutError(f"{timeout}秒タイムアウト")
+
+    old_handler = signal.signal(signal.SIGALRM, _handler)
+    signal.alarm(timeout)
+    try:
+        result = func(*args, **kwargs)
+        signal.alarm(0)
+        return result
+    except TimeoutError:
+        logger.warning(f"    AI生成タイムアウト ({timeout}秒)")
+        return default
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
+
+
+# ---------------------------------------------------------------------------
+# 商品一覧キャッシュ
+# ---------------------------------------------------------------------------
+CACHE_DIR = Path(__file__).parent.parent / "cache"
+CACHE_TTL_HOURS = 24
+
+
+def _get_category_cache_path(cat_name: str) -> Path:
+    """カテゴリ別キャッシュファイルパスを返す"""
+    return CACHE_DIR / f"apmex_{cat_name}.json"
+
+
+def _save_category_cache(cat_name: str, products: list) -> None:
+    """1カテゴリ分の商品リストをキャッシュに保存"""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_path = _get_category_cache_path(cat_name)
+    cache_data = {
+        "cached_at": datetime.now(JST).isoformat(),
+        "category": cat_name,
+        "count": len(products),
+        "products": [asdict(p) for p in products],
+    }
+    cache_path.write_text(json.dumps(cache_data, ensure_ascii=False, indent=2))
+    logger.info(f"  キャッシュ保存: {cat_name} ({len(products)}件)")
+
+
+def _load_category_cache(cat_name: str) -> Optional[list]:
+    """カテゴリ別キャッシュを読み込む。期限切れ・なければ None"""
+    cache_path = _get_category_cache_path(cat_name)
+    if not cache_path.exists():
+        return None
+
+    try:
+        cache_data = json.loads(cache_path.read_text())
+        cached_at = datetime.fromisoformat(cache_data["cached_at"])
+        age = datetime.now(JST) - cached_at
+        age_hours = age.total_seconds() / 3600
+
+        if age_hours > CACHE_TTL_HOURS:
+            logger.info(f"  キャッシュ期限切れ: {cat_name} ({age_hours:.1f}時間経過)")
+            return None
+
+        products = [ApmexProduct(**item) for item in cache_data["products"]]
+        logger.info(f"  キャッシュから読み込み: {cat_name} ({len(products)}件, {age_hours:.1f}時間前)")
+        return products
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.warning(f"  キャッシュ読み込みエラー ({cat_name}): {e}")
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -146,8 +239,127 @@ _IMAGE_HIGH_RES = 'width=900&height=900'
 _STOCK_OUT_PATTERNS = ['out of stock', 'sold out', 'unavailable', 'no longer available']
 
 
+# ---------------------------------------------------------------------------
+# 商品名からカテゴリ自動判定
+# ---------------------------------------------------------------------------
+# 金属種別キーワード（優先度順: 長いキーワードを先に判定）
+_METAL_KEYWORDS = [
+    # Platinum
+    ("platinum", "Platinum"),
+    ("1/10 oz pt", "Platinum"),
+    ("1/4 oz pt", "Platinum"),
+    ("1/2 oz pt", "Platinum"),
+    ("1 oz pt", "Platinum"),
+    # Palladium
+    ("palladium", "Palladium"),
+    # Copper
+    ("copper", "Copper"),
+    # Gold（silver を含まないことを確認）
+    ("gold", "Gold"),
+    # Silver（化学記号 Ag 含む）
+    ("silver", "Silver"),
+]
+
+# 商品名に "Silver" がなくても銀貨として判定する米国歴史的銀貨パターン
+_SILVER_COIN_PATTERNS = [
+    "morgan dollar", "morgan dollars",
+    "mercury dime", "mercury dimes",
+    "walking liberty", "franklin half", "franklin halves",
+    "kennedy half", "barber dime", "barber dimes",
+    "barber quarter", "barber quarters", "barber half", "barber halves",
+    "standing liberty quarter", "standing liberty quarters",
+    "peace dollar", "peace dollars",
+    "seated liberty",
+    "90% ", "40% ",  # "90% Mercury Dime" 等（junk silver）
+    " ag ", " ag$",  # 化学記号 Ag（"1 oz Ag" 等）
+]
+
+# URL パスからの金属判定
+_URL_METAL_PATTERNS = [
+    (r'/gold-coins', "Gold"),
+    (r'/gold-bars', "Gold"),
+    (r'/silver-coins', "Silver"),
+    (r'/silver-bars', "Silver"),
+    (r'/platinum', "Platinum"),
+    (r'/palladium', "Palladium"),
+    (r'/copper', "Copper"),
+]
+
+# バー/ラウンド判定キーワード
+_BAR_KEYWORDS = [" bar ", " bar,", " bars ", " bars,", " round ", " round,",
+                 " ingot", " kilo ", " kilogram"]
+
+
+def detect_category_from_name(name: str, url: str = "") -> tuple[str, str]:
+    """商品名とURLから (top_category, parent_category) を判定する。
+
+    Returns:
+        ("Gold", "Gold Coins"), ("Silver", "Silver Bars") 等
+    """
+    name_lower = name.lower()
+    url_lower = url.lower()
+
+    # 1. 商品名から金属種別を判定
+    metal = ""
+    for keyword, metal_type in _METAL_KEYWORDS:
+        if keyword in name_lower:
+            metal = metal_type
+            break
+
+    # 1.5. 歴史的銀貨パターン（商品名に "Silver" がないケース）
+    if not metal:
+        for pattern in _SILVER_COIN_PATTERNS:
+            if pattern in name_lower:
+                metal = "Silver"
+                break
+
+    # 2. 商品名で判定できない場合、URLから判定
+    if not metal:
+        for pattern, metal_type in _URL_METAL_PATTERNS:
+            if pattern in url_lower:
+                metal = metal_type
+                break
+
+    # 3. それでも判定できない場合、デフォルト
+    if not metal:
+        metal = "Other"
+
+    # 4. バー or コイン判定
+    is_bar = any(kw in f" {name_lower} " or name_lower.endswith(kw.strip())
+                 for kw in _BAR_KEYWORDS)
+
+    if is_bar:
+        product_type = f"{metal} Bars"
+    else:
+        product_type = f"{metal} Coins"
+
+    return metal, product_type
+
+
+def _parse_jsonld_from_html(html: str) -> dict:
+    """HTMLからSchema.org JSON-LDのProduct情報を抽出"""
+    soup = BeautifulSoup(html, 'html.parser')
+    for script in soup.select('script[type="application/ld+json"]'):
+        try:
+            data = json.loads(script.string)
+            if isinstance(data, dict):
+                if data.get('@type') == 'Product':
+                    return data
+                if '@graph' in data:
+                    for item in data['@graph']:
+                        if isinstance(item, dict) and item.get('@type') == 'Product':
+                            return item
+            elif isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict) and item.get('@type') == 'Product':
+                        return item
+        except (json.JSONDecodeError, TypeError):
+            continue
+    return {}
+
+
 def _parse_detail_html(html: str, product_name: str = "") -> dict:
-    """詳細ページHTMLから各種情報を抽出"""
+    """詳細ページHTMLから各種情報を抽出（Schema.org JSON-LD優先）"""
     soup = BeautifulSoup(html, 'html.parser')
     result = {
         "price": None,
@@ -160,13 +372,71 @@ def _parse_detail_html(html: str, product_name: str = "") -> dict:
         "images": [],
     }
 
-    # --- 価格 ---
-    # 割引価格を優先
-    disc = soup.select_one('.price.discounted, .discounted-price')
-    if disc:
-        m = _PRICE_RE.search(disc.get_text())
-        if m:
-            result["price"] = float(m.group(1).replace(",", ""))
+    # === Schema.org JSON-LD から抽出（優先） ===
+    jsonld = _parse_jsonld_from_html(html)
+    if jsonld:
+        # 価格: offers.price or priceSpecification
+        offers = jsonld.get('offers', {})
+        if isinstance(offers, list):
+            offers = offers[0] if offers else {}
+
+        price_str = offers.get('price', '')
+        if price_str:
+            try:
+                # "$205.87 USD" -> 205.87
+                clean = re.sub(r'[^\d.]', '', str(price_str).split()[0] if ' ' in str(price_str) else str(price_str))
+                result["price"] = float(clean)
+            except (ValueError, TypeError, IndexError):
+                pass
+
+        # priceSpecification からクレジットカード価格を取得
+        if not result["price"]:
+            price_specs = offers.get('priceSpecification', [])
+            if isinstance(price_specs, list):
+                for spec in price_specs:
+                    name_lower = spec.get('name', '').lower()
+                    if 'credit' in name_lower or 'paypal' in name_lower:
+                        try:
+                            result["price"] = float(spec.get('price', 0))
+                        except (ValueError, TypeError):
+                            pass
+                        break
+                # フォールバック: 最初の価格仕様
+                if not result["price"] and price_specs:
+                    try:
+                        result["price"] = float(price_specs[0].get('price', 0))
+                    except (ValueError, TypeError):
+                        pass
+
+        # 在庫状況
+        availability = (offers.get('availability', '') or '').lower()
+        if 'instock' in availability:
+            result["in_stock"] = True
+        elif 'outofstock' in availability:
+            result["in_stock"] = False
+
+        # 説明
+        desc = jsonld.get('description', '')
+        if desc:
+            result["description"] = str(desc)[:2000]
+
+        # 画像
+        images = jsonld.get('image', [])
+        if isinstance(images, str):
+            images = [images]
+        elif isinstance(images, dict):
+            images = [images.get('url', '')]
+        jsonld_images = [img for img in images if img]
+
+    # === HTML から補完 ===
+
+    # --- 価格（JSON-LDで取れなかった場合）---
+    if result["price"] is None:
+        disc = soup.select_one('.price.discounted, .discounted-price')
+        if disc:
+            m = _PRICE_RE.search(disc.get_text())
+            if m:
+                result["price"] = float(m.group(1).replace(",", ""))
 
     if result["price"] is None:
         for sel in ['.product-price-value', '.product-buy-price', '.add-to-cart-price',
@@ -185,27 +455,20 @@ def _parse_detail_html(html: str, product_name: str = "") -> dict:
                     result["price"] = float(m.group(1).replace(",", ""))
                     break
 
-    if result["price"] is None:
-        # ページ全体からの最初の $ 金額
-        m = _PRICE_RE.search(soup.get_text())
-        if m:
-            val = float(m.group(1).replace(",", ""))
-            if val > 1:
-                result["price"] = val
-
-    # --- 在庫 ---
+    # --- 在庫（HTML テキストからの追加チェック）---
     page_text = soup.get_text().lower()
     for pat in _STOCK_OUT_PATTERNS:
         if pat in page_text:
             result["in_stock"] = False
             break
 
-    # --- 説明 ---
-    for sel in _DESC_SELECTORS:
-        el = soup.select_one(sel)
-        if el:
-            result["description"] = el.get_text(separator=' ', strip=True)[:2000]
-            break
+    # --- 説明（HTML）---
+    if not result["description"]:
+        for sel in _DESC_SELECTORS:
+            el = soup.select_one(sel)
+            if el:
+                result["description"] = el.get_text(separator=' ', strip=True)[:2000]
+                break
 
     # --- スペック ---
     for sel in _SPEC_SELECTORS:
@@ -215,7 +478,6 @@ def _parse_detail_html(html: str, product_name: str = "") -> dict:
             break
 
     # --- スペック表からの追加抽出（製造国・発行数） ---
-    spec_text = result["specs"].lower()
     for row in soup.select('tr, .spec-row, .attribute-row'):
         cells = row.find_all(['td', 'th', 'dt', 'dd', 'span'])
         for i, cell in enumerate(cells):
@@ -242,25 +504,131 @@ def _parse_detail_html(html: str, product_name: str = "") -> dict:
                             result["year"] = yr
 
     # --- 画像（最大10枚） ---
-    # APMEX の商品ギャラリーは div.carousel-inner > div.item > a.img > img
-    # サムネイル(65x65)を高解像度(900x900)に置換して取得
+    # 1. HTML ギャラリーから取得
     seen_base = set()
     for img in soup.select('div.carousel-inner div.item a.img img'):
         src = img.get('src') or ''
         if not src or 'images/products/' not in src:
             continue
-        # ベースURL（サイズパラメータ除去）で重複チェック
         base = _IMAGE_SIZE_RE.sub('', src)
         if base in seen_base:
             continue
         seen_base.add(base)
-        # 高解像度に変換
         src = _IMAGE_SIZE_RE.sub(_IMAGE_HIGH_RES, src)
         result["images"].append(src)
         if len(result["images"]) >= 10:
             break
 
+    # 2. images-apmex.com の画像を追加検索
+    if len(result["images"]) < 10:
+        for img in soup.select('img[src*="images-apmex.com"]'):
+            src = img.get('src') or ''
+            if not src:
+                continue
+            base = _IMAGE_SIZE_RE.sub('', src)
+            if base in seen_base:
+                continue
+            seen_base.add(base)
+            src = _IMAGE_SIZE_RE.sub(_IMAGE_HIGH_RES, src)
+            result["images"].append(src)
+            if len(result["images"]) >= 10:
+                break
+
+    # 3. JSON-LD の画像をフォールバック
+    if not result["images"] and jsonld:
+        result["images"] = jsonld_images[:10]
+
     return result
+
+
+def _parse_category_products(html: str, timestamp: str) -> list['ApmexProduct']:
+    """カテゴリページ（またはXHRレスポンス）のHTMLから商品リストを抽出"""
+    soup = BeautifulSoup(html, 'html.parser')
+    products = []
+
+    items = soup.select('.mod-product-card')
+    if not items:
+        items = soup.select('[class*="product-card"]')
+
+    for item in items:
+        # URL
+        link = item.select_one('a.item-link[href]')
+        if not link:
+            link = item.select_one('a[href*="/product/"]')
+        if not link:
+            # タイトル付きリンクにフォールバック
+            link = item.select_one('a[title][href*="/product/"]')
+        if not link:
+            continue
+
+        href = link.get('href', '')
+        if not href or '/product/' not in href:
+            continue
+        url = href if href.startswith('http') else f"{BASE_URL}{href}"
+
+        # 商品名
+        name = link.get('data-product-name', '') or link.get('title', '')
+        if not name:
+            title_elem = item.select_one('.mod-product-title')
+            if title_elem:
+                name = title_elem.get_text(strip=True)
+        if not name or len(name) < 3:
+            continue
+
+        # 価格
+        price = None
+        text = item.get_text()
+        match = _PRICE_RE.search(text)
+        if match:
+            price = float(match.group(1).replace(',', ''))
+
+        # 商品ID
+        product_id = link.get('data-product-id', '')
+        if not product_id:
+            m = re.search(r'/product/(\d+)', url)
+            if m:
+                product_id = m.group(1)
+
+        # 画像
+        img_urls = []
+        for img in item.select('img[src]'):
+            src = img.get('src') or img.get('data-src')
+            if src and not src.startswith('data:'):
+                full_src = src if src.startswith('http') else f"{BASE_URL}{src}"
+                if full_src not in img_urls:
+                    img_urls.append(full_src)
+
+        # 在庫
+        in_stock = True
+        text_lower = text.lower()
+        for pat in _STOCK_OUT_PATTERNS:
+            if pat in text_lower:
+                in_stock = False
+                break
+
+        # カテゴリ判定
+        detected_top, detected_parent = detect_category_from_name(name, url)
+
+        ap = ApmexProduct(
+            name=name,
+            url=url,
+            top_category=detected_top,
+            parent_category=detected_parent,
+            child_category="",
+            location="",
+            in_stock=in_stock,
+            price=price if price and price > 0 else None,
+            product_id=product_id,
+            fetched_at=timestamp,
+        )
+        m = _YEAR_RE.match(name)
+        if m:
+            ap.mint_year = m.group(1)
+        if img_urls:
+            ap.image_url1 = img_urls[0]
+        products.append(ap)
+
+    return products
 
 
 # ---------------------------------------------------------------------------
@@ -292,19 +660,21 @@ def fetch_exchange_rates(exchange_type: str = "クレカ") -> dict[str, float]:
 
 
 # ---------------------------------------------------------------------------
-# 商品一覧取得（Bright Data Browser API）
+# 商品一覧取得（HTTP直接リクエスト）
 # ---------------------------------------------------------------------------
-async def fetch_product_list(
+def fetch_product_list(
     category_filter: Optional[str] = None,
     limit: Optional[int] = None,
+    use_cache: bool = True,
 ) -> list[ApmexProduct]:
-    """Bright Data Browser API 経由で APMEX 商品一覧を取得"""
+    """HTTP直接リクエストでAPMEX商品一覧を取得
 
-    ws_endpoint = Config.BRIGHTDATA_BROWSER_WS
-    if not ws_endpoint:
-        logger.error("BRIGHTDATA_BROWSER_WS が設定されていません")
-        return []
+    カテゴリページにXHR（X-Requested-With: XMLHttpRequest）を送信し、
+    JSONレスポンスから商品HTML断片を取得してパースする。
 
+    Args:
+        use_cache: True の場合、有効なキャッシュがあればそこから読み込む
+    """
     categories = APMEX_CATEGORIES
     if category_filter:
         categories = [c for c in categories if c["name"] == category_filter]
@@ -313,100 +683,145 @@ async def fetch_product_list(
             return []
 
     all_products: list[ApmexProduct] = []
+    session = None  # 必要になったら作成
     timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
 
     for cat in categories:
         if limit and len(all_products) >= limit:
             break
 
-        cat_slug = cat["slug"]
         cat_name = cat["name"]
         top_cat = cat["top"]
         parent_cat = cat["parent"]
         logger.info(f"\n=== カテゴリ: {cat_name} ({top_cat} > {parent_cat}) ===")
 
-        client = BrightDataBrowserClient(ws_endpoint)
-        try:
-            await client.connect()
-            url = f"{BASE_URL}/category/{cat_slug}"
-            logger.info(f"  初回アクセス: {url}")
-            html = await client.navigate(url, wait_selector=WAIT_SELECTOR)
-
-            if not html:
-                logger.warning(f"  HTML取得失敗、スキップ")
-                continue
-
-            # Cloudflare 検出
-            if 'Just a moment' in html or 'challenge-platform' in html:
-                logger.warning(f"  Cloudflare検出、カテゴリスキップ: {cat_name}")
-                continue
-
-            page_num = 1
-            while True:
-                raw_products = parse_html_products(html, cat_name, timestamp, BASE_URL)
-                logger.info(f"  ページ{page_num}: {len(raw_products)}件")
-
-                for rp in raw_products:
+        # カテゴリ別キャッシュチェック
+        if use_cache:
+            cached = _load_category_cache(cat_name)
+            if cached is not None:
+                for p in cached:
                     if limit and len(all_products) >= limit:
                         break
-                    # crawl_apmex の ApmexProduct → 本モジュールの ApmexProduct に変換
-                    ap = ApmexProduct(
-                        name=rp.name,
-                        url=rp.url,
-                        top_category=top_cat,
-                        parent_category=parent_cat,
-                        child_category="",
-                        location="",
-                        in_stock=rp.in_stock,
-                        price=rp.price if rp.price > 0 else None,
-                        product_id=rp.product_id,
-                        fetched_at=timestamp,
-                    )
-                    # 発行年を商品名から抽出
-                    m = _YEAR_RE.match(rp.name)
-                    if m:
-                        ap.mint_year = m.group(1)
-                    # リスト画像（1枚目）
-                    if rp.images:
-                        ap.image_url1 = rp.images[0] if len(rp.images) > 0 else ""
-                    all_products.append(ap)
+                    all_products.append(p)
+                continue
 
-                if limit and len(all_products) >= limit:
+        # キャッシュなし → HTTPで取得
+        if session is None:
+            session = _create_http_session()
+
+        cat_slug = cat["slug"]
+        cat_products: list[ApmexProduct] = []
+        page_num = 1
+        seen_urls_in_cat: set[str] = set()
+
+        while True:
+            if limit and len(all_products) + len(cat_products) >= limit:
+                break
+
+            url = f"{BASE_URL}/category/{cat_slug}"
+            if page_num > 1:
+                url += f"?page={page_num}"
+
+            try:
+                # XHRリクエスト（JSONレスポンス）
+                xhr_headers = {'X-Requested-With': 'XMLHttpRequest'}
+                resp = session.get(url, headers=xhr_headers, timeout=30)
+
+                if resp.status_code != 200:
+                    logger.warning(f"  ページ{page_num}: HTTPエラー {resp.status_code}")
                     break
 
-                # 次ページ
-                success, next_html = await client.click_next_page(wait_selector=WAIT_SELECTOR)
-                if not success or not next_html:
+                # Cloudflare 検出
+                if 'Just a moment' in resp.text[:500] or 'challenge-platform' in resp.text[:500]:
+                    logger.warning(f"  Cloudflare検出、カテゴリスキップ: {cat_name}")
                     break
-                html = next_html
+
+                # JSONレスポンスからproducts HTMLを取得
+                products_html = ""
+                try:
+                    data = resp.json()
+                    products_html = data.get('products', '')
+                except (json.JSONDecodeError, ValueError):
+                    # JSONでない場合はフルHTMLとして扱う
+                    products_html = resp.text
+
+                if not products_html:
+                    logger.info(f"  ページ{page_num}: レスポンスが空")
+                    break
+
+                page_products = _parse_category_products(products_html, timestamp)
+                logger.info(f"  ページ{page_num}: {len(page_products)}件")
+
+                if not page_products:
+                    logger.info(f"  商品なし → ページネーション終了")
+                    break
+
+                # 重複チェック
+                new_in_page = 0
+                for ap in page_products:
+                    if limit and len(all_products) + len(cat_products) >= limit:
+                        break
+                    if ap.url in seen_urls_in_cat:
+                        continue
+                    seen_urls_in_cat.add(ap.url)
+                    new_in_page += 1
+                    cat_products.append(ap)
+
+                if new_in_page == 0:
+                    logger.info(f"  全商品が既出 → ページネーション終了")
+                    break
+
                 page_num += 1
-                await asyncio.sleep(1)
+                time.sleep(1.5)
 
-        except Exception as e:
-            logger.error(f"  カテゴリ {cat_name} でエラー: {e}")
-        finally:
-            await client.close()
+            except requests.RequestException as e:
+                logger.error(f"  カテゴリ {cat_name} ページ{page_num} でエラー: {e}")
+                break
 
-        logger.info(f"  → {cat_name}: 累計 {len(all_products)}件")
+        # カテゴリ完了 → 即キャッシュ保存
+        if cat_products and not limit:
+            _save_category_cache(cat_name, cat_products)
+
+        all_products.extend(cat_products)
+        logger.info(f"  → {cat_name}: {len(cat_products)}件 (累計 {len(all_products)}件)")
 
     logger.info(f"\n商品一覧取得完了: {len(all_products)}件")
     return all_products
 
 
+def _save_with_retry(save_callback, products, max_retries=3, wait_seconds=30):
+    """save_callbackをリトライ付きで実行する。成功時True、全失敗時False"""
+    for attempt in range(max_retries):
+        try:
+            result = save_callback(products)
+            if result is not False:
+                return True
+        except Exception as e:
+            logger.error(f"  保存エラー (リトライ {attempt + 1}/{max_retries}): {e}")
+        if attempt < max_retries - 1:
+            wait = wait_seconds * (attempt + 1)
+            logger.info(f"  {wait}秒後にリトライします...")
+            time.sleep(wait)
+    return False
+
+
 # ---------------------------------------------------------------------------
-# 詳細ページスクレイピング
+# 詳細ページスクレイピング（HTTP直接リクエスト）
 # ---------------------------------------------------------------------------
-async def fetch_prices_for_products(
+def fetch_prices_for_products(
     products: list[ApmexProduct],
     limit: Optional[int] = None,
     exchange_type: str = "クレカ",
+    save_callback=None,
+    batch_size: int = 10,
 ) -> list[ApmexProduct]:
-    """Bright Data 経由で詳細ページから価格・画像・スペック等を取得"""
+    """HTTP直接リクエストで詳細ページから価格・画像・スペック等を取得
 
-    ws_endpoint = Config.BRIGHTDATA_BROWSER_WS
-    if not ws_endpoint:
-        logger.error("BRIGHTDATA_BROWSER_WS が設定されていません")
-        return products
+    Args:
+        save_callback: 中間保存用コールバック関数（商品リストを受け取る）
+        batch_size: 中間保存の間隔（デフォルト10件）
+    """
+    session = _create_http_session()
 
     # 為替レート
     logger.info("為替レートを取得中...")
@@ -417,21 +832,32 @@ async def fetch_prices_for_products(
 
     targets = products[:limit] if limit else products
     logger.info(f"詳細ページ取得対象: {len(targets)}件")
+    if save_callback:
+        logger.info(f"  → {batch_size}件ごとに中間保存します")
+
+    success_count = 0
+    fail_count = 0
+    last_saved_index = 0
 
     for i, product in enumerate(targets):
         logger.info(f"  [{i + 1}/{len(targets)}] {product.name[:50]}")
 
-        # Bright Data は1セッションあたりのナビゲーション数に制限があるため、
-        # 商品ごとに新しいセッションを開く
-        client = BrightDataBrowserClient(ws_endpoint)
         try:
-            await client.connect()
-            html = await client.navigate(product.url, wait_selector='.product-description, .product-details, .mod-product-pricing')
-            if not html:
-                logger.warning(f"    HTML取得失敗")
+            resp = session.get(product.url, timeout=30)
+            if resp.status_code == 404:
+                logger.warning(f"    404 Not Found")
+                fail_count += 1
                 continue
-            if 'Just a moment' in html:
+            if resp.status_code != 200:
+                logger.warning(f"    HTTPエラー: {resp.status_code}")
+                fail_count += 1
+                continue
+
+            html = resp.text
+
+            if 'Just a moment' in html[:500]:
                 logger.warning(f"    Cloudflare検出、スキップ")
+                fail_count += 1
                 continue
 
             detail = _parse_detail_html(html, product.name)
@@ -466,22 +892,156 @@ async def fetch_prices_for_products(
 
             product.last_price_updated = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
             logger.info(f"    → 価格=${product.price}, 在庫={'○' if product.in_stock else '×'}, 画像{len(imgs)}枚")
+            success_count += 1
 
+            # 中間保存（batch_size件ごと）
+            if save_callback and success_count % batch_size == 0:
+                logger.info(f"\n{'='*40}")
+                logger.info(f"中間保存: {success_count}/{len(targets)}件完了")
+                logger.info(f"{'='*40}")
+                batch_products = targets[last_saved_index:i+1]
+                saved = _save_with_retry(save_callback, batch_products)
+                if saved:
+                    last_saved_index = i + 1
+                    logger.info(f"中間保存完了: {len(batch_products)}件")
+                else:
+                    logger.error(f"中間保存失敗: {len(batch_products)}件 → 次回バッチに含めてリトライ")
+
+        except requests.RequestException as e:
+            logger.warning(f"    リクエストエラー: {e}")
+            fail_count += 1
         except Exception as e:
             logger.warning(f"    詳細取得エラー: {e}")
-        finally:
-            await client.close()
+            fail_count += 1
 
-        await asyncio.sleep(1)
+        time.sleep(1.5)
 
+    # 最終保存（残りの商品）
+    if save_callback and last_saved_index < len(targets):
+        remaining = targets[last_saved_index:]
+        logger.info(f"\n{'='*40}")
+        logger.info(f"最終保存: {len(remaining)}件")
+        logger.info(f"{'='*40}")
+        saved = _save_with_retry(save_callback, remaining)
+        if saved:
+            logger.info("最終保存完了")
+        else:
+            logger.error(f"最終保存失敗: {len(remaining)}件が未保存 → 次回実行時に再処理")
+
+    logger.info(f"詳細取得完了: 成功={success_count}件, 失敗={fail_count}件")
     return products
+
+
+# ---------------------------------------------------------------------------
+# 既存シートのカテゴリ修正
+# ---------------------------------------------------------------------------
+def fix_categories_in_spreadsheet(dry_run: bool = False) -> None:
+    """既存シートの I列（最上位カテゴリ）と J列（親カテゴリ）を商品名から再判定して修正する。"""
+    client = SpreadsheetClient()
+    client.connect()
+    sheet = client._spreadsheet.worksheet(Config.SHEET_APMEX_PRODUCTS)
+
+    all_data = sheet.get_all_values()
+    if len(all_data) <= 1:
+        logger.info("データなし")
+        return
+
+    rows = all_data[1:]  # ヘッダースキップ
+    logger.info(f"既存データ: {len(rows)}件")
+
+    # 修正が必要な行を検出
+    updates_i = []  # I列（最上位カテゴリ）の更新
+    updates_j = []  # J列（親カテゴリ）の更新
+    fix_count = 0
+
+    for idx, row in enumerate(rows):
+        row_num = idx + 2  # シート上の行番号（1-based, ヘッダー分+1）
+        name = get_cell(row, Col.PRODUCT_NAME) or ""
+        url = get_cell(row, Col.PRODUCT_URL) or ""
+        current_top = get_cell(row, Col.TOP_CATEGORY) or ""
+        current_parent = get_cell(row, Col.PARENT_CATEGORY) or ""
+
+        if not name:
+            continue
+
+        detected_top, detected_parent = detect_category_from_name(name, url)
+
+        if detected_top != current_top or detected_parent != current_parent:
+            fix_count += 1
+            if fix_count <= 20:  # 最初の20件をログ表示
+                logger.info(f"  修正: {name[:50]}")
+                logger.info(f"    {current_top}/{current_parent} → {detected_top}/{detected_parent}")
+
+            # I列 = Col.TOP_CATEGORY, J列 = Col.PARENT_CATEGORY
+            i_col_letter = chr(ord('A') + Col.TOP_CATEGORY.index)
+            j_col_letter = chr(ord('A') + Col.PARENT_CATEGORY.index)
+            updates_i.append({'range': f'{i_col_letter}{row_num}', 'values': [[detected_top]]})
+            updates_j.append({'range': f'{j_col_letter}{row_num}', 'values': [[detected_parent]]})
+
+    if fix_count > 20:
+        logger.info(f"  ... 他 {fix_count - 20}件")
+
+    logger.info(f"\n修正対象: {fix_count}件 / {len(rows)}件")
+
+    if fix_count == 0:
+        logger.info("修正不要")
+        return
+
+    if dry_run:
+        logger.info("[ドライラン] シート更新をスキップ")
+        return
+
+    # バッチ更新
+    all_updates = updates_i + updates_j
+    logger.info(f"シート更新中... ({len(all_updates)}セル)")
+    sheet.batch_update(all_updates)
+    logger.info("カテゴリ修正完了")
+
+
+# ---------------------------------------------------------------------------
+# 既存URL取得（差分チェック用）
+# ---------------------------------------------------------------------------
+def get_existing_urls_from_spreadsheet(price_fetched_only: bool = False) -> set[str]:
+    """スプレッドシートから既存商品のURLを取得（差分チェック用）
+
+    Args:
+        price_fetched_only: Trueの場合、価格取得済み（R列に値あり）のURLのみ返す
+    """
+    try:
+        client = SpreadsheetClient()
+        client.connect()
+        sheet = client._spreadsheet.worksheet(Config.SHEET_APMEX_PRODUCTS)
+
+        if price_fetched_only:
+            # F列（URL）とR列（価格）を両方取得し、価格ありのURLのみ返す
+            all_data = sheet.get_all_values()
+            existing_urls = set()
+            for row in all_data[1:]:  # ヘッダースキップ
+                url_val = get_cell(row, Col.PRODUCT_URL)
+                price_val = get_cell(row, Col.PRICE)
+                if url_val and price_val:
+                    existing_urls.add(url_val)
+            logger.info(f"価格取得済み商品URL: {len(existing_urls)}件")
+            return existing_urls
+        else:
+            url_column = sheet.col_values(Col.PRODUCT_URL.index + 1)  # F列（1-based）
+            existing_urls = set(url_column[1:])  # ヘッダー行をスキップ
+            logger.info(f"既存商品URL: {len(existing_urls)}件")
+            return existing_urls
+    except Exception as e:
+        logger.warning(f"既存URL取得エラー: {e}")
+        return set()
 
 
 # ---------------------------------------------------------------------------
 # スプレッドシート保存（84列）
 # ---------------------------------------------------------------------------
-def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = False) -> bool:
-    """APMEX商品ページ一覧シートに84列構造で保存"""
+def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = False, skip_ai: bool = False) -> bool:
+    """APMEX商品ページ一覧シートに84列構造で保存
+
+    Args:
+        skip_ai: Trueの場合、AI生成（日本語名・カテゴリ・説明・SEO・型番）をスキップ
+    """
 
     if dry_run:
         logger.info("[ドライラン] スプレッドシートへの保存をスキップ")
@@ -494,13 +1054,11 @@ def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = F
         logger.error("スプレッドシートへの接続に失敗しました")
         return False
 
-    # AI生成器を初期化
-    name_generator = JapaneseProductNameGenerator()
-    description_generator = DescriptionGenerator()
-    seo_generator = SEOGenerator()
+    # AI生成器を初期化（skip_ai時はスキップ）
+    name_generator = None
+    description_generator = None
+    seo_generator = None
     model_number_generator = None
-
-    # カテゴリー判定器
     category_detector = None
     category_name_map = {
         2977963: "ゴールド（金）",
@@ -510,19 +1068,27 @@ def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = F
         2977967: "カッパー（銅）",
     }
     group_name_map = {}
-    try:
-        colorme_client = ColorMeClient()
-        categories = colorme_client.get_categories()
-        groups = colorme_client.get_groups()
-        category_detector = CategoryDetector(categories, groups, colorme_client)
-        for grp in groups:
-            gid = grp.get("id", 0)
-            gname = grp.get("name", "")
-            if gid and gname:
-                group_name_map[gid] = gname
-        logger.info(f"カテゴリー判定器: {len(categories)}カテゴリー, {len(groups)}グループ")
-    except Exception as e:
-        logger.warning(f"カテゴリー判定器の初期化に失敗: {e}")
+
+    if not skip_ai:
+        name_generator = JapaneseProductNameGenerator()
+        description_generator = DescriptionGenerator()
+        seo_generator = SEOGenerator()
+
+        try:
+            colorme_client = ColorMeClient()
+            categories = colorme_client.get_categories()
+            groups = colorme_client.get_groups()
+            category_detector = CategoryDetector(categories, groups, colorme_client)
+            for grp in groups:
+                gid = grp.get("id", 0)
+                gname = grp.get("name", "")
+                if gid and gname:
+                    group_name_map[gid] = gname
+            logger.info(f"カテゴリー判定器: {len(categories)}カテゴリー, {len(groups)}グループ")
+        except Exception as e:
+            logger.warning(f"カテゴリー判定器の初期化に失敗: {e}")
+    else:
+        logger.info("AI生成スキップモード（基本情報のみ保存）")
 
     # ヘッダー（84列: bs_sheet_columns.py の Col 定義に合わせる）
     all_cols = Col.all_columns()
@@ -562,20 +1128,22 @@ def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = F
         logger.info(f"既存商品数: {len(existing_by_url)}件")
 
         # 型番生成器初期化
-        existing_model_numbers = set()
-        for row in existing_data[1:]:
-            mn = get_cell(row, Col.CM_MODEL_NUMBER)
-            if mn:
-                existing_model_numbers.add(mn)
-        model_number_generator = ModelNumberGenerator(existing_model_numbers)
+        if not skip_ai:
+            existing_model_numbers = set()
+            for row in existing_data[1:]:
+                mn = get_cell(row, Col.CM_MODEL_NUMBER)
+                if mn:
+                    existing_model_numbers.add(mn)
+            model_number_generator = ModelNumberGenerator(existing_model_numbers)
 
         # 新規行を構築
         new_rows = []
         skipped_count = 0
-        BATCH_SAVE_INTERVAL = 10
+        BATCH_SAVE_INTERVAL = 200
 
         def save_batch(new_rows_batch, start_row_offset):
-            """バッチ保存"""
+            """バッチ保存（接続切れ・429エラー時リトライ付き）"""
+            nonlocal sheet
             if not new_rows_batch:
                 return 0
             start_row = len(existing_data) + start_row_offset + 1
@@ -584,62 +1152,80 @@ def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = F
             end_row = start_row + len(new_rows_batch) - 1
             range_str = f"A{start_row}:{Col.last_column_letter()}{end_row}"
             logger.info(f"  保存中: {range_str} ({len(new_rows_batch)}件)")
-            result = sheet.update(values=new_rows_batch, range_name=range_str, value_input_option='USER_ENTERED')
-            logger.info(f"  保存完了: {result.get('updatedCells', 0)}セル")
 
-            # データ検証（A列・B列にドロップダウン）
-            sheet_id = sheet.id
-            validation_requests = [
-                {
-                    'setDataValidation': {
-                        'range': {
-                            'sheetId': sheet_id,
-                            'startRowIndex': start_row - 1,
-                            'endRowIndex': end_row,
-                            'startColumnIndex': 0,
-                            'endColumnIndex': 1,
-                        },
-                        'rule': {
-                            'condition': {
-                                'type': 'ONE_OF_LIST',
-                                'values': [
-                                    {'userEnteredValue': '採用'},
-                                    {'userEnteredValue': '未採用'},
-                                    {'userEnteredValue': '検討中'},
-                                ],
+            for attempt in range(3):
+                try:
+                    # 書き込み前にシート接続をリフレッシュ（長時間AI生成後の接続切れ対策）
+                    fresh_client = SpreadsheetClient()
+                    fresh_client.connect()
+                    sheet = fresh_client._spreadsheet.worksheet(sheet_name)
+
+                    result = sheet.update(values=new_rows_batch, range_name=range_str, value_input_option='USER_ENTERED')
+                    logger.info(f"  保存完了: {result.get('updatedCells', 0)}セル")
+                    break
+                except Exception as e:
+                    wait = 30 * (attempt + 1)
+                    logger.warning(f"  保存エラー ({attempt + 1}/3): {e}")
+                    if attempt < 2:
+                        logger.info(f"  {wait}秒後にリトライ...")
+                        time.sleep(wait)
+                    else:
+                        raise
+
+            # データ検証（A列・B列にドロップダウン）- skip_ai時はスキップ
+            if not skip_ai:
+                sheet_id = sheet.id
+                validation_requests = [
+                    {
+                        'setDataValidation': {
+                            'range': {
+                                'sheetId': sheet_id,
+                                'startRowIndex': start_row - 1,
+                                'endRowIndex': end_row,
+                                'startColumnIndex': 0,
+                                'endColumnIndex': 1,
                             },
-                            'showCustomUi': True,
-                            'strict': False,
-                        },
-                    }
-                },
-                {
-                    'setDataValidation': {
-                        'range': {
-                            'sheetId': sheet_id,
-                            'startRowIndex': start_row - 1,
-                            'endRowIndex': end_row,
-                            'startColumnIndex': 1,
-                            'endColumnIndex': 2,
-                        },
-                        'rule': {
-                            'condition': {
-                                'type': 'ONE_OF_LIST',
-                                'values': [
-                                    {'userEnteredValue': '登録済'},
-                                    {'userEnteredValue': '未登録'},
-                                ],
+                            'rule': {
+                                'condition': {
+                                    'type': 'ONE_OF_LIST',
+                                    'values': [
+                                        {'userEnteredValue': '採用'},
+                                        {'userEnteredValue': '未採用'},
+                                        {'userEnteredValue': '検討中'},
+                                    ],
+                                },
+                                'showCustomUi': True,
+                                'strict': False,
                             },
-                            'showCustomUi': True,
-                            'strict': False,
-                        },
-                    }
-                },
-            ]
-            try:
-                sheet.spreadsheet.batch_update({'requests': validation_requests})
-            except Exception as e:
-                logger.warning(f"  データ検証設定エラー: {e}")
+                        }
+                    },
+                    {
+                        'setDataValidation': {
+                            'range': {
+                                'sheetId': sheet_id,
+                                'startRowIndex': start_row - 1,
+                                'endRowIndex': end_row,
+                                'startColumnIndex': 1,
+                                'endColumnIndex': 2,
+                            },
+                            'rule': {
+                                'condition': {
+                                    'type': 'ONE_OF_LIST',
+                                    'values': [
+                                        {'userEnteredValue': '登録済'},
+                                        {'userEnteredValue': '未登録'},
+                                    ],
+                                },
+                                'showCustomUi': True,
+                                'strict': False,
+                            },
+                        }
+                    },
+                ]
+                try:
+                    sheet.spreadsheet.batch_update({'requests': validation_requests})
+                except Exception as e:
+                    logger.warning(f"  データ検証設定エラー: {e}")
 
             return len(new_rows_batch)
 
@@ -661,11 +1247,14 @@ def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = F
 
             # --- AI生成: CM商品名 ---
             cm_product_name = ""
-            try:
-                info = {"name": product.name, "specs": product.specs, "description": product.description_en}
-                cm_product_name = name_generator.generate(info, quantity=1) or ""
-            except Exception as e:
-                logger.debug(f"  CM商品名生成エラー: {e}")
+            if name_generator:
+                try:
+                    info = {"name": product.name, "specs": product.specs, "description": product.description_en}
+                    cm_product_name = _run_with_timeout(
+                        name_generator.generate, info, quantity=1, default=""
+                    ) or ""
+                except Exception as e:
+                    logger.debug(f"  CM商品名生成エラー: {e}")
 
             # --- AI生成: カテゴリー・グループ ---
             category_big = ""
@@ -676,24 +1265,29 @@ def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = F
             group_names_str = ""
             if category_detector:
                 try:
-                    cat_big, cat_small, group_ids = category_detector.detect(product.name, product.url)
-                    if cat_big:
-                        category_big = str(cat_big)
-                        category_big_name = category_name_map.get(cat_big, "")
-                        if cat_small:
-                            category_small = str(cat_small)
-                            category_small_name = category_name_map.get(cat_small, "")
-                    if group_ids:
-                        group_ids_str = "'" + ",".join(str(g) for g in group_ids)
-                        group_names = [group_name_map.get(g, "") for g in group_ids]
-                        group_names_str = ",".join(n for n in group_names if n)
+                    result = _run_with_timeout(
+                        category_detector.detect, product.name, product.url,
+                        default=(None, None, [])
+                    )
+                    if result:
+                        cat_big, cat_small, group_ids = result
+                        if cat_big:
+                            category_big = str(cat_big)
+                            category_big_name = category_name_map.get(cat_big, "")
+                            if cat_small:
+                                category_small = str(cat_small)
+                                category_small_name = category_name_map.get(cat_small, "")
+                        if group_ids:
+                            group_ids_str = "'" + ",".join(str(g) for g in group_ids)
+                            group_names = [group_name_map.get(g, "") for g in group_ids]
+                            group_names_str = ",".join(n for n in group_names if n)
                 except Exception as e:
                     logger.debug(f"  カテゴリー判定エラー: {e}")
 
             # --- AI生成: 商品説明 ---
             cm_description = ""
             cm_simple_description = ""
-            if description_generator.genai_model:
+            if description_generator and description_generator.genai_model:
                 try:
                     price_jpy = int(product.price_jpy) if product.price_jpy else 0
                     desc_info = {
@@ -703,7 +1297,12 @@ def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = F
                         "description": product.description_en or "",
                         "specs": product.specs or "",
                     }
-                    cm_description, cm_simple_description = description_generator.generate(desc_info)
+                    result = _run_with_timeout(
+                        description_generator.generate, desc_info,
+                        default=("", "")
+                    )
+                    if result:
+                        cm_description, cm_simple_description = result
                 except Exception as e:
                     logger.debug(f"  商品説明生成エラー: {e}")
 
@@ -711,7 +1310,7 @@ def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = F
             page_title = ""
             meta_description = ""
             meta_keywords = ""
-            if seo_generator.genai_model:
+            if seo_generator and seo_generator.genai_model:
                 try:
                     seo_info = {
                         "name": product.name,
@@ -719,7 +1318,12 @@ def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = F
                         "description": product.description_en or "",
                         "specs": product.specs or "",
                     }
-                    page_title, meta_description, meta_keywords = seo_generator.generate(seo_info)
+                    result = _run_with_timeout(
+                        seo_generator.generate, seo_info,
+                        default=("", "", "")
+                    )
+                    if result:
+                        page_title, meta_description, meta_keywords = result
                 except Exception as e:
                     logger.debug(f"  SEO生成エラー: {e}")
 
@@ -728,7 +1332,10 @@ def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = F
             if model_number_generator and model_number_generator.genai_model:
                 try:
                     model_info = {"name": product.name, "specs": product.specs or "", "description": product.description_en or ""}
-                    model_number = model_number_generator.generate(model_info, quantity=1, supplier_site="APMEX")
+                    model_number = _run_with_timeout(
+                        model_number_generator.generate, model_info,
+                        quantity=1, supplier_site="APMEX", default=""
+                    ) or ""
                 except Exception as e:
                     logger.debug(f"  型番生成エラー: {e}")
             if not model_number:
@@ -888,6 +1495,8 @@ def main():
     parser.add_argument("--limit", type=int, default=0, help="取得件数制限（0=無制限）")
     parser.add_argument("--category", type=str, default="", help="カテゴリフィルタ（例: gold-coins）")
     parser.add_argument("--exchange-type", type=str, default="クレカ", help="為替種類: クレカ or Wise")
+    parser.add_argument("--fix-categories", action="store_true", help="既存シートのカテゴリを商品名から再判定して修正")
+    parser.add_argument("--no-cache", action="store_true", help="キャッシュを使わず商品一覧を再取得")
     args = parser.parse_args()
 
     # ロギング設定
@@ -901,14 +1510,25 @@ def main():
     limit = args.limit if args.limit > 0 else None
     category = args.category or None
 
+    # --fix-categories: 既存シートのカテゴリ修正モード
+    if args.fix_categories:
+        logger.info("=== カテゴリ修正モード ===")
+        fix_categories_in_spreadsheet(dry_run=args.dry_run)
+        return 0
+
+    use_cache = not args.no_cache
+
     logger.info("=== APMEX 商品ページ一覧取得 ===")
     logger.info(f"カテゴリ: {category or '全カテゴリ'}")
     logger.info(f"件数制限: {limit or '無制限'}")
     logger.info(f"詳細取得: {'あり' if args.fetch_prices else 'なし'}")
+    logger.info(f"キャッシュ: {'使用' if use_cache else '無効（再取得）'}")
     logger.info(f"ドライラン: {'はい' if args.dry_run else 'いいえ'}")
 
     # 商品一覧取得
-    products = asyncio.run(fetch_product_list(category_filter=category, limit=limit))
+    products = fetch_product_list(
+        category_filter=category, limit=limit, use_cache=use_cache
+    )
     if not products:
         logger.warning("取得商品なし")
         return 0
@@ -918,13 +1538,41 @@ def main():
     # 詳細ページ取得
     if args.fetch_prices:
         logger.info("\n=== 詳細ページ取得開始 ===")
-        products = asyncio.run(fetch_prices_for_products(
-            products, limit=limit, exchange_type=args.exchange_type
-        ))
 
-    # スプレッドシートに保存
-    logger.info("\n=== スプレッドシート保存 ===")
-    success = save_products_to_spreadsheet(products, dry_run=args.dry_run)
+        # 既存商品URLを取得して差分チェック（価格取得済みのみスキップ）
+        if not args.dry_run:
+            existing_urls = get_existing_urls_from_spreadsheet(price_fetched_only=True)
+            new_products = [p for p in products if p.url not in existing_urls]
+            skipped_count = len(products) - len(new_products)
+            if skipped_count > 0:
+                logger.info(f"既存商品をスキップ: {skipped_count}件")
+                logger.info(f"スクレイピング対象: {len(new_products)}件（新規のみ）")
+            products = new_products
+
+            if not products:
+                logger.info("新規商品はありません。終了します。")
+                return 0
+
+        # 中間保存用コールバック（ドライランでない場合のみ）
+        save_callback = None
+        if not args.dry_run:
+            def save_callback(processed_products):
+                """スクレイピング中間保存用コールバック"""
+                return save_products_to_spreadsheet(processed_products)
+
+        products = fetch_prices_for_products(
+            products, limit=limit, exchange_type=args.exchange_type,
+            save_callback=save_callback, batch_size=10,
+        )
+
+        # fetch_pricesモードでは中間保存で既に保存済み
+        if not args.dry_run:
+            logger.info("スプレッドシートへの保存完了（中間保存済み）")
+        return 0
+
+    # 詳細なしの場合は一覧のみ保存（AI生成スキップで高速保存）
+    logger.info("\n=== スプレッドシート保存（基本情報のみ） ===")
+    success = save_products_to_spreadsheet(products, dry_run=args.dry_run, skip_ai=True)
 
     return 0 if success else 1
 

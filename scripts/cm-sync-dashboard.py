@@ -62,6 +62,11 @@ BS_SCRIPT = PROJECT_DIR / "scripts" / "bs-scrape.sh"
 BS_LOCK = Path("/tmp/bs-scrape.lock")
 BS_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.coin-price-checker.bs-scrape.plist"
 
+# APMEX商品取得
+AP_SCRIPT = PROJECT_DIR / "scripts" / "ap-scrape.sh"
+AP_LOCK = Path("/tmp/ap-scrape.lock")
+AP_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.coin-price-checker.ap-scrape.plist"
+
 # 価格のみ同期
 PO_SCRIPT = PROJECT_DIR / "scripts" / "cm-price-only-sync.sh"
 PO_LOCK = Path("/tmp/cm-price-only-sync.lock")
@@ -76,11 +81,10 @@ HTML = """<!DOCTYPE html>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, 'Hiragino Sans', sans-serif; background: #f5f5f7; color: #1d1d1f; }
-  .container { max-width: 960px; margin: 40px auto; padding: 0 20px; }
+  .container { max-width: 1200px; margin: 40px auto; padding: 0 20px; }
   h1 { font-size: 24px; font-weight: 600; margin-bottom: 24px; }
 
-  .tasks { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
-  @media (max-width: 1080px) { .tasks { grid-template-columns: 1fr 1fr; } }
+  .tasks { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   @media (max-width: 720px) { .tasks { grid-template-columns: 1fr; } }
 
   .task-card { background: #fff; border-radius: 12px; padding: 20px;
@@ -106,6 +110,7 @@ HTML = """<!DOCTYPE html>
   .progress-bar.cm { background: #007aff; }
   .progress-bar.bs { background: #ff9500; }
   .progress-bar.po { background: #34c759; }
+  .progress-bar.ap { background: #af52de; }
   .progress-step { font-size: 14px; font-weight: 500; }
   .progress-text { font-size: 12px; color: #86868b; }
 
@@ -120,6 +125,7 @@ HTML = """<!DOCTYPE html>
   .btn-orange { background: #ff9500; color: #fff; }
   .btn-danger { background: #ff3b30; color: #fff; }
   .btn-success { background: #34c759; color: #fff; }
+  .btn-purple { background: #af52de; color: #fff; }
   .btn-secondary { background: #e5e5ea; color: #1d1d1f; }
 
   .log-box { background: #1d1d1f; color: #e5e5ea; border-radius: 10px; padding: 12px;
@@ -267,6 +273,46 @@ HTML = """<!DOCTYPE html>
         <button class="btn-text" onclick="doAction('bs','clear-logs')">リセット</button>
       </div>
       <div id="bs-log" class="log-box"></div>
+    </div>
+
+    <!-- ======== APMEX商品取得 ======== -->
+    <div class="task-card">
+      <h2>APMEX商品取得</h2>
+
+      <div>
+        <div class="status-row">
+          <span class="status-label">状態</span>
+          <span id="ap-status" class="badge badge-gray">...</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">前回</span>
+          <span id="ap-last" class="status-value">...</span>
+        </div>
+      </div>
+
+      <div id="ap-progress" class="progress-wrap">
+        <div id="ap-progress-step" class="progress-step"></div>
+        <div class="progress-bar-bg"><div id="ap-progress-bar" class="progress-bar ap" style="width:0%"></div></div>
+        <div id="ap-progress-text" class="progress-text"></div>
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-purple" id="btn-ap-run" onclick="doAction('ap','run')">商品取得開始</button>
+        <button class="btn btn-danger" id="btn-ap-stop" onclick="doAction('ap','stop')" disabled>停止</button>
+      </div>
+
+      <div class="sched-row">
+        <span class="sched-label">定期実行（6時間ごと）</span>
+        <span id="ap-sched-status" class="badge badge-gray">...</span>
+        <button class="btn btn-success btn-sm" onclick="doAction('ap-sched','enable')">ON</button>
+        <button class="btn btn-secondary btn-sm" onclick="doAction('ap-sched','disable')">OFF</button>
+      </div>
+
+      <div class="log-header">
+        <span>ログ</span>
+        <button class="btn-text" onclick="doAction('ap','clear-logs')">リセット</button>
+      </div>
+      <div id="ap-log" class="log-box"></div>
     </div>
 
     <!-- ======== 価格のみ同期 ======== -->
@@ -422,6 +468,34 @@ async function refresh() {
       bsProg.classList.remove('active');
     }
 
+    // --- APMEX ---
+    const apEl = document.getElementById('ap-status');
+    if (data.ap.running) {
+      apEl.textContent = '実行中';
+      apEl.className = 'badge badge-blue';
+      document.getElementById('btn-ap-run').disabled = true;
+      document.getElementById('btn-ap-stop').disabled = false;
+    } else {
+      apEl.textContent = '停止中';
+      apEl.className = 'badge badge-yellow';
+      document.getElementById('btn-ap-run').disabled = false;
+      document.getElementById('btn-ap-stop').disabled = true;
+    }
+    document.getElementById('ap-last').textContent = data.ap.last_summary || 'なし';
+    document.getElementById('ap-last').style.color = data.ap.last_success ? '#2e7d32' : (data.ap.last_summary ? '#c62828' : '#1d1d1f');
+
+    updateLog(document.getElementById('ap-log'), data.ap.log);
+
+    const apProg = document.getElementById('ap-progress');
+    if (data.ap.running && data.ap.progress) {
+      apProg.classList.add('active');
+      document.getElementById('ap-progress-step').textContent = data.ap.progress.step || '';
+      document.getElementById('ap-progress-bar').style.width = (data.ap.progress.percent || 0) + '%';
+      document.getElementById('ap-progress-text').textContent = data.ap.progress.detail || '';
+    } else {
+      apProg.classList.remove('active');
+    }
+
     // --- 価格のみ同期 ---
     const poEl = document.getElementById('po-status');
     if (data.po.running) {
@@ -469,6 +543,14 @@ async function refresh() {
       bsSchedEl.textContent = '無効';
       bsSchedEl.className = 'badge badge-red';
     }
+    const apSchedEl = document.getElementById('ap-sched-status');
+    if (data.ap_schedule) {
+      apSchedEl.textContent = '有効';
+      apSchedEl.className = 'badge badge-green';
+    } else {
+      apSchedEl.textContent = '無効';
+      apSchedEl.className = 'badge badge-red';
+    }
     const poSchedEl = document.getElementById('po-sched-status');
     if (data.po_schedule) {
       poSchedEl.textContent = '有効';
@@ -479,7 +561,7 @@ async function refresh() {
     }
 
     // 何か実行中なら更新頻度を上げる
-    const anyRunning = data.cm.running || data.bs.running || data.po.running;
+    const anyRunning = data.cm.running || data.bs.running || data.ap.running || data.po.running;
     setRefreshRate(anyRunning ? 5000 : 10000);
 
   } catch(e) { /* ignore */ }
@@ -498,6 +580,11 @@ async function doAction(task, action) {
     'cm-stop': '停止しています...',
     'bs-run': '商品取得を開始しています...',
     'bs-stop': '停止しています...',
+    'ap-run': 'APMEX商品取得を開始しています...',
+    'ap-stop': '停止しています...',
+    'ap-clear-logs': 'ログをリセットしました',
+    'ap-sched-enable': 'APMEX定期実行を有効にしました',
+    'ap-sched-disable': 'APMEX定期実行を無効にしました',
     'po-run': 'スクレイピング+カラーミー同期を開始しています...',
     'po-sync-only': 'カラーミー同期のみ（Step2）を開始しています...',
     'po-stop': '停止しています...',
@@ -719,6 +806,18 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         elif parts == ['cm-sched', 'disable']:
             subprocess.run(['launchctl', 'unload', str(CM_PLIST)], capture_output=True)
             self._respond_json({'ok': True})
+        elif parts == ['ap', 'run']:
+            self._respond_json(self._ap_run())
+        elif parts == ['ap', 'stop']:
+            self._respond_json(self._ap_stop())
+        elif parts == ['ap', 'clear-logs']:
+            self._respond_json(self._clear_logs('ap'))
+        elif parts == ['ap-sched', 'enable']:
+            subprocess.run(['launchctl', 'load', str(AP_PLIST)], capture_output=True)
+            self._respond_json({'ok': True})
+        elif parts == ['ap-sched', 'disable']:
+            subprocess.run(['launchctl', 'unload', str(AP_PLIST)], capture_output=True)
+            self._respond_json({'ok': True})
         elif parts == ['po', 'run']:
             self._respond_json(self._po_run())
         elif parts == ['po', 'sync-only']:
@@ -763,18 +862,22 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             out = subprocess.run(['launchctl', 'list'], capture_output=True, text=True)
             cm_schedule = 'com.coin-price-checker.cm-sync' in out.stdout
             bs_schedule = 'com.coin-price-checker.bs-scrape' in out.stdout
+            ap_schedule = 'com.coin-price-checker.ap-scrape' in out.stdout
             po_schedule = 'com.coin-price-checker.price-only' in out.stdout
         except Exception:
             cm_schedule = False
             bs_schedule = False
+            ap_schedule = False
             po_schedule = False
 
         return {
             'cm_schedule': cm_schedule,
             'bs_schedule': bs_schedule,
+            'ap_schedule': ap_schedule,
             'po_schedule': po_schedule,
             'cm': self._cm_status(),
             'bs': self._bs_status(),
+            'ap': self._ap_status(),
             'po': self._po_status(),
         }
 
@@ -1007,6 +1110,117 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             pass
         return {'step': '準備中...', 'percent': 0, 'detail': ''}
 
+    # --- APMEXステータス ---
+    def _ap_status(self):
+        running = _is_running(AP_LOCK)
+
+        # 最新ログ
+        _, log_content = _get_latest_log("ap-scrape-*.log", 60)
+
+        # 前回結果
+        log_files = sorted(glob.glob(str(LOG_DIR / "ap-scrape-*.log")), reverse=True)
+        last_summary = ""
+        last_success = False
+        if log_files:
+            try:
+                with open(log_files[0], 'r', encoding='utf-8', errors='replace') as f:
+                    full = f.read()
+                if 'APMEX商品取得 完了' in full:
+                    m = re.search(r'所要時間: (.+)', full)
+                    t = m.group(1) if m else ''
+                    m2 = re.search(r'新規追加: (\d+)件', full)
+                    count = m2.group(1) if m2 else '?'
+                    last_summary = f'完了 ({count}件, {t})' if t else f'完了 ({count}件)'
+                    last_success = True
+                elif 'ERROR' in full or 'エラー' in full:
+                    last_summary = 'エラーあり'
+                elif running:
+                    last_summary = '実行中...'
+            except Exception:
+                pass
+
+        progress = self._ap_progress() if running else None
+
+        return {
+            'running': running,
+            'last_summary': last_summary,
+            'last_success': last_success,
+            'log': log_content,
+            'progress': progress,
+        }
+
+    def _ap_progress(self):
+        """APMEX商品取得の進捗"""
+        log_files = sorted(glob.glob(str(LOG_DIR / "ap-scrape-*.log")), reverse=True)
+        if not log_files:
+            return {'step': '準備中...', 'percent': 0, 'detail': ''}
+        try:
+            with open(log_files[0], 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+
+            # 詳細取得完了
+            m_done = re.search(r'詳細取得完了: 成功=(\d+)件, 失敗=(\d+)件', content)
+            if m_done:
+                ok, fail = m_done.group(1), m_done.group(2)
+                return {'step': '詳細取得完了', 'percent': 100,
+                        'detail': f'成功:{ok}件 失敗:{fail}件'}
+
+            # 詳細ページ取得中: [N/M] パターン → 50-100%
+            # 新形式: [N/M] と価格情報が別の行にあるため、[N/M] のみでマッチ
+            if '詳細ページ取得対象' in content:
+                matches = re.findall(r'\[(\d+)/(\d+)\]', content)
+                if matches:
+                    current, total = int(matches[-1][0]), int(matches[-1][1])
+                    pct = 50 + (current * 50 // total) if total > 0 else 50
+                    ok = content.count('価格=$')
+                    fail = content.count('HTTPエラー') + content.count('Cloudflare検出') + content.count('リクエストエラー') + content.count('404 Not Found')
+                    detail = f'{current}/{total}件 (成功:{ok}'
+                    if fail:
+                        detail += f' 失敗:{fail}'
+                    detail += ')'
+                    return {'step': '詳細ページ取得', 'percent': min(pct, 99), 'detail': detail}
+
+            # スプレッドシート保存中
+            if '保存中:' in content or '最終保存' in content:
+                m = re.search(r'新規追加: (\d+)件', content)
+                if m:
+                    return {'step': '保存完了', 'percent': 100, 'detail': f'新規{m.group(1)}件'}
+                return {'step': 'スプレッドシート保存中', 'percent': 95, 'detail': ''}
+
+            # AI生成中
+            if 'AI判定結果' in content or 'Gemini API' in content:
+                return {'step': 'AI生成+保存中', 'percent': 90, 'detail': ''}
+
+            # カテゴリ取得中: ページN パターン → 0-50%
+            pages = re.findall(r'ページ(\d+): (\d+)件', content)
+            cats_done = len(re.findall(r'→ .+: 累計 \d+件', content))
+            cats_total = len(re.findall(r'=== カテゴリ:', content))
+            if pages:
+                if cats_total > 0:
+                    pct = cats_done * 50 // max(cats_total, 1)
+                else:
+                    pct = 10
+                total_products = re.findall(r'商品一覧取得完了: (\d+)件', content)
+                if total_products:
+                    return {'step': '商品一覧取得完了', 'percent': 48,
+                            'detail': f'{total_products[-1]}件'}
+                cum = re.findall(r'累計 (\d+)件', content)
+                detail = f'{cum[-1]}件取得済み' if cum else ''
+                return {'step': 'カテゴリ取得中', 'percent': min(pct, 49), 'detail': detail}
+
+            # 為替レート取得
+            if '為替レート' in content:
+                return {'step': '為替レート取得中', 'percent': 48, 'detail': ''}
+
+            # 商品一覧取得開始
+            if 'カテゴリ:' in content:
+                return {'step': '商品一覧取得中', 'percent': 5, 'detail': ''}
+
+            return {'step': '開始中...', 'percent': 2, 'detail': ''}
+        except Exception:
+            pass
+        return {'step': '準備中...', 'percent': 0, 'detail': ''}
+
     # ========================================
     # カラーミー同期アクション
     # ========================================
@@ -1055,6 +1269,31 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         subprocess.run(['pkill', '-f', 'src.bullionstar_products'], capture_output=True)
         try:
             BS_LOCK.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return {'ok': True, 'message': '停止しました'}
+
+    # ========================================
+    # APMEX商品取得アクション
+    # ========================================
+
+    def _ap_run(self):
+        if _is_running(AP_LOCK):
+            return {'ok': False, 'message': '既に実行中です'}
+        subprocess.Popen(['bash', str(AP_SCRIPT)], cwd=str(PROJECT_DIR),
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return {'ok': True, 'message': 'APMEX商品取得を開始しました'}
+
+    def _ap_stop(self):
+        if AP_LOCK.exists():
+            try:
+                pid = int(AP_LOCK.read_text().strip())
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+            except (ValueError, ProcessLookupError, PermissionError, OSError):
+                pass
+        subprocess.run(['pkill', '-f', 'src.apmex_products'], capture_output=True)
+        try:
+            AP_LOCK.unlink(missing_ok=True)
         except Exception:
             pass
         return {'ok': True, 'message': '停止しました'}
@@ -1245,6 +1484,7 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         patterns = {
             'cm': ['cm-sync-*.log', 'sync-all-*.log', 'step1-*.log', 'step2-*.log', 'restore-*.log'],
             'bs': ['bs-scrape-*.log'],
+            'ap': ['ap-scrape-*.log'],
             'po': ['cm-price-only-*.log', 'price-only-step1-*.log', 'price-only-step2-*.log'],
         }
         deleted = 0

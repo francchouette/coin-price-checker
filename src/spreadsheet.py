@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 import gspread
 import google.auth
+from google.auth.transport.requests import AuthorizedSession
 from google.oauth2.service_account import Credentials
 
 from .config import Config
@@ -73,7 +74,13 @@ class SpreadsheetClient:
             # まずApplication Default Credentials（ADC）を試す
             # GitHub ActionsでWorkload Identity Federationを使用する場合はこちら
             credentials, project = google.auth.default(scopes=self.SCOPES)
-            self._client = gspread.authorize(credentials)
+            # quota projectを明示的に設定してセッションを作成
+            # gspread.authorize() はquota projectヘッダーを送信しないため、
+            # AuthorizedSessionを直接作成して渡す
+            if hasattr(credentials, 'with_quota_project'):
+                credentials = credentials.with_quota_project("coin-price-tracker-479614")
+            session = AuthorizedSession(credentials)
+            self._client = gspread.authorize(credentials=None, session=session)
             self._spreadsheet = self._client.open_by_key(Config.SPREADSHEET_ID)
             logger.info(f"スプレッドシートに接続しました（ADC使用）: {self._spreadsheet.title}")
             return True

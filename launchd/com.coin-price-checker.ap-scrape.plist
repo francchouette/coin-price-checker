@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.coin-price-checker.ap-scrape</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>{{PROJECT_DIR}}/scripts/ap-scrape.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>{{PROJECT_DIR}}</string>
+
+    <!-- 6時間ごとに実行（1時, 7時, 13時, 19時） -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Hour</key>
+            <integer>1</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>7</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>13</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>19</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{{PYTHON_DIR}}:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>{{HOME}}</string>
+        <key>LANG</key>
+        <string>ja_JP.UTF-8</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>{{PROJECT_DIR}}/logs/launchd-ap-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{PROJECT_DIR}}/logs/launchd-ap-stderr.log</string>
+
+    <key>TimeOut</key>
+    <integer>14400</integer>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
