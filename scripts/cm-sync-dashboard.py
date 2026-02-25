@@ -42,35 +42,102 @@ if _env_file.exists():
                 if _key and _key not in os.environ:
                     os.environ[_key] = _val
 
-PYTHON = os.environ.get("PYTHON_PATH") or subprocess.check_output(["which", "python3"], text=True).strip()
+def _find_python() -> str:
+    """Python実行パスを取得（Windows/macOS両対応）"""
+    env_path = os.environ.get("PYTHON_PATH")
+    if env_path:
+        return env_path
+    if sys.platform == "win32":
+        return sys.executable
+    return subprocess.check_output(["which", "python3"], text=True).strip()
+
+PYTHON = _find_python()
 
 
 def _subprocess_env() -> dict:
     """サブプロセス用の環境変数を構築（.envの値を含む）"""
     env = {**os.environ, 'PYTHONUNBUFFERED': '1'}
-    env.setdefault('GOOGLE_APPLICATION_CREDENTIALS',
-                   str(Path.home() / '.config' / 'gcloud' / 'application_default_credentials.json'))
+    if sys.platform == "win32":
+        adc_path = Path(os.environ.get("APPDATA", "")) / "gcloud" / "application_default_credentials.json"
+    else:
+        adc_path = Path.home() / '.config' / 'gcloud' / 'application_default_credentials.json'
+    env.setdefault('GOOGLE_APPLICATION_CREDENTIALS', str(adc_path))
     return env
+
+# ロックファイル用の一時ディレクトリ（Windows/macOS両対応）
+import tempfile
+_TEMP_DIR = Path(tempfile.gettempdir())
 
 # カラーミー同期
 CM_SCRIPT = PROJECT_DIR / "scripts" / "cm-sync-prices.sh"
-CM_LOCK = Path("/tmp/cm-sync-prices.lock")
+CM_LOCK = _TEMP_DIR / "cm-sync-prices.lock"
 CM_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.coin-price-checker.cm-sync.plist"
 
 # ブリオンスター商品取得
 BS_SCRIPT = PROJECT_DIR / "scripts" / "bs-scrape.sh"
-BS_LOCK = Path("/tmp/bs-scrape.lock")
+BS_LOCK = _TEMP_DIR / "bs-scrape.lock"
 BS_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.coin-price-checker.bs-scrape.plist"
 
 # APMEX商品取得
 AP_SCRIPT = PROJECT_DIR / "scripts" / "ap-scrape.sh"
-AP_LOCK = Path("/tmp/ap-scrape.lock")
+AP_LOCK = _TEMP_DIR / "ap-scrape.lock"
 AP_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.coin-price-checker.ap-scrape.plist"
 
 # 価格のみ同期
 PO_SCRIPT = PROJECT_DIR / "scripts" / "cm-price-only-sync.sh"
-PO_LOCK = Path("/tmp/cm-price-only-sync.lock")
+PO_LOCK = _TEMP_DIR / "cm-price-only-sync.lock"
 PO_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.coin-price-checker.price-only.plist"
+
+# Windows タスクスケジューラ定義（タスク名 → (スクリプト, 間隔時間)）
+_WIN_SCHED = {
+    'cm': ('coin-price-checker-cm-sync', str(CM_SCRIPT), 4),
+    'bs': ('coin-price-checker-bs-scrape', str(BS_SCRIPT), 6),
+    'ap': ('coin-price-checker-ap-scrape', str(AP_SCRIPT), 6),
+    'po': ('coin-price-checker-price-only', str(PO_SCRIPT), 4),
+}
+
+def _sched_enable(task_key: str) -> None:
+    """定期実行を有効にする（Windows: schtasks / macOS: launchctl）"""
+    if sys.platform == 'win32':
+        name, script, hours = _WIN_SCHED[task_key]
+        subprocess.run([
+            'schtasks', '/Create', '/F',
+            '/TN', name,
+            '/TR', f'"{PYTHON}" -u "{script}"' if task_key in ('cm', 'po') else f'bash "{script}"',
+            '/SC', 'HOURLY', '/MO', str(hours),
+            '/ST', '00:00',
+        ], capture_output=True)
+    else:
+        plist = {'cm': CM_PLIST, 'bs': BS_PLIST, 'ap': AP_PLIST, 'po': PO_PLIST}[task_key]
+        subprocess.run(['launchctl', 'load', str(plist)], capture_output=True)
+
+def _sched_disable(task_key: str) -> None:
+    """定期実行を無効にする"""
+    if sys.platform == 'win32':
+        name = _WIN_SCHED[task_key][0]
+        subprocess.run(['schtasks', '/Delete', '/F', '/TN', name], capture_output=True)
+    else:
+        plist = {'cm': CM_PLIST, 'bs': BS_PLIST, 'ap': AP_PLIST, 'po': PO_PLIST}[task_key]
+        subprocess.run(['launchctl', 'unload', str(plist)], capture_output=True)
+
+def _sched_is_enabled(task_key: str) -> bool:
+    """定期実行が有効かどうかを確認する"""
+    if sys.platform == 'win32':
+        name = _WIN_SCHED[task_key][0]
+        r = subprocess.run(['schtasks', '/Query', '/TN', name], capture_output=True)
+        return r.returncode == 0
+    else:
+        try:
+            plist_id = {
+                'cm': 'com.coin-price-checker.cm-sync',
+                'bs': 'com.coin-price-checker.bs-scrape',
+                'ap': 'com.coin-price-checker.ap-scrape',
+                'po': 'com.coin-price-checker.price-only',
+            }[task_key]
+            out = subprocess.run(['launchctl', 'list'], capture_output=True, text=True)
+            return plist_id in out.stdout
+        except Exception:
+            return False
 
 HTML = """<!DOCTYPE html>
 <html lang="ja">
@@ -808,10 +875,10 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         elif parts == ['bs', 'clear-logs']:
             self._respond_json(self._clear_logs('bs'))
         elif parts == ['cm-sched', 'enable']:
-            subprocess.run(['launchctl', 'load', str(CM_PLIST)], capture_output=True)
+            _sched_enable('cm')
             self._respond_json({'ok': True})
         elif parts == ['cm-sched', 'disable']:
-            subprocess.run(['launchctl', 'unload', str(CM_PLIST)], capture_output=True)
+            _sched_disable('cm')
             self._respond_json({'ok': True})
         elif parts == ['ap', 'run']:
             self._respond_json(self._ap_run())
@@ -822,10 +889,10 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         elif parts == ['ap', 'clear-logs']:
             self._respond_json(self._clear_logs('ap'))
         elif parts == ['ap-sched', 'enable']:
-            subprocess.run(['launchctl', 'load', str(AP_PLIST)], capture_output=True)
+            _sched_enable('ap')
             self._respond_json({'ok': True})
         elif parts == ['ap-sched', 'disable']:
-            subprocess.run(['launchctl', 'unload', str(AP_PLIST)], capture_output=True)
+            _sched_disable('ap')
             self._respond_json({'ok': True})
         elif parts == ['po', 'run']:
             self._respond_json(self._po_run())
@@ -847,16 +914,16 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                             pass
             self._respond_json(self._po_benchmark(row))
         elif parts == ['bs-sched', 'enable']:
-            subprocess.run(['launchctl', 'load', str(BS_PLIST)], capture_output=True)
+            _sched_enable('bs')
             self._respond_json({'ok': True})
         elif parts == ['bs-sched', 'disable']:
-            subprocess.run(['launchctl', 'unload', str(BS_PLIST)], capture_output=True)
+            _sched_disable('bs')
             self._respond_json({'ok': True})
         elif parts == ['po-sched', 'enable']:
-            subprocess.run(['launchctl', 'load', str(PO_PLIST)], capture_output=True)
+            _sched_enable('po')
             self._respond_json({'ok': True})
         elif parts == ['po-sched', 'disable']:
-            subprocess.run(['launchctl', 'unload', str(PO_PLIST)], capture_output=True)
+            _sched_disable('po')
             self._respond_json({'ok': True})
         else:
             self.send_error(404)
@@ -867,17 +934,10 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
 
     def _get_status(self):
         # 定期実行
-        try:
-            out = subprocess.run(['launchctl', 'list'], capture_output=True, text=True)
-            cm_schedule = 'com.coin-price-checker.cm-sync' in out.stdout
-            bs_schedule = 'com.coin-price-checker.bs-scrape' in out.stdout
-            ap_schedule = 'com.coin-price-checker.ap-scrape' in out.stdout
-            po_schedule = 'com.coin-price-checker.price-only' in out.stdout
-        except Exception:
-            cm_schedule = False
-            bs_schedule = False
-            ap_schedule = False
-            po_schedule = False
+        cm_schedule = _sched_is_enabled('cm')
+        bs_schedule = _sched_is_enabled('bs')
+        ap_schedule = _sched_is_enabled('ap')
+        po_schedule = _sched_is_enabled('po')
 
         return {
             'cm_schedule': cm_schedule,
