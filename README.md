@@ -13,50 +13,37 @@
 - launchdによる定期自動実行（macOS）
 - GitHub Actionsによるクラウド実行
 
-## 新しいPCでのセットアップ
+## セットアップ
 
-### 1. リポジトリをクローン
+### Windows（簡単セットアップ）
 
+1. このリポジトリをダウンロードまたはクローン
+2. **`setup-windows.bat` をダブルクリック**
+
+これだけで以下が自動的にインストール・設定されます:
+- Python 3.11
+- Google Cloud SDK
+- 必要なPythonパッケージ全て
+- Playwrightブラウザ
+- Google Cloud認証（ブラウザが開くのでGoogleアカウントでログイン）
+- デスクトップにショートカット作成
+
+セットアップ完了後は、デスクトップの **「コイン価格管理」** をダブルクリックで起動できます。
+
+### macOS
+
+1. リポジトリをクローン
 ```bash
 git clone https://github.com/francchouette/coin-price-checker.git
 cd coin-price-checker
 ```
 
-### 2. .env ファイルを作成
-
-```bash
-cp .env.example .env
-```
-
-`.env` を編集してAPIキー等を設定:
-
-```bash
-# Python パス（pyenv等を使っている場合に指定、未設定時は which python3 を使用）
-PYTHON_PATH=/Users/yourname/.pyenv/versions/3.11.11/bin/python3
-
-# API認証
-SPREADSHEET_ID=your-spreadsheet-id
-COLORME_ACCESS_TOKEN=your-colorme-access-token
-```
-
-### 3. セットアップスクリプトを実行
-
+2. セットアップスクリプトを実行
 ```bash
 bash scripts/setup.sh
 ```
 
-これで以下が自動的に行われます:
-
-- Python依存パッケージのインストール（pip install -r requirements.txt）
-- Playwrightブラウザ（chromium）のインストール
-- `.env` ファイルの検証
-- Google Cloud ADC認証の確認
-- launchd plistファイルの配置（macOSのみ）
-- ログディレクトリの作成
-- スクリプトへの実行権限付与
-
-### 4. Google Cloud認証（初回のみ）
-
+3. Google Cloud認証（初回のみ）
 ```bash
 gcloud auth application-default login \
   --scopes="openid,https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/spreadsheets"
@@ -64,10 +51,8 @@ gcloud auth application-default login \
 gcloud auth application-default set-quota-project coin-price-tracker-479614
 ```
 
-### 5. 動作確認
-
+4. 動作確認
 ```bash
-# ダッシュボードを起動
 bash カラーミー同期.command
 # → ブラウザで localhost:8765 を開く
 ```
@@ -86,6 +71,7 @@ bash カラーミー同期.command
 |--------|------|------------|
 | フルスペック同期 | 全商品をカラーミーからDL → スクレイピング → 全項目同期 | 2-3時間 |
 | ブリオンスター商品取得 | Bullionstarから商品一覧をスクレイピング | 30分-1時間 |
+| APMEX商品取得 | APMEXから商品一覧+詳細をスクレイピング（レジューム対応） | 数日（中断・再開可） |
 | 価格のみ同期 | 仕入れ先から価格・在庫のみ取得 → カラーミーに同期 | 1-2時間 |
 
 ### コマンドライン
@@ -120,14 +106,17 @@ launchd plistが `~/Library/LaunchAgents/` に配置され、スケジュール�
 
 ```text
 coin-price-checker/
+├── setup-windows.bat          # Windows ワンクリックセットアップ
+├── ダッシュボード起動.bat      # Windows ダッシュボード起動
 ├── .env.example              # 環境変数テンプレート
 ├── .github/workflows/        # GitHub Actions
 ├── launchd/                  # launchd plistテンプレート
 ├── scripts/
-│   ├── setup.sh              # 初回セットアップ
+│   ├── setup.sh              # 初回セットアップ（macOS）
 │   ├── cm-sync-prices.sh     # フルスペック同期
 │   ├── cm-price-only-sync.sh # 価格のみ同期
 │   ├── bs-scrape.sh          # ブリオンスター商品取得
+│   ├── ap-scrape.sh          # APMEX商品取得
 │   ├── cm-sync-dashboard.py  # Webダッシュボード
 │   └── check_row3.py         # ベンチマーク診断
 ├── src/
@@ -136,6 +125,7 @@ coin-price-checker/
 │   ├── sync_colorme_products.py      # カラーミーAPI同期
 │   ├── restore_formulas.py           # スプレッドシート数式復元
 │   ├── bullionstar_products.py       # Bullionstar商品取得
+│   ├── apmex_products.py             # APMEX商品取得（レジューム・キャッシュ対応）
 │   ├── register_adopted_products.py  # 採用商品のカラーミー登録
 │   ├── scraper.py                    # スクレイピング管理
 │   ├── colorme.py                    # カラーミーAPIクライアント
