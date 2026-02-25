@@ -298,7 +298,11 @@ HTML = """<!DOCTYPE html>
 
       <div class="btn-group">
         <button class="btn btn-purple" id="btn-ap-run" onclick="doAction('ap','run')">商品取得開始</button>
+        <button class="btn btn-secondary" id="btn-ap-fill-ai" onclick="doAction('ap','fill-ai')">AI生成</button>
         <button class="btn btn-danger" id="btn-ap-stop" onclick="doAction('ap','stop')" disabled>停止</button>
+      </div>
+      <div style="font-size:11px;color:#86868b;margin-top:-6px">
+        商品取得: スクレイピング→保存（AI無し） / AI生成: 既存行にAI商品名・説明等を追加
       </div>
 
       <div class="sched-row">
@@ -474,11 +478,13 @@ async function refresh() {
       apEl.textContent = '実行中';
       apEl.className = 'badge badge-blue';
       document.getElementById('btn-ap-run').disabled = true;
+      document.getElementById('btn-ap-fill-ai').disabled = true;
       document.getElementById('btn-ap-stop').disabled = false;
     } else {
       apEl.textContent = '停止中';
       apEl.className = 'badge badge-yellow';
       document.getElementById('btn-ap-run').disabled = false;
+      document.getElementById('btn-ap-fill-ai').disabled = false;
       document.getElementById('btn-ap-stop').disabled = true;
     }
     document.getElementById('ap-last').textContent = data.ap.last_summary || 'なし';
@@ -581,6 +587,7 @@ async function doAction(task, action) {
     'bs-run': '商品取得を開始しています...',
     'bs-stop': '停止しています...',
     'ap-run': 'APMEX商品取得を開始しています...',
+    'ap-fill-ai': 'AI生成を開始しています...',
     'ap-stop': '停止しています...',
     'ap-clear-logs': 'ログをリセットしました',
     'ap-sched-enable': 'APMEX定期実行を有効にしました',
@@ -808,6 +815,8 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             self._respond_json({'ok': True})
         elif parts == ['ap', 'run']:
             self._respond_json(self._ap_run())
+        elif parts == ['ap', 'fill-ai']:
+            self._respond_json(self._ap_fill_ai())
         elif parts == ['ap', 'stop']:
             self._respond_json(self._ap_stop())
         elif parts == ['ap', 'clear-logs']:
@@ -1283,6 +1292,25 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         subprocess.Popen(['bash', str(AP_SCRIPT)], cwd=str(PROJECT_DIR),
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return {'ok': True, 'message': 'APMEX商品取得を開始しました'}
+
+    def _ap_fill_ai(self):
+        """既存行にAI生成データを埋める（Phase2）"""
+        if _is_running(AP_LOCK):
+            return {'ok': False, 'message': '既に実行中です'}
+        env = _subprocess_env()
+        LOG_DIR.mkdir(exist_ok=True)
+        timestamp = subprocess.check_output(['date', '+%Y%m%d_%H%M%S'], text=True).strip()
+        log_file = LOG_DIR / f"ap-scrape-{timestamp}.log"
+        with open(log_file, 'w') as f:
+            f.write(f"[{timestamp}] APMEX AI生成（Phase2）開始\n")
+        with open(log_file, 'a') as f:
+            proc = subprocess.Popen(
+                [PYTHON, '-m', 'src.apmex_products', '--fill-ai', '--verbose'],
+                cwd=str(PROJECT_DIR), env=env, stdout=f, stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        AP_LOCK.write_text(str(proc.pid))
+        return {'ok': True, 'message': 'AI生成を開始しました'}
 
     def _ap_stop(self):
         if AP_LOCK.exists():

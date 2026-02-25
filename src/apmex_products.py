@@ -1485,6 +1485,210 @@ def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = F
 
 
 # ---------------------------------------------------------------------------
+# Phase 2: 既存行にAI生成データを埋める
+# ---------------------------------------------------------------------------
+def fill_ai_for_existing_products(limit: Optional[int] = None, dry_run: bool = False) -> bool:
+    """スプレッドシートの既存行でAI列が空の商品にAI生成データを埋める
+
+    D列（カラーミー商品名）が空の行を対象に、AI生成を実行して更新する。
+    """
+    client = SpreadsheetClient()
+    if not client.connect():
+        logger.error("スプレッドシートへの接続に失敗しました")
+        return False
+
+    sheet = client._spreadsheet.worksheet(Config.SHEET_APMEX_PRODUCTS)
+    all_data = sheet.get_all_values()
+
+    if len(all_data) <= 1:
+        logger.info("データなし")
+        return True
+
+    rows = all_data[1:]
+    logger.info(f"既存データ: {len(rows)}件")
+
+    # D列（CM商品名）が空の行を抽出 = AI未生成
+    targets = []
+    for idx, row in enumerate(rows):
+        row_num = idx + 2  # シート行番号（1-based, ヘッダー+1）
+        cm_name = get_cell(row, Col.CM_PRODUCT_NAME)
+        product_name = get_cell(row, Col.PRODUCT_NAME)
+        product_url = get_cell(row, Col.PRODUCT_URL)
+        if not cm_name and product_name:
+            targets.append((row_num, row, product_name, product_url))
+
+    if not targets:
+        logger.info("AI未生成の商品はありません。")
+        return True
+
+    if limit:
+        targets = targets[:limit]
+
+    logger.info(f"AI生成対象: {len(targets)}件")
+
+    if dry_run:
+        for row_num, _, name, _ in targets[:10]:
+            logger.info(f"  行{row_num}: {name[:50]}")
+        if len(targets) > 10:
+            logger.info(f"  ... 他{len(targets) - 10}件")
+        return True
+
+    # AI生成器を初期化
+    name_generator = JapaneseProductNameGenerator()
+    description_generator = DescriptionGenerator()
+    seo_generator = SEOGenerator()
+
+    category_name_map = {
+        2977963: "ゴールド（金）",
+        2977964: "シルバー（銀）",
+        2977965: "プラチナ",
+        2977966: "パラジウム",
+        2977967: "カッパー（銅）",
+    }
+    group_name_map = {}
+
+    try:
+        colorme_client = ColorMeClient()
+        categories = colorme_client.get_categories()
+        groups = colorme_client.get_groups()
+        category_detector = CategoryDetector(categories, groups, colorme_client)
+        for grp in groups:
+            gid = grp.get("id", 0)
+            gname = grp.get("name", "")
+            if gid and gname:
+                group_name_map[gid] = gname
+        logger.info(f"カテゴリー判定器: {len(categories)}カテゴリー, {len(groups)}グループ")
+    except Exception as e:
+        logger.warning(f"カテゴリー判定器の初期化に失敗: {e}")
+        category_detector = None
+
+    # 既存型番を収集
+    existing_model_numbers = set()
+    for row in rows:
+        mn = get_cell(row, Col.CM_MODEL_NUMBER)
+        if mn:
+            existing_model_numbers.add(mn)
+    model_number_generator = ModelNumberGenerator(existing_model_numbers)
+
+    success_count = 0
+
+    for i, (row_num, row, product_name, product_url) in enumerate(targets):
+        logger.info(f"\n[{i + 1}/{len(targets)}] 行{row_num}: {product_name[:50]}")
+
+        description_en = get_cell(row, Col.DESCRIPTION_EN) or ""
+        specs = get_cell(row, Col.SPECS) or ""
+        price_jpy_str = get_cell(row, Col.PRICE_JPY) or "0"
+        try:
+            price_jpy = int(float(price_jpy_str)) if price_jpy_str else 0
+        except (ValueError, TypeError):
+            price_jpy = 0
+
+        updates = {}
+
+        # CM商品名
+        try:
+            info = {"name": product_name, "specs": specs, "description": description_en}
+            cm_name = _run_with_timeout(name_generator.generate, info, quantity=1, default="") or ""
+            if cm_name:
+                updates[Col.CM_PRODUCT_NAME.index] = cm_name
+        except Exception as e:
+            logger.debug(f"  CM商品名生成エラー: {e}")
+
+        # カテゴリー・グループ
+        if category_detector:
+            try:
+                result = _run_with_timeout(
+                    category_detector.detect, product_name, product_url or "",
+                    default=(None, None, [])
+                )
+                if result:
+                    cat_big, cat_small, group_ids = result
+                    if cat_big:
+                        updates[Col.CM_CATEGORY_BIG_ID.index] = str(cat_big)
+                        updates[Col.CM_CATEGORY_BIG_NAME.index] = category_name_map.get(cat_big, "")
+                        if cat_small:
+                            updates[Col.CM_CATEGORY_SMALL_ID.index] = str(cat_small)
+                            updates[Col.CM_CATEGORY_SMALL_NAME.index] = category_name_map.get(cat_small, "")
+                    if group_ids:
+                        updates[Col.CM_GROUP_IDS.index] = "'" + ",".join(str(g) for g in group_ids)
+                        group_names = [group_name_map.get(g, "") for g in group_ids]
+                        updates[Col.CM_GROUP_NAMES.index] = ",".join(n for n in group_names if n)
+            except Exception as e:
+                logger.debug(f"  カテゴリー判定エラー: {e}")
+
+        # 商品説明
+        if description_generator and description_generator.genai_model:
+            try:
+                desc_info = {
+                    "name": product_name, "price": price_jpy, "currency": "JPY",
+                    "description": description_en, "specs": specs,
+                }
+                result = _run_with_timeout(description_generator.generate, desc_info, default=("", ""))
+                if result and result[0]:
+                    updates[Col.CM_DESCRIPTION.index] = result[0]
+                    updates[Col.CM_SIMPLE_DESCRIPTION.index] = result[1]
+            except Exception as e:
+                logger.debug(f"  商品説明生成エラー: {e}")
+
+        # SEO
+        if seo_generator and seo_generator.genai_model:
+            try:
+                seo_info = {
+                    "name": product_name, "price": price_jpy,
+                    "description": description_en, "specs": specs,
+                }
+                result = _run_with_timeout(seo_generator.generate, seo_info, default=("", "", ""))
+                if result and result[0]:
+                    updates[Col.SEO_TITLE.index] = result[0]
+                    updates[Col.SEO_DESCRIPTION.index] = result[1]
+                    updates[Col.SEO_KEYWORDS.index] = result[2]
+            except Exception as e:
+                logger.debug(f"  SEO生成エラー: {e}")
+
+        # 型番
+        if model_number_generator and model_number_generator.genai_model:
+            try:
+                model_info = {"name": product_name, "specs": specs, "description": description_en}
+                mn = _run_with_timeout(
+                    model_number_generator.generate, model_info,
+                    quantity=1, supplier_site="APMEX", default=""
+                ) or ""
+                if mn:
+                    updates[Col.CM_MODEL_NUMBER.index] = mn
+                    existing_model_numbers.add(mn)
+            except Exception as e:
+                logger.debug(f"  型番生成エラー: {e}")
+
+        if not updates:
+            logger.warning(f"  AI生成結果なし、スキップ")
+            continue
+
+        # セル更新をバッチに追加
+        batch_updates = []
+        for col_idx, value in updates.items():
+            col_letter = chr(ord('A') + col_idx) if col_idx < 26 else chr(ord('A') + col_idx // 26 - 1) + chr(ord('A') + col_idx % 26)
+            batch_updates.append({
+                'range': f'{col_letter}{row_num}',
+                'values': [[value]]
+            })
+
+        # シートに書き込み（再接続してから）
+        try:
+            fresh_client = SpreadsheetClient()
+            fresh_client.connect()
+            fresh_sheet = fresh_client._spreadsheet.worksheet(Config.SHEET_APMEX_PRODUCTS)
+            fresh_sheet.batch_update(batch_updates, value_input_option='USER_ENTERED')
+            success_count += 1
+            logger.info(f"  → AI生成完了: {len(updates)}列更新")
+        except Exception as e:
+            logger.error(f"  シート更新エラー: {e}")
+
+    logger.info(f"\n=== AI生成結果 ===")
+    logger.info(f"成功: {success_count}/{len(targets)}件")
+    return True
+
+
+# ---------------------------------------------------------------------------
 # メイン
 # ---------------------------------------------------------------------------
 def main():
@@ -1495,6 +1699,7 @@ def main():
     parser.add_argument("--limit", type=int, default=0, help="取得件数制限（0=無制限）")
     parser.add_argument("--category", type=str, default="", help="カテゴリフィルタ（例: gold-coins）")
     parser.add_argument("--exchange-type", type=str, default="クレカ", help="為替種類: クレカ or Wise")
+    parser.add_argument("--fill-ai", action="store_true", help="既存行にAI生成データを埋める（Phase2）")
     parser.add_argument("--fix-categories", action="store_true", help="既存シートのカテゴリを商品名から再判定して修正")
     parser.add_argument("--no-cache", action="store_true", help="キャッシュを使わず商品一覧を再取得")
     args = parser.parse_args()
@@ -1509,6 +1714,12 @@ def main():
 
     limit = args.limit if args.limit > 0 else None
     category = args.category or None
+
+    # --fill-ai: 既存行にAI生成データを埋める（Phase2）
+    if args.fill_ai:
+        logger.info("=== AI生成モード（Phase2） ===")
+        success = fill_ai_for_existing_products(limit=limit, dry_run=args.dry_run)
+        return 0 if success else 1
 
     # --fix-categories: 既存シートのカテゴリ修正モード
     if args.fix_categories:
@@ -1554,15 +1765,16 @@ def main():
                 return 0
 
         # 中間保存用コールバック（ドライランでない場合のみ）
+        # AI生成はスキップして高速保存 → 後から --fill-ai で埋める
         save_callback = None
         if not args.dry_run:
             def save_callback(processed_products):
-                """スクレイピング中間保存用コールバック"""
-                return save_products_to_spreadsheet(processed_products)
+                """スクレイピング中間保存用コールバック（AI生成スキップ）"""
+                return save_products_to_spreadsheet(processed_products, skip_ai=True)
 
         products = fetch_prices_for_products(
             products, limit=limit, exchange_type=args.exchange_type,
-            save_callback=save_callback, batch_size=10,
+            save_callback=save_callback, batch_size=100,
         )
 
         # fetch_pricesモードでは中間保存で既に保存済み
