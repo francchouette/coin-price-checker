@@ -196,6 +196,29 @@ class BrightDataBrowserClient:
                 logger.info("次ページボタンが見つかりません（最終ページ）")
                 return False, ""
 
+            # クリック前にモーダルダイアログを閉じる（APMEXのポップアップ対策）
+            try:
+                modal = await self._page.query_selector('.dy-modal-container, .dy-modal-wrapper')
+                if modal:
+                    # 閉じるボタンを探す
+                    close_btn = await self._page.query_selector(
+                        '.dy-modal-container .dy-lb-close, '
+                        '.dy-modal-container [aria-label="Close"], '
+                        '.dy-modal-container button.close'
+                    )
+                    if close_btn:
+                        await close_btn.click()
+                        await self._page.wait_for_timeout(500)
+                    else:
+                        # 閉じるボタンがなければJSで非表示にする
+                        await self._page.evaluate(
+                            'document.querySelectorAll(".dy-modal-container, .dy-modal-wrapper, .dy-act-overlay")'
+                            '.forEach(el => el.remove())'
+                        )
+                        await self._page.wait_for_timeout(300)
+            except Exception:
+                pass
+
             # クリック前のURL
             old_url = self._page.url
 

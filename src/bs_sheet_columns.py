@@ -91,7 +91,7 @@ class Col:
     PRICE_JPY = _col(23, "仕入れ額(日本円)")
     QUANTITY = _col(24, "枚数")
     TOTAL_PURCHASE = _col(25, "仕入れ合計")
-    MARGIN_RATE = _col(26, "設定マージン率")
+    MARGIN_RATE = _col(26, "設定利率")
     MARGIN_AMOUNT = _col(27, "設定マージン額")
     SHIPPING = _col(28, "送料")
     MISC_COST = _col(29, "諸経費")

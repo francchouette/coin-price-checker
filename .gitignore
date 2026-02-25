@@ -67,3 +67,6 @@ Thumbs.db
 *.temp
 tmp/
 temp/
+
+# Cache
+cache/

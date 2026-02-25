@@ -8,8 +8,13 @@ GitHub Secretsからの認証情報取得に対応。
 import os
 import json
 from typing import Optional
+from pathlib import Path
 
 import google.auth
+from dotenv import load_dotenv
+
+# .env ファイルを読み込み（プロジェクトルートから検索）
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 
 class Config:
@@ -153,6 +158,9 @@ class Config:
     # 商品マスタシート名（サイト別）
     SHEET_MASTER_BRITANNIA: str = "商品マスタ_Britannia"
     SHEET_MASTER_APMEX: str = "商品マスタ_APMEX"
+
+    # APMEX商品ページ一覧シート名
+    SHEET_APMEX_PRODUCTS: str = "APMEX商品ページ一覧"
 
     # APMEXカテゴリーシート名
     SHEET_APMEX_CATEGORIES: str = "APMEXカテゴリー"
