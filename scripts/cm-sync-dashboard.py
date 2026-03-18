@@ -83,6 +83,12 @@ AP_SCRIPT = PROJECT_DIR / "scripts" / "ap-scrape.sh"
 AP_LOCK = _TEMP_DIR / "ap-scrape.lock"
 AP_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.coin-price-checker.ap-scrape.plist"
 
+# カラーミー登録（BS/APMEX）
+BS_REG_SCRIPT = PROJECT_DIR / "scripts" / "bs-register.sh"
+BS_REG_LOCK = Path("/tmp/bs-register.lock")
+AP_REG_SCRIPT = PROJECT_DIR / "scripts" / "ap-register.sh"
+AP_REG_LOCK = Path("/tmp/ap-register.lock")
+
 # 価格のみ同期
 PO_SCRIPT = PROJECT_DIR / "scripts" / "cm-price-only-sync.sh"
 PO_LOCK = _TEMP_DIR / "cm-price-only-sync.lock"
@@ -325,7 +331,11 @@ HTML = """<!DOCTYPE html>
 
       <div class="btn-group">
         <button class="btn btn-orange" id="btn-bs-run" onclick="doAction('bs','run')">商品取得開始</button>
+        <button class="btn btn-secondary" id="btn-bs-register" onclick="doAction('bs','register')">カラーミー登録</button>
         <button class="btn btn-danger" id="btn-bs-stop" onclick="doAction('bs','stop')" disabled>停止</button>
+      </div>
+      <div style="font-size:11px;color:#86868b;margin-top:-6px">
+        商品取得: 一覧スクレイピング / カラーミー登録: 採用商品をカラーミーに登録
       </div>
 
       <div class="sched-row">
@@ -366,10 +376,11 @@ HTML = """<!DOCTYPE html>
       <div class="btn-group">
         <button class="btn btn-purple" id="btn-ap-run" onclick="doAction('ap','run')">商品取得開始</button>
         <button class="btn btn-secondary" id="btn-ap-fill-ai" onclick="doAction('ap','fill-ai')">AI生成</button>
+        <button class="btn btn-secondary" id="btn-ap-register" onclick="doAction('ap','register')">カラーミー登録</button>
         <button class="btn btn-danger" id="btn-ap-stop" onclick="doAction('ap','stop')" disabled>停止</button>
       </div>
       <div style="font-size:11px;color:#86868b;margin-top:-6px">
-        商品取得: スクレイピング→保存（AI無し） / AI生成: 既存行にAI商品名・説明等を追加
+        スクレイピング / AI生成 / カラーミー登録: 採用商品を登録
       </div>
 
       <div class="sched-row">
@@ -517,11 +528,13 @@ async function refresh() {
       bsEl.textContent = '実行中';
       bsEl.className = 'badge badge-blue';
       document.getElementById('btn-bs-run').disabled = true;
+      document.getElementById('btn-bs-register').disabled = true;
       document.getElementById('btn-bs-stop').disabled = false;
     } else {
       bsEl.textContent = '停止中';
       bsEl.className = 'badge badge-yellow';
       document.getElementById('btn-bs-run').disabled = false;
+      document.getElementById('btn-bs-register').disabled = false;
       document.getElementById('btn-bs-stop').disabled = true;
     }
     document.getElementById('bs-last').textContent = data.bs.last_summary || 'なし';
@@ -546,12 +559,14 @@ async function refresh() {
       apEl.className = 'badge badge-blue';
       document.getElementById('btn-ap-run').disabled = true;
       document.getElementById('btn-ap-fill-ai').disabled = true;
+      document.getElementById('btn-ap-register').disabled = true;
       document.getElementById('btn-ap-stop').disabled = false;
     } else {
       apEl.textContent = '停止中';
       apEl.className = 'badge badge-yellow';
       document.getElementById('btn-ap-run').disabled = false;
       document.getElementById('btn-ap-fill-ai').disabled = false;
+      document.getElementById('btn-ap-register').disabled = false;
       document.getElementById('btn-ap-stop').disabled = true;
     }
     document.getElementById('ap-last').textContent = data.ap.last_summary || 'なし';
@@ -652,9 +667,11 @@ async function doAction(task, action) {
     'cm-run': '同期を開始しています...',
     'cm-stop': '停止しています...',
     'bs-run': '商品取得を開始しています...',
+    'bs-register': 'カラーミー登録を開始しています...',
     'bs-stop': '停止しています...',
     'ap-run': 'APMEX商品取得を開始しています...',
     'ap-fill-ai': 'AI生成を開始しています...',
+    'ap-register': 'カラーミー登録を開始しています...',
     'ap-stop': '停止しています...',
     'ap-clear-logs': 'ログをリセットしました',
     'ap-sched-enable': 'APMEX定期実行を有効にしました',
@@ -870,6 +887,8 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             self._respond_json(self._clear_logs('cm'))
         elif parts == ['bs', 'run']:
             self._respond_json(self._bs_run())
+        elif parts == ['bs', 'register']:
+            self._respond_json(self._bs_register())
         elif parts == ['bs', 'stop']:
             self._respond_json(self._bs_stop())
         elif parts == ['bs', 'clear-logs']:
@@ -884,6 +903,8 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             self._respond_json(self._ap_run())
         elif parts == ['ap', 'fill-ai']:
             self._respond_json(self._ap_fill_ai())
+        elif parts == ['ap', 'register']:
+            self._respond_json(self._ap_register())
         elif parts == ['ap', 'stop']:
             self._respond_json(self._ap_stop())
         elif parts == ['ap', 'clear-logs']:
@@ -1090,10 +1111,19 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
 
     # --- ブリオンスターステータス ---
     def _bs_status(self):
-        running = _is_running(BS_LOCK)
+        running = _is_running(BS_LOCK) or _is_running(BS_REG_LOCK)
 
-        # 最新ログ
-        _, log_content = _get_latest_log("bs-scrape-*.log", 60)
+        # 最新ログ（スクレイピングと登録の両方から最新を表示）
+        _, log1 = _get_latest_log("bs-scrape-*.log", 60)
+        _, log2 = _get_latest_log("bs-register-*.log", 60)
+        log_files_scrape = sorted(glob.glob(str(LOG_DIR / "bs-scrape-*.log")), reverse=True)
+        log_files_register = sorted(glob.glob(str(LOG_DIR / "bs-register-*.log")), reverse=True)
+        latest_scrape = log_files_scrape[0] if log_files_scrape else ""
+        latest_register = log_files_register[0] if log_files_register else ""
+        if latest_register > latest_scrape:
+            log_content = log2
+        else:
+            log_content = log1
 
         # 前回結果
         log_files = sorted(glob.glob(str(LOG_DIR / "bs-scrape-*.log")), reverse=True)
@@ -1181,10 +1211,19 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
 
     # --- APMEXステータス ---
     def _ap_status(self):
-        running = _is_running(AP_LOCK)
+        running = _is_running(AP_LOCK) or _is_running(AP_REG_LOCK)
 
-        # 最新ログ
-        _, log_content = _get_latest_log("ap-scrape-*.log", 60)
+        # 最新ログ（スクレイピングと登録の両方から最新を表示）
+        _, log1 = _get_latest_log("ap-scrape-*.log", 60)
+        _, log2 = _get_latest_log("ap-register-*.log", 60)
+        log_files_scrape = sorted(glob.glob(str(LOG_DIR / "ap-scrape-*.log")), reverse=True)
+        log_files_register = sorted(glob.glob(str(LOG_DIR / "ap-register-*.log")), reverse=True)
+        latest_scrape = log_files_scrape[0] if log_files_scrape else ""
+        latest_register = log_files_register[0] if log_files_register else ""
+        if latest_register > latest_scrape:
+            log_content = log2
+        else:
+            log_content = log1
 
         # 前回結果
         log_files = sorted(glob.glob(str(LOG_DIR / "ap-scrape-*.log")), reverse=True)
@@ -1327,19 +1366,27 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return {'ok': True, 'message': '商品取得を開始しました'}
 
+    def _bs_register(self):
+        if _is_running(BS_LOCK) or _is_running(BS_REG_LOCK):
+            return {'ok': False, 'message': '既に実行中です'}
+        subprocess.Popen(['bash', str(BS_REG_SCRIPT)], cwd=str(PROJECT_DIR),
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return {'ok': True, 'message': 'カラーミー登録を開始しました'}
+
     def _bs_stop(self):
-        if BS_LOCK.exists():
-            try:
-                pid = int(BS_LOCK.read_text().strip())
-                # bash の子プロセス（python）も停止するため、プロセスグループごと停止
-                os.killpg(os.getpgid(pid), signal.SIGTERM)
-            except (ValueError, ProcessLookupError, PermissionError, OSError):
-                pass
+        for lock in [BS_LOCK, BS_REG_LOCK]:
+            if lock.exists():
+                try:
+                    pid = int(lock.read_text().strip())
+                    os.killpg(os.getpgid(pid), signal.SIGTERM)
+                except (ValueError, ProcessLookupError, PermissionError, OSError):
+                    pass
         subprocess.run(['pkill', '-f', 'src.bullionstar_products'], capture_output=True)
-        try:
-            BS_LOCK.unlink(missing_ok=True)
-        except Exception:
-            pass
+        for lock in [BS_LOCK, BS_REG_LOCK]:
+            try:
+                lock.unlink(missing_ok=True)
+            except Exception:
+                pass
         return {'ok': True, 'message': '停止しました'}
 
     # ========================================
@@ -1372,18 +1419,27 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         AP_LOCK.write_text(str(proc.pid))
         return {'ok': True, 'message': 'AI生成を開始しました'}
 
+    def _ap_register(self):
+        if _is_running(AP_LOCK) or _is_running(AP_REG_LOCK):
+            return {'ok': False, 'message': '既に実行中です'}
+        subprocess.Popen(['bash', str(AP_REG_SCRIPT)], cwd=str(PROJECT_DIR),
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return {'ok': True, 'message': 'カラーミー登録を開始しました'}
+
     def _ap_stop(self):
-        if AP_LOCK.exists():
-            try:
-                pid = int(AP_LOCK.read_text().strip())
-                os.killpg(os.getpgid(pid), signal.SIGTERM)
-            except (ValueError, ProcessLookupError, PermissionError, OSError):
-                pass
+        for lock in [AP_LOCK, AP_REG_LOCK]:
+            if lock.exists():
+                try:
+                    pid = int(lock.read_text().strip())
+                    os.killpg(os.getpgid(pid), signal.SIGTERM)
+                except (ValueError, ProcessLookupError, PermissionError, OSError):
+                    pass
         subprocess.run(['pkill', '-f', 'src.apmex_products'], capture_output=True)
-        try:
-            AP_LOCK.unlink(missing_ok=True)
-        except Exception:
-            pass
+        for lock in [AP_LOCK, AP_REG_LOCK]:
+            try:
+                lock.unlink(missing_ok=True)
+            except Exception:
+                pass
         return {'ok': True, 'message': '停止しました'}
 
     # ========================================
@@ -1571,8 +1627,8 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         """指定タスクのログファイルを全削除"""
         patterns = {
             'cm': ['cm-sync-*.log', 'sync-all-*.log', 'step1-*.log', 'step2-*.log', 'restore-*.log'],
-            'bs': ['bs-scrape-*.log'],
-            'ap': ['ap-scrape-*.log'],
+            'bs': ['bs-scrape-*.log', 'bs-register-*.log'],
+            'ap': ['ap-scrape-*.log', 'ap-register-*.log'],
             'po': ['cm-price-only-*.log', 'price-only-step1-*.log', 'price-only-step2-*.log'],
         }
         deleted = 0

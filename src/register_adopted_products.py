@@ -110,7 +110,8 @@ def map_category(top_category: str, parent_category: str, child_category: str) -
 async def register_adopted_products(
     dry_run: bool = False,
     limit: Optional[int] = None,
-    upload_images: bool = False
+    upload_images: bool = False,
+    source: str = "bs"
 ) -> tuple[int, int, int]:
     """
     採用商品をカラーミーに登録
@@ -119,6 +120,7 @@ async def register_adopted_products(
         dry_run: Trueの場合、実際の登録は行わない
         limit: 処理する最大件数（デバッグ用）
         upload_images: Trueの場合、Playwright経由で画像をアップロード
+        source: 対象シート（"bs"=ブリオンスター, "ap"=APMEX）
 
     Returns:
         (登録成功数, 登録失敗数, スキップ数)
@@ -167,12 +169,14 @@ async def register_adopted_products(
     name_generator = JapaneseProductNameGenerator()
 
     try:
-        # ブリオンスター商品ページ一覧シートを取得
-        bs_sheet = client._spreadsheet.worksheet(Config.SHEET_BULLIONSTAR_PRODUCTS)
+        # 対象シートを取得
+        source_name = "APMEX" if source == "ap" else "ブリオンスター"
+        sheet_name = Config.SHEET_APMEX_PRODUCTS if source == "ap" else Config.SHEET_BULLIONSTAR_PRODUCTS
+        bs_sheet = client._spreadsheet.worksheet(sheet_name)
         bs_data = bs_sheet.get_all_values()
 
         if len(bs_data) <= 1:
-            logger.info("ブリオンスター商品ページ一覧にデータがありません")
+            logger.info(f"{source_name}商品ページ一覧にデータがありません")
             return (0, 0, 0)
 
         # 既存の型番を収集して重複チェック用にModelNumberGeneratorを初期化
@@ -640,6 +644,8 @@ def main():
     parser.add_argument("--upload-images", action="store_true", help="画像アップロードを有効化（デフォルト: OFF）")
     parser.add_argument("--verbose", "-v", action="store_true", help="詳細ログ出力")
     parser.add_argument("--skip-sync", action="store_true", help="仕入れ先一覧同期をスキップ")
+    parser.add_argument("--source", choices=["bs", "ap"], default="bs",
+                        help="対象シート（bs=ブリオンスター, ap=APMEX）")
 
     args = parser.parse_args()
 
@@ -651,8 +657,9 @@ def main():
         handlers=[logging.StreamHandler(sys.stdout)]
     )
 
+    source_name = "APMEX" if args.source == "ap" else "ブリオンスター"
     logger.info("=" * 60)
-    logger.info("採用商品カラーミー自動登録開始")
+    logger.info(f"採用商品カラーミー自動登録開始（{source_name}）")
     if args.dry_run:
         logger.info("※ ドライランモード（実際の登録は行いません）")
     if args.upload_images:
@@ -676,7 +683,8 @@ def main():
     success, error, skip = asyncio.run(register_adopted_products(
         dry_run=args.dry_run,
         limit=args.limit,
-        upload_images=args.upload_images
+        upload_images=args.upload_images,
+        source=args.source
     ))
 
     logger.info("-" * 60)
