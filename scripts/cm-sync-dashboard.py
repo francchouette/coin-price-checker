@@ -94,56 +94,227 @@ PO_SCRIPT = PROJECT_DIR / "scripts" / "cm-price-only-sync.sh"
 PO_LOCK = _TEMP_DIR / "cm-price-only-sync.lock"
 PO_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.coin-price-checker.price-only.plist"
 
-# Windows タスクスケジューラ定義（タスク名 → (スクリプト, 間隔時間)）
-_WIN_SCHED = {
-    'cm': ('coin-price-checker-cm-sync', str(CM_SCRIPT), 4),
-    'bs': ('coin-price-checker-bs-scrape', str(BS_SCRIPT), 6),
-    'ap': ('coin-price-checker-ap-scrape', str(AP_SCRIPT), 6),
-    'po': ('coin-price-checker-price-only', str(PO_SCRIPT), 4),
+# 商品説明同期
+DS_LOCK = _TEMP_DIR / "cm-desc-sync.lock"
+
+# スケジュール設定（タスクキー → 設定）
+_SCHED_CONFIG = {
+    'cm': {
+        'win_name': 'coin-price-checker-cm-sync',
+        'script': CM_SCRIPT,
+        'label': 'com.coin-price-checker.cm-sync',
+        'plist': CM_PLIST,
+        'default_interval': 240,
+    },
+    'bs': {
+        'win_name': 'coin-price-checker-bs-scrape',
+        'script': BS_SCRIPT,
+        'label': 'com.coin-price-checker.bs-scrape',
+        'plist': BS_PLIST,
+        'default_interval': 360,
+    },
+    'ap': {
+        'win_name': 'coin-price-checker-ap-scrape',
+        'script': AP_SCRIPT,
+        'label': 'com.coin-price-checker.ap-scrape',
+        'plist': AP_PLIST,
+        'default_interval': 360,
+    },
+    'po': {
+        'win_name': 'coin-price-checker-price-only',
+        'script': PO_SCRIPT,
+        'label': 'com.coin-price-checker.price-only',
+        'plist': PO_PLIST,
+        'default_interval': 240,
+    },
 }
 
-def _sched_enable(task_key: str) -> None:
+def _generate_plist(task_key: str, interval_minutes: int) -> Path:
+    """LaunchAgent plist ファイルを動的生成"""
+    cfg = _SCHED_CONFIG[task_key]
+    interval_seconds = interval_minutes * 60
+    home = str(Path.home())
+    pyenv_shims = f"{home}/.pyenv/shims"
+    log_prefix = {
+        'cm': 'cm', 'bs': 'bs', 'ap': 'ap', 'po': 'price-only',
+    }.get(task_key, task_key)
+    plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{cfg['label']}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>{cfg['script']}</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>{interval_seconds}</integer>
+    <key>WorkingDirectory</key>
+    <string>{PROJECT_DIR}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{pyenv_shims}:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>{home}</string>
+        <key>LANG</key>
+        <string>ja_JP.UTF-8</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>{PROJECT_DIR}/logs/launchd-{log_prefix}-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>{PROJECT_DIR}/logs/launchd-{log_prefix}-stderr.log</string>
+    <key>TimeOut</key>
+    <integer>14400</integer>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
+"""
+    plist_path = cfg['plist']
+    plist_path.parent.mkdir(parents=True, exist_ok=True)
+    plist_path.write_text(plist_content)
+    return plist_path
+
+def _sched_enable(task_key: str, interval_minutes: int = 0) -> None:
     """定期実行を有効にする（Windows: schtasks / macOS: launchctl）"""
+    cfg = _SCHED_CONFIG[task_key]
+    if interval_minutes <= 0:
+        interval_minutes = cfg['default_interval']
     if sys.platform == 'win32':
-        name, script, hours = _WIN_SCHED[task_key]
+        name = cfg['win_name']
+        script = str(cfg['script'])
+        tr = f'"{PYTHON}" -u "{script}"' if task_key in ('cm', 'po') else f'bash "{script}"'
         subprocess.run([
             'schtasks', '/Create', '/F',
-            '/TN', name,
-            '/TR', f'"{PYTHON}" -u "{script}"' if task_key in ('cm', 'po') else f'bash "{script}"',
-            '/SC', 'HOURLY', '/MO', str(hours),
+            '/TN', name, '/TR', tr,
+            '/SC', 'MINUTE', '/MO', str(interval_minutes),
             '/ST', '00:00',
         ], capture_output=True)
     else:
-        plist = {'cm': CM_PLIST, 'bs': BS_PLIST, 'ap': AP_PLIST, 'po': PO_PLIST}[task_key]
-        subprocess.run(['launchctl', 'load', str(plist)], capture_output=True)
+        plist_path = cfg['plist']
+        # 既に有効なら一度アンロード
+        subprocess.run(['launchctl', 'unload', str(plist_path)], capture_output=True)
+        _generate_plist(task_key, interval_minutes)
+        subprocess.run(['launchctl', 'load', str(plist_path)], capture_output=True)
 
 def _sched_disable(task_key: str) -> None:
     """定期実行を無効にする"""
+    cfg = _SCHED_CONFIG[task_key]
     if sys.platform == 'win32':
-        name = _WIN_SCHED[task_key][0]
-        subprocess.run(['schtasks', '/Delete', '/F', '/TN', name], capture_output=True)
+        subprocess.run(['schtasks', '/Delete', '/F', '/TN', cfg['win_name']], capture_output=True)
     else:
-        plist = {'cm': CM_PLIST, 'bs': BS_PLIST, 'ap': AP_PLIST, 'po': PO_PLIST}[task_key]
-        subprocess.run(['launchctl', 'unload', str(plist)], capture_output=True)
+        subprocess.run(['launchctl', 'unload', str(cfg['plist'])], capture_output=True)
 
 def _sched_is_enabled(task_key: str) -> bool:
     """定期実行が有効かどうかを確認する"""
+    cfg = _SCHED_CONFIG[task_key]
     if sys.platform == 'win32':
-        name = _WIN_SCHED[task_key][0]
-        r = subprocess.run(['schtasks', '/Query', '/TN', name], capture_output=True)
+        r = subprocess.run(['schtasks', '/Query', '/TN', cfg['win_name']], capture_output=True)
         return r.returncode == 0
     else:
         try:
-            plist_id = {
-                'cm': 'com.coin-price-checker.cm-sync',
-                'bs': 'com.coin-price-checker.bs-scrape',
-                'ap': 'com.coin-price-checker.ap-scrape',
-                'po': 'com.coin-price-checker.price-only',
-            }[task_key]
             out = subprocess.run(['launchctl', 'list'], capture_output=True, text=True)
-            return plist_id in out.stdout
+            return cfg['label'] in out.stdout
         except Exception:
             return False
+
+def _sched_get_interval(task_key: str) -> int:
+    """現在の定期実行間隔（分）を取得"""
+    cfg = _SCHED_CONFIG[task_key]
+    if sys.platform == 'win32':
+        try:
+            r = subprocess.run(['schtasks', '/Query', '/TN', cfg['win_name'], '/XML'],
+                               capture_output=True, text=True)
+            if r.returncode == 0:
+                m = re.search(r'<Interval>PT(\d+)M</Interval>', r.stdout)
+                if m:
+                    return int(m.group(1))
+                m = re.search(r'<Interval>PT(\d+)H</Interval>', r.stdout)
+                if m:
+                    return int(m.group(1)) * 60
+        except Exception:
+            pass
+    else:
+        plist_path = cfg['plist']
+        if plist_path.exists():
+            try:
+                content = plist_path.read_text()
+                # 新形式: StartInterval（秒数）
+                m = re.search(r'<key>StartInterval</key>\s*<integer>(\d+)</integer>', content)
+                if m:
+                    return int(m.group(1)) // 60
+                # 旧形式: StartCalendarInterval（固定時刻配列）→ Hour要素の数から間隔を推定
+                hours = re.findall(r'<key>Hour</key>\s*<integer>(\d+)</integer>', content)
+                if len(hours) >= 2:
+                    return 1440 // len(hours)  # 24時間 ÷ 実行回数
+            except Exception:
+                pass
+    return cfg['default_interval']
+
+
+# ========================================
+# VPN (WireGuard) 管理
+# ========================================
+
+_WG_CONF_DIRS = [
+    Path('/usr/local/etc/wireguard'),
+    Path('/opt/homebrew/etc/wireguard'),
+]
+
+def _vpn_is_connected() -> bool:
+    """WireGuard VPN接続状態を確認"""
+    try:
+        result = subprocess.run(['wg', 'show', 'interfaces'],
+                                capture_output=True, text=True, timeout=5)
+        return bool(result.stdout.strip())
+    except Exception:
+        return False
+
+def _vpn_get_active_iface() -> str:
+    """アクティブなWireGuardインターフェース名を取得"""
+    try:
+        result = subprocess.run(['wg', 'show', 'interfaces'],
+                                capture_output=True, text=True, timeout=5)
+        ifaces = result.stdout.strip().split()
+        return ifaces[0] if ifaces else ''
+    except Exception:
+        return ''
+
+def _vpn_get_conf_name() -> str:
+    """利用可能なWireGuard設定ファイル名を取得（なければ wg0）"""
+    for d in _WG_CONF_DIRS:
+        if d.exists():
+            confs = sorted(d.glob('*.conf'))
+            if confs:
+                return confs[0].stem
+    return 'wg0'
+
+def _vpn_enable() -> dict:
+    """VPN接続を開始"""
+    conf = _vpn_get_conf_name()
+    try:
+        result = subprocess.run(['sudo', 'wg-quick', 'up', conf],
+                                capture_output=True, text=True, timeout=15)
+        if result.returncode == 0:
+            return {'ok': True, 'message': f'VPN ({conf}) 接続しました'}
+        return {'ok': False, 'message': result.stderr.strip() or f'エラー (code {result.returncode})'}
+    except Exception as e:
+        return {'ok': False, 'message': str(e)}
+
+def _vpn_disable() -> dict:
+    """VPN接続を切断"""
+    iface = _vpn_get_active_iface() or _vpn_get_conf_name()
+    try:
+        result = subprocess.run(['sudo', 'wg-quick', 'down', iface],
+                                capture_output=True, text=True, timeout=15)
+        if result.returncode == 0:
+            return {'ok': True, 'message': f'VPN ({iface}) 切断しました'}
+        return {'ok': False, 'message': result.stderr.strip() or f'エラー (code {result.returncode})'}
+    except Exception as e:
+        return {'ok': False, 'message': str(e)}
 
 HTML = """<!DOCTYPE html>
 <html lang="ja">
@@ -214,7 +385,29 @@ HTML = """<!DOCTYPE html>
 
   .sched-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid #f0f0f0; }
   .sched-label { font-size: 13px; color: #86868b; flex: 1; }
+  .interval-select { padding: 4px 8px; border: 1px solid #e5e5ea; border-radius: 8px;
+                     font-size: 12px; color: #1d1d1f; background: #fff; cursor: pointer; flex-shrink: 0; }
+  .interval-select:focus { outline: none; border-color: #007aff; }
   .btn-sm { flex: 0; min-width: 50px; padding: 5px 10px; font-size: 12px; }
+
+  .toggle-switch { position: relative; display: inline-block; width: 44px; height: 26px; flex-shrink: 0; cursor: pointer; }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .toggle-slider { position: absolute; inset: 0; background: #e5e5ea; border-radius: 26px; transition: background 0.2s; }
+  .toggle-slider::before { content: ''; position: absolute; width: 20px; height: 20px; left: 3px; bottom: 3px;
+    background: #fff; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: transform 0.2s; }
+  .toggle-switch input:checked + .toggle-slider { background: #34c759; }
+  .toggle-switch input:checked + .toggle-slider::before { transform: translateX(18px); }
+
+  .vpn-bar { background: #fff; border-radius: 12px; padding: 14px 20px;
+             box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: flex;
+             justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .vpn-bar-left { display: flex; align-items: center; gap: 10px; }
+  .vpn-dot { width: 10px; height: 10px; border-radius: 50%; background: #e5e5ea; flex-shrink: 0; transition: background 0.3s; }
+  .vpn-dot.connected { background: #34c759; box-shadow: 0 0 0 3px rgba(52,199,89,0.2); }
+  .vpn-dot.disconnected { background: #ff3b30; }
+  .vpn-title { font-size: 15px; font-weight: 600; }
+  .vpn-iface { font-size: 12px; color: #86868b; font-family: 'SF Mono', 'Menlo', monospace; }
+  .vpn-status { font-size: 14px; color: #86868b; }
 
   .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
            background: #1d1d1f; color: #fff; padding: 12px 24px; border-radius: 10px;
@@ -260,16 +453,30 @@ HTML = """<!DOCTYPE html>
 </style>
 </head>
 <body>
-<div class="container">
-  <h1>コイン価格管理</h1>
+<div class="container" data-component="page-container">
+  <h1 data-component="page-title">コイン価格管理</h1>
 
-  <div class="tasks">
+  <!-- VPN ステータスバー -->
+  <div class="vpn-bar" data-component="vpn-status-bar">
+    <div class="vpn-bar-left" data-component="vpn-status-info">
+      <span class="vpn-dot" id="vpn-dot"></span>
+      <span class="vpn-title">VPN</span>
+      <span class="vpn-status" id="vpn-status">確認中...</span>
+      <span class="vpn-iface" id="vpn-iface"></span>
+    </div>
+    <label class="toggle-switch" data-component="vpn-toggle-switch">
+      <input type="checkbox" id="vpn-toggle" onchange="toggleVPN(this.checked)">
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+
+  <div class="tasks" data-component="task-grid">
 
     <!-- ======== カラーミー同期 ======== -->
-    <div class="task-card">
-      <h2>カラーミー同期</h2>
+    <div class="task-card" data-component="card-cm-sync">
+      <h2 data-component="card-cm-sync-title">カラーミー同期</h2>
 
-      <div>
+      <div data-component="card-cm-sync-status">
         <div class="status-row">
           <span class="status-label">状態</span>
           <span id="cm-status" class="badge badge-gray">...</span>
@@ -280,39 +487,47 @@ HTML = """<!DOCTYPE html>
         </div>
       </div>
 
-      <div id="cm-progress" class="progress-wrap">
+      <div id="cm-progress" class="progress-wrap" data-component="card-cm-sync-progress">
         <div id="cm-progress-step" class="progress-step"></div>
         <div class="progress-bar-bg"><div id="cm-progress-bar" class="progress-bar cm" style="width:0%"></div></div>
         <div id="cm-progress-text" class="progress-text"></div>
       </div>
 
-      <div class="btn-group">
+      <div class="btn-group" data-component="card-cm-sync-actions">
         <button class="btn btn-primary" id="btn-cm-run" onclick="doAction('cm','run')">フルスペック同期</button>
         <button class="btn btn-danger" id="btn-cm-stop" onclick="doAction('cm','stop')" disabled>停止</button>
       </div>
-      <div style="font-size:11px;color:#86868b;margin-top:-6px">
+      <div style="font-size:11px;color:#86868b;margin-top:-6px" data-component="card-cm-sync-description">
         1行ずつ: ダウンロード → スクレイピング → 数式復元 → カラーミーAPI同期
       </div>
 
-      <div class="sched-row">
-        <span class="sched-label">定期実行（4時間ごと）</span>
-        <span id="cm-sched-status" class="badge badge-gray">...</span>
-        <button class="btn btn-success btn-sm" onclick="doAction('cm-sched','enable')">ON</button>
-        <button class="btn btn-secondary btn-sm" onclick="doAction('cm-sched','disable')">OFF</button>
+      <div class="sched-row" data-component="card-cm-sync-schedule">
+        <span class="sched-label">定期実行</span>
+        <select id="cm-interval" class="interval-select" onchange="changeInterval('cm')">
+          <option value="30">30分</option><option value="60">1時間</option>
+          <option value="120">2時間</option><option value="180">3時間</option>
+          <option value="240">4時間</option><option value="360">6時間</option>
+          <option value="480">8時間</option><option value="720">12時間</option>
+          <option value="1440">24時間</option>
+        </select>
+        <label class="toggle-switch">
+          <input type="checkbox" id="cm-sched-toggle" onchange="toggleSched('cm', this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
       </div>
 
-      <div class="log-header">
+      <div class="log-header" data-component="card-cm-sync-log-header">
         <span>ログ</span>
         <button class="btn-text" onclick="doAction('cm','clear-logs')">リセット</button>
       </div>
-      <div id="cm-log" class="log-box"></div>
+      <div id="cm-log" class="log-box" data-component="card-cm-sync-log"></div>
     </div>
 
     <!-- ======== ブリオンスター商品取得 ======== -->
-    <div class="task-card">
-      <h2>ブリオンスター商品取得</h2>
+    <div class="task-card" data-component="card-bs-fetch">
+      <h2 data-component="card-bs-fetch-title">ブリオンスター商品取得</h2>
 
-      <div>
+      <div data-component="card-bs-fetch-status">
         <div class="status-row">
           <span class="status-label">状態</span>
           <span id="bs-status" class="badge badge-gray">...</span>
@@ -323,40 +538,48 @@ HTML = """<!DOCTYPE html>
         </div>
       </div>
 
-      <div id="bs-progress" class="progress-wrap">
+      <div id="bs-progress" class="progress-wrap" data-component="card-bs-fetch-progress">
         <div id="bs-progress-step" class="progress-step"></div>
         <div class="progress-bar-bg"><div id="bs-progress-bar" class="progress-bar bs" style="width:0%"></div></div>
         <div id="bs-progress-text" class="progress-text"></div>
       </div>
 
-      <div class="btn-group">
+      <div class="btn-group" data-component="card-bs-fetch-actions">
         <button class="btn btn-orange" id="btn-bs-run" onclick="doAction('bs','run')">商品取得開始</button>
         <button class="btn btn-secondary" id="btn-bs-register" onclick="doAction('bs','register')">カラーミー登録</button>
         <button class="btn btn-danger" id="btn-bs-stop" onclick="doAction('bs','stop')" disabled>停止</button>
       </div>
-      <div style="font-size:11px;color:#86868b;margin-top:-6px">
+      <div style="font-size:11px;color:#86868b;margin-top:-6px" data-component="card-bs-fetch-description">
         商品取得: 一覧スクレイピング / カラーミー登録: 採用商品をカラーミーに登録
       </div>
 
-      <div class="sched-row">
-        <span class="sched-label">定期実行（6時間ごと）</span>
-        <span id="bs-sched-status" class="badge badge-gray">...</span>
-        <button class="btn btn-success btn-sm" onclick="doAction('bs-sched','enable')">ON</button>
-        <button class="btn btn-secondary btn-sm" onclick="doAction('bs-sched','disable')">OFF</button>
+      <div class="sched-row" data-component="card-bs-fetch-schedule">
+        <span class="sched-label">定期実行</span>
+        <select id="bs-interval" class="interval-select" onchange="changeInterval('bs')">
+          <option value="30">30分</option><option value="60">1時間</option>
+          <option value="120">2時間</option><option value="180">3時間</option>
+          <option value="240">4時間</option><option value="360">6時間</option>
+          <option value="480">8時間</option><option value="720">12時間</option>
+          <option value="1440">24時間</option>
+        </select>
+        <label class="toggle-switch">
+          <input type="checkbox" id="bs-sched-toggle" onchange="toggleSched('bs', this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
       </div>
 
-      <div class="log-header">
+      <div class="log-header" data-component="card-bs-fetch-log-header">
         <span>ログ</span>
         <button class="btn-text" onclick="doAction('bs','clear-logs')">リセット</button>
       </div>
-      <div id="bs-log" class="log-box"></div>
+      <div id="bs-log" class="log-box" data-component="card-bs-fetch-log"></div>
     </div>
 
     <!-- ======== APMEX商品取得 ======== -->
-    <div class="task-card">
-      <h2>APMEX商品取得</h2>
+    <div class="task-card" data-component="card-ap-fetch">
+      <h2 data-component="card-ap-fetch-title">APMEX商品取得</h2>
 
-      <div>
+      <div data-component="card-ap-fetch-status">
         <div class="status-row">
           <span class="status-label">状態</span>
           <span id="ap-status" class="badge badge-gray">...</span>
@@ -367,41 +590,49 @@ HTML = """<!DOCTYPE html>
         </div>
       </div>
 
-      <div id="ap-progress" class="progress-wrap">
+      <div id="ap-progress" class="progress-wrap" data-component="card-ap-fetch-progress">
         <div id="ap-progress-step" class="progress-step"></div>
         <div class="progress-bar-bg"><div id="ap-progress-bar" class="progress-bar ap" style="width:0%"></div></div>
         <div id="ap-progress-text" class="progress-text"></div>
       </div>
 
-      <div class="btn-group">
+      <div class="btn-group" data-component="card-ap-fetch-actions">
         <button class="btn btn-purple" id="btn-ap-run" onclick="doAction('ap','run')">商品取得開始</button>
         <button class="btn btn-secondary" id="btn-ap-fill-ai" onclick="doAction('ap','fill-ai')">AI生成</button>
         <button class="btn btn-secondary" id="btn-ap-register" onclick="doAction('ap','register')">カラーミー登録</button>
         <button class="btn btn-danger" id="btn-ap-stop" onclick="doAction('ap','stop')" disabled>停止</button>
       </div>
-      <div style="font-size:11px;color:#86868b;margin-top:-6px">
+      <div style="font-size:11px;color:#86868b;margin-top:-6px" data-component="card-ap-fetch-description">
         スクレイピング / AI生成 / カラーミー登録: 採用商品を登録
       </div>
 
-      <div class="sched-row">
-        <span class="sched-label">定期実行（6時間ごと）</span>
-        <span id="ap-sched-status" class="badge badge-gray">...</span>
-        <button class="btn btn-success btn-sm" onclick="doAction('ap-sched','enable')">ON</button>
-        <button class="btn btn-secondary btn-sm" onclick="doAction('ap-sched','disable')">OFF</button>
+      <div class="sched-row" data-component="card-ap-fetch-schedule">
+        <span class="sched-label">定期実行</span>
+        <select id="ap-interval" class="interval-select" onchange="changeInterval('ap')">
+          <option value="30">30分</option><option value="60">1時間</option>
+          <option value="120">2時間</option><option value="180">3時間</option>
+          <option value="240">4時間</option><option value="360">6時間</option>
+          <option value="480">8時間</option><option value="720">12時間</option>
+          <option value="1440">24時間</option>
+        </select>
+        <label class="toggle-switch">
+          <input type="checkbox" id="ap-sched-toggle" onchange="toggleSched('ap', this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
       </div>
 
-      <div class="log-header">
+      <div class="log-header" data-component="card-ap-fetch-log-header">
         <span>ログ</span>
         <button class="btn-text" onclick="doAction('ap','clear-logs')">リセット</button>
       </div>
-      <div id="ap-log" class="log-box"></div>
+      <div id="ap-log" class="log-box" data-component="card-ap-fetch-log"></div>
     </div>
 
     <!-- ======== 価格のみ同期 ======== -->
-    <div class="task-card">
-      <h2>価格のみ同期</h2>
+    <div class="task-card" data-component="card-po-sync">
+      <h2 data-component="card-po-sync-title">価格のみ同期</h2>
 
-      <div>
+      <div data-component="card-po-sync-status">
         <div class="status-row">
           <span class="status-label">状態</span>
           <span id="po-status" class="badge badge-gray">...</span>
@@ -412,55 +643,109 @@ HTML = """<!DOCTYPE html>
         </div>
       </div>
 
-      <div id="po-progress" class="progress-wrap">
+      <div id="po-progress" class="progress-wrap" data-component="card-po-sync-progress">
         <div id="po-progress-step" class="progress-step"></div>
         <div class="progress-bar-bg"><div id="po-progress-bar" class="progress-bar po" style="width:0%"></div></div>
         <div id="po-progress-text" class="progress-text"></div>
       </div>
 
-      <div class="btn-group">
+      <div class="btn-group" data-component="card-po-sync-actions">
         <button class="btn btn-success" id="btn-po-run" onclick="doAction('po','run')">Step1+2 全実行</button>
         <button class="btn btn-primary" id="btn-po-sync" onclick="doAction('po','sync-only')">Step2のみ</button>
         <button class="btn btn-danger" id="btn-po-stop" onclick="doAction('po','stop')" disabled>停止</button>
       </div>
-      <div style="font-size:11px;color:#86868b;margin-top:-6px">
+      <div style="font-size:11px;color:#86868b;margin-top:-6px" data-component="card-po-sync-description">
         Step1: 仕入れ先スクレイピング → Step2: カラーミーAPI同期
       </div>
 
-      <div class="sched-row">
-        <span class="sched-label">定期実行（4時間ごと）</span>
-        <span id="po-sched-status" class="badge badge-gray">...</span>
-        <button class="btn btn-success btn-sm" onclick="doAction('po-sched','enable')">ON</button>
-        <button class="btn btn-secondary btn-sm" onclick="doAction('po-sched','disable')">OFF</button>
+      <div class="sched-row" data-component="card-po-sync-schedule">
+        <span class="sched-label">定期実行</span>
+        <select id="po-interval" class="interval-select" onchange="changeInterval('po')">
+          <option value="30">30分</option><option value="60">1時間</option>
+          <option value="120">2時間</option><option value="180">3時間</option>
+          <option value="240">4時間</option><option value="360">6時間</option>
+          <option value="480">8時間</option><option value="720">12時間</option>
+          <option value="1440">24時間</option>
+        </select>
+        <label class="toggle-switch">
+          <input type="checkbox" id="po-sched-toggle" onchange="toggleSched('po', this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
       </div>
 
-      <div class="bench-input-row">
+      <div class="bench-input-row" data-component="card-po-sync-benchmark">
         <span class="sched-label">ベンチマーク</span>
         <input type="number" id="bench-row" value="3" min="2" max="1000" class="bench-input">
         <span style="font-size:13px;color:#86868b">行目</span>
         <button class="btn btn-secondary btn-sm" id="btn-bench" onclick="runBenchmark()">確認</button>
       </div>
 
-      <div class="log-header">
+      <div class="log-header" data-component="card-po-sync-log-header">
         <span>ログ</span>
         <button class="btn-text" onclick="doAction('po','clear-logs')">リセット</button>
       </div>
-      <div id="po-log" class="log-box"></div>
+      <div id="po-log" class="log-box" data-component="card-po-sync-log"></div>
+    </div>
+
+    <!-- ======== 商品説明同期 ======== -->
+    <div class="task-card" data-component="card-ds-sync">
+      <h2 data-component="card-ds-sync-title">商品説明同期</h2>
+
+      <div data-component="card-ds-sync-status">
+        <div class="status-row">
+          <span class="status-label">状態</span>
+          <span id="ds-status" class="badge badge-gray">...</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">前回</span>
+          <span id="ds-last" class="status-value">...</span>
+        </div>
+      </div>
+
+      <div id="ds-progress" class="progress-wrap" data-component="card-ds-sync-progress">
+        <div id="ds-progress-step" class="progress-step"></div>
+        <div class="progress-bar-bg"><div id="ds-progress-bar" class="progress-bar cm" style="width:0%"></div></div>
+        <div id="ds-progress-text" class="progress-text"></div>
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px" data-component="card-ds-sync-filter">
+        <span style="font-size:13px;color:#86868b">対象:</span>
+        <select id="ds-filter" style="padding:6px 8px;border:1px solid #e5e5ea;border-radius:8px;font-size:13px">
+          <option value="all">全商品</option>
+          <option value="24" selected>直近24時間</option>
+          <option value="72">直近3日間</option>
+          <option value="168">直近1週間</option>
+        </select>
+      </div>
+
+      <div class="btn-group" data-component="card-ds-sync-actions">
+        <button class="btn btn-primary" id="btn-ds-run" onclick="dsRun()">説明を同期</button>
+        <button class="btn btn-danger" id="btn-ds-stop" onclick="doAction('ds','stop')" disabled>停止</button>
+      </div>
+      <div style="font-size:11px;color:#86868b;margin-top:-6px" data-component="card-ds-sync-description">
+        カラーミー管理画面の商品説明 → スプレッドシート BA・BB列に反映
+      </div>
+
+      <div class="log-header" data-component="card-ds-sync-log-header">
+        <span>ログ</span>
+        <button class="btn-text" onclick="doAction('ds','clear-logs')">リセット</button>
+      </div>
+      <div id="ds-log" class="log-box" data-component="card-ds-sync-log"></div>
     </div>
 
   </div>
 </div>
 
-<div id="toast" class="toast"></div>
+<div id="toast" class="toast" data-component="toast-notification"></div>
 
 <!-- ベンチマークモーダル -->
-<div id="bench-modal" class="modal-overlay" onclick="if(event.target===this)closeBenchmark()">
-  <div class="modal">
-    <div class="modal-header">
+<div id="bench-modal" class="modal-overlay" data-component="benchmark-modal" onclick="if(event.target===this)closeBenchmark()">
+  <div class="modal" data-component="benchmark-modal-content">
+    <div class="modal-header" data-component="benchmark-modal-header">
       <h3 id="bench-modal-title">ベンチマーク確認</h3>
       <button class="modal-close" onclick="closeBenchmark()">&times;</button>
     </div>
-    <div class="modal-body" id="bench-modal-body">
+    <div class="modal-body" id="bench-modal-body" data-component="benchmark-modal-body">
       <div class="modal-loading">読み込み中...</div>
     </div>
   </div>
@@ -615,41 +900,67 @@ async function refresh() {
     }
 
     // --- 定期実行 ---
-    const cmSchedEl = document.getElementById('cm-sched-status');
-    if (data.cm_schedule) {
-      cmSchedEl.textContent = '有効';
-      cmSchedEl.className = 'badge badge-green';
-    } else {
-      cmSchedEl.textContent = '無効';
-      cmSchedEl.className = 'badge badge-red';
+    const setToggle = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+    const setInterval_ = (id, val) => { const el = document.getElementById(id); if (el) el.value = String(val); };
+    setToggle('cm-sched-toggle', data.cm_schedule);
+    setToggle('bs-sched-toggle', data.bs_schedule);
+    setToggle('ap-sched-toggle', data.ap_schedule);
+    setToggle('po-sched-toggle', data.po_schedule);
+    setInterval_('cm-interval', data.cm_interval);
+    setInterval_('bs-interval', data.bs_interval);
+    setInterval_('ap-interval', data.ap_interval);
+    setInterval_('po-interval', data.po_interval);
+
+    // --- 商品説明同期 ---
+    const dsEl = document.getElementById('ds-status');
+    if (data.ds) {
+      if (data.ds.running) {
+        dsEl.textContent = '実行中';
+        dsEl.className = 'badge badge-blue';
+        document.getElementById('btn-ds-run').disabled = true;
+        document.getElementById('btn-ds-stop').disabled = false;
+      } else {
+        dsEl.textContent = '停止中';
+        dsEl.className = 'badge badge-yellow';
+        document.getElementById('btn-ds-run').disabled = false;
+        document.getElementById('btn-ds-stop').disabled = true;
+      }
+      document.getElementById('ds-last').textContent = data.ds.last_summary || 'なし';
+      document.getElementById('ds-last').style.color = data.ds.last_success ? '#2e7d32' : (data.ds.last_summary ? '#c62828' : '#1d1d1f');
+      updateLog(document.getElementById('ds-log'), data.ds.log);
+
+      const dsProg = document.getElementById('ds-progress');
+      if (data.ds.running && data.ds.progress) {
+        dsProg.classList.add('active');
+        document.getElementById('ds-progress-step').textContent = data.ds.progress.step || '';
+        document.getElementById('ds-progress-bar').style.width = (data.ds.progress.percent || 0) + '%';
+        document.getElementById('ds-progress-text').textContent = data.ds.progress.detail || '';
+      } else {
+        dsProg.classList.remove('active');
+      }
     }
-    const bsSchedEl = document.getElementById('bs-sched-status');
-    if (data.bs_schedule) {
-      bsSchedEl.textContent = '有効';
-      bsSchedEl.className = 'badge badge-green';
-    } else {
-      bsSchedEl.textContent = '無効';
-      bsSchedEl.className = 'badge badge-red';
-    }
-    const apSchedEl = document.getElementById('ap-sched-status');
-    if (data.ap_schedule) {
-      apSchedEl.textContent = '有効';
-      apSchedEl.className = 'badge badge-green';
-    } else {
-      apSchedEl.textContent = '無効';
-      apSchedEl.className = 'badge badge-red';
-    }
-    const poSchedEl = document.getElementById('po-sched-status');
-    if (data.po_schedule) {
-      poSchedEl.textContent = '有効';
-      poSchedEl.className = 'badge badge-green';
-    } else {
-      poSchedEl.textContent = '無効';
-      poSchedEl.className = 'badge badge-red';
+
+    // --- VPN ---
+    if (data.vpn !== undefined) {
+      const dot = document.getElementById('vpn-dot');
+      const status = document.getElementById('vpn-status');
+      const iface = document.getElementById('vpn-iface');
+      if (data.vpn) {
+        dot.className = 'vpn-dot connected';
+        status.textContent = '接続中';
+        status.style.color = '#2e7d32';
+        iface.textContent = data.vpn_iface ? '(' + data.vpn_iface + ')' : '';
+      } else {
+        dot.className = 'vpn-dot disconnected';
+        status.textContent = '未接続';
+        status.style.color = '#ff3b30';
+        iface.textContent = '';
+      }
+      setToggle('vpn-toggle', data.vpn);
     }
 
     // 何か実行中なら更新頻度を上げる
-    const anyRunning = data.cm.running || data.bs.running || data.ap.running || data.po.running;
+    const anyRunning = data.cm.running || data.bs.running || data.ap.running || data.po.running || (data.ds && data.ds.running);
     setRefreshRate(anyRunning ? 5000 : 10000);
 
   } catch(e) { /* ignore */ }
@@ -682,6 +993,9 @@ async function doAction(task, action) {
     'cm-clear-logs': 'ログをリセットしました',
     'bs-clear-logs': 'ログをリセットしました',
     'po-clear-logs': 'ログをリセットしました',
+    'ds-run': '商品説明同期を開始しています...',
+    'ds-stop': '停止しています...',
+    'ds-clear-logs': 'ログをリセットしました',
     'cm-sched-enable': 'カラーミー定期実行を有効にしました',
     'cm-sched-disable': 'カラーミー定期実行を無効にしました',
     'bs-sched-enable': 'BS定期実行を有効にしました',
@@ -698,6 +1012,50 @@ async function doAction(task, action) {
   if (btnRun) btnRun.disabled = true;
 
   await api(task + '/' + action);
+  setTimeout(refresh, 1500);
+}
+
+function toggleSched(task, enabled) {
+  if (enabled) {
+    const interval = document.getElementById(task + '-interval').value;
+    doAction(task + '-sched', 'enable?interval=' + interval);
+  } else {
+    doAction(task + '-sched', 'disable');
+  }
+}
+
+function changeInterval(task) {
+  const toggle = document.getElementById(task + '-sched-toggle');
+  if (toggle && toggle.checked) {
+    const interval = document.getElementById(task + '-interval').value;
+    doAction(task + '-sched', 'enable?interval=' + interval);
+    toast('インターバルを変更しました');
+  }
+}
+
+async function toggleVPN(enabled) {
+  toast(enabled ? 'VPN接続中...' : 'VPN切断中...');
+  document.getElementById('vpn-toggle').disabled = true;
+  try {
+    const result = await api('vpn/' + (enabled ? 'enable' : 'disable'));
+    if (result && !result.ok) {
+      toast('エラー: ' + (result.message || '不明なエラー'));
+    } else {
+      toast(result.message || (enabled ? 'VPN接続しました' : 'VPN切断しました'));
+    }
+  } catch(e) {
+    toast('エラーが発生しました');
+  }
+  document.getElementById('vpn-toggle').disabled = false;
+  setTimeout(refresh, 1000);
+}
+
+// 商品説明同期
+async function dsRun() {
+  const filter = document.getElementById('ds-filter').value;
+  toast('商品説明同期を開始しています...');
+  document.getElementById('btn-ds-run').disabled = true;
+  await api('ds/run?filter=' + filter);
   setTimeout(refresh, 1500);
 }
 
@@ -824,6 +1182,33 @@ setRefreshRate(10000);
 """
 
 
+def _calc_elapsed_from_log(log_file: str) -> str:
+    """ログファイル名のタイムスタンプとファイル更新日時から経過時間を算出"""
+    try:
+        from datetime import datetime
+        basename = Path(log_file).stem
+        m = re.search(r'(\d{8}_\d{6})$', basename)
+        if m:
+            start = datetime.strptime(m.group(1), '%Y%m%d_%H%M%S')
+            end = datetime.fromtimestamp(os.path.getmtime(log_file))
+            total_seconds = int((end - start).total_seconds())
+            if total_seconds < 0:
+                return ''
+            if total_seconds < 60:
+                return f'{total_seconds}秒'
+            elif total_seconds < 3600:
+                mins = total_seconds // 60
+                secs = total_seconds % 60
+                return f'{mins}分{secs}秒'
+            else:
+                hours = total_seconds // 3600
+                mins = (total_seconds % 3600) // 60
+                return f'{hours}時間{mins}分'
+    except Exception:
+        pass
+    return ''
+
+
 def _is_running(lock_file: Path) -> bool:
     """ロックファイルからプロセスが実行中か確認"""
     if not lock_file.exists():
@@ -873,6 +1258,18 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
 
+    def _parse_query_int(self, param_name: str, default: int = 0) -> int:
+        """クエリパラメータから整数値を取得"""
+        qs = self.path.split('?')
+        if len(qs) > 1:
+            for param in qs[1].split('&'):
+                if param.startswith(param_name + '='):
+                    try:
+                        return int(param.split('=')[1])
+                    except ValueError:
+                        pass
+        return default
+
     def _handle_api(self):
         path = self.path.split('/api/')[1].split('?')[0]
         parts = path.split('/')
@@ -894,7 +1291,7 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         elif parts == ['bs', 'clear-logs']:
             self._respond_json(self._clear_logs('bs'))
         elif parts == ['cm-sched', 'enable']:
-            _sched_enable('cm')
+            _sched_enable('cm', self._parse_query_int('interval'))
             self._respond_json({'ok': True})
         elif parts == ['cm-sched', 'disable']:
             _sched_disable('cm')
@@ -910,7 +1307,7 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         elif parts == ['ap', 'clear-logs']:
             self._respond_json(self._clear_logs('ap'))
         elif parts == ['ap-sched', 'enable']:
-            _sched_enable('ap')
+            _sched_enable('ap', self._parse_query_int('interval'))
             self._respond_json({'ok': True})
         elif parts == ['ap-sched', 'disable']:
             _sched_disable('ap')
@@ -924,28 +1321,36 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         elif parts == ['po', 'clear-logs']:
             self._respond_json(self._clear_logs('po'))
         elif parts[0] == 'po' and parts[1] == 'benchmark':
-            row = 3
-            qs = self.path.split('?')
-            if len(qs) > 1:
-                for param in qs[1].split('&'):
-                    if param.startswith('row='):
-                        try:
-                            row = int(param.split('=')[1])
-                        except ValueError:
-                            pass
+            row = self._parse_query_int('row', 3)
             self._respond_json(self._po_benchmark(row))
         elif parts == ['bs-sched', 'enable']:
-            _sched_enable('bs')
+            _sched_enable('bs', self._parse_query_int('interval'))
             self._respond_json({'ok': True})
         elif parts == ['bs-sched', 'disable']:
             _sched_disable('bs')
             self._respond_json({'ok': True})
         elif parts == ['po-sched', 'enable']:
-            _sched_enable('po')
+            _sched_enable('po', self._parse_query_int('interval'))
             self._respond_json({'ok': True})
         elif parts == ['po-sched', 'disable']:
             _sched_disable('po')
             self._respond_json({'ok': True})
+        elif parts[0] == 'ds' and parts[1] == 'run':
+            qs = self.path.split('?')
+            filt = 'all'
+            if len(qs) > 1:
+                for param in qs[1].split('&'):
+                    if param.startswith('filter='):
+                        filt = param.split('=')[1]
+            self._respond_json(self._ds_run(filt))
+        elif parts == ['ds', 'stop']:
+            self._respond_json(self._ds_stop())
+        elif parts == ['ds', 'clear-logs']:
+            self._respond_json(self._clear_logs('ds'))
+        elif parts == ['vpn', 'enable']:
+            self._respond_json(_vpn_enable())
+        elif parts == ['vpn', 'disable']:
+            self._respond_json(_vpn_disable())
         else:
             self.send_error(404)
 
@@ -960,15 +1365,26 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         ap_schedule = _sched_is_enabled('ap')
         po_schedule = _sched_is_enabled('po')
 
+        # VPN
+        vpn_connected = _vpn_is_connected()
+        vpn_iface = _vpn_get_active_iface() if vpn_connected else ''
+
         return {
             'cm_schedule': cm_schedule,
             'bs_schedule': bs_schedule,
             'ap_schedule': ap_schedule,
             'po_schedule': po_schedule,
+            'cm_interval': _sched_get_interval('cm'),
+            'bs_interval': _sched_get_interval('bs'),
+            'ap_interval': _sched_get_interval('ap'),
+            'po_interval': _sched_get_interval('po'),
+            'vpn': vpn_connected,
+            'vpn_iface': vpn_iface,
             'cm': self._cm_status(),
             'bs': self._bs_status(),
             'ap': self._ap_status(),
             'po': self._po_status(),
+            'ds': self._ds_status(),
         }
 
     # --- カラーミー同期ステータス ---
@@ -988,11 +1404,12 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                     full = f.read()
                 if '同期' in full and '完了' in full:
                     m = re.search(r'合計所要時間: (.+)', full)
-                    t = m.group(1) if m else ''
+                    t = m.group(1) if m else _calc_elapsed_from_log(log_files[0])
                     last_summary = f'完了 ({t})' if t else '完了'
                     last_success = True
                 elif 'ERROR' in full:
-                    last_summary = 'エラーあり'
+                    t = _calc_elapsed_from_log(log_files[0])
+                    last_summary = f'エラーあり ({t})' if t else 'エラーあり'
                 elif running:
                     last_summary = '実行中...'
             except Exception:
@@ -1137,11 +1554,12 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                     m = re.search(r'取得件数: (\d+)件', full)
                     count = m.group(1) if m else '?'
                     m2 = re.search(r'所要時間: (.+)', full)
-                    t = m2.group(1) if m2 else ''
+                    t = m2.group(1) if m2 else _calc_elapsed_from_log(log_files[0])
                     last_summary = f'完了 ({count}件, {t})' if t else f'完了 ({count}件)'
                     last_success = True
                 elif 'ERROR' in full or 'エラー' in full:
-                    last_summary = 'エラーあり'
+                    t = _calc_elapsed_from_log(log_files[0])
+                    last_summary = f'エラーあり ({t})' if t else 'エラーあり'
                 elif running:
                     last_summary = '実行中...'
             except Exception:
@@ -1235,13 +1653,14 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                     full = f.read()
                 if 'APMEX商品取得 完了' in full:
                     m = re.search(r'所要時間: (.+)', full)
-                    t = m.group(1) if m else ''
+                    t = m.group(1) if m else _calc_elapsed_from_log(log_files[0])
                     m2 = re.search(r'新規追加: (\d+)件', full)
                     count = m2.group(1) if m2 else '?'
                     last_summary = f'完了 ({count}件, {t})' if t else f'完了 ({count}件)'
                     last_success = True
                 elif 'ERROR' in full or 'エラー' in full:
-                    last_summary = 'エラーあり'
+                    t = _calc_elapsed_from_log(log_files[0])
+                    last_summary = f'エラーあり ({t})' if t else 'エラーあり'
                 elif running:
                     last_summary = '実行中...'
             except Exception:
@@ -1452,21 +1871,58 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         # 詳細ログ
         log_content = self._po_detailed_log()
 
-        # 前回結果
-        log_files = sorted(glob.glob(str(LOG_DIR / "cm-price-only-*.log")), reverse=True)
+        # 前回結果: メインログ（Step1+2）とStep2単独ログの両方から最新を判定
+        main_logs = sorted(glob.glob(str(LOG_DIR / "cm-price-only-*.log")), reverse=True)
+        step2_logs = sorted(glob.glob(str(LOG_DIR / "price-only-step2-*.log")), reverse=True)
         last_summary = ""
         last_success = False
-        if log_files:
+
+        # メインログとStep2ログの最新を比較して新しい方を優先
+        latest_main = main_logs[0] if main_logs else None
+        latest_step2 = step2_logs[0] if step2_logs else None
+        if latest_main and latest_step2:
+            use_step2 = os.path.getmtime(latest_step2) > os.path.getmtime(latest_main)
+        elif latest_step2:
+            use_step2 = True
+        else:
+            use_step2 = False
+
+        if use_step2 and latest_step2:
             try:
-                with open(log_files[0], 'r', encoding='utf-8', errors='replace') as f:
+                with open(latest_step2, 'r', encoding='utf-8', errors='replace') as f:
+                    full = f.read()
+                if '価格のみ同期完了' in full or '同期完了' in full:
+                    m_ok = re.search(r'更新成功: (\d+)件', full)
+                    m_fail = re.search(r'更新失敗: (\d+)件', full)
+                    count = m_ok.group(1) if m_ok else '?'
+                    fail = m_fail.group(1) if m_fail else '0'
+                    t = _calc_elapsed_from_log(latest_step2)
+                    parts = [f'成功:{count}件']
+                    if fail != '0':
+                        parts.append(f'失敗:{fail}件')
+                    if t:
+                        parts.append(t)
+                    last_summary = f'Step2完了 ({", ".join(parts)})'
+                    last_success = True
+                elif 'ERROR' in full:
+                    t = _calc_elapsed_from_log(latest_step2)
+                    last_summary = f'エラーあり ({t})' if t else 'エラーあり'
+                elif running:
+                    last_summary = '実行中...'
+            except Exception:
+                pass
+        elif latest_main:
+            try:
+                with open(latest_main, 'r', encoding='utf-8', errors='replace') as f:
                     full = f.read()
                 if '軽量版）完了' in full:
                     m = re.search(r'合計所要時間: (.+)', full)
-                    t = m.group(1) if m else ''
+                    t = m.group(1) if m else _calc_elapsed_from_log(latest_main)
                     last_summary = f'完了 ({t})' if t else '完了'
                     last_success = True
                 elif 'ERROR' in full:
-                    last_summary = 'エラーあり'
+                    t = _calc_elapsed_from_log(latest_main)
+                    last_summary = f'エラーあり ({t})' if t else 'エラーあり'
                 elif running:
                     last_summary = '実行中...'
             except Exception:
@@ -1602,6 +2058,116 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             pass
         return {'ok': True, 'message': '停止しました'}
 
+    # ========================================
+    # 商品説明同期ステータス・アクション
+    # ========================================
+
+    def _ds_status(self):
+        running = _is_running(DS_LOCK)
+
+        # ログ
+        _, log_content = _get_latest_log("desc-sync-*.log", 40)
+
+        # 前回結果
+        last_summary = ""
+        last_success = False
+        log_files = sorted(glob.glob(str(LOG_DIR / "desc-sync-*.log")), reverse=True)
+        if log_files:
+            try:
+                with open(log_files[0], 'r', encoding='utf-8', errors='replace') as f:
+                    full = f.read()
+                if '完了:' in full or '更新完了' in full:
+                    t = _calc_elapsed_from_log(log_files[0])
+                    m = re.search(r'完了: (\d+)件更新', full)
+                    if m:
+                        count_str = f'{m.group(1)}件更新'
+                    else:
+                        m2 = re.search(r'(\d+)件の商品説明を反映', full)
+                        count_str = f'{m2.group(1)}件' if m2 else None
+                    if count_str and t:
+                        last_summary = f'完了 ({count_str}, {t})'
+                    elif count_str:
+                        last_summary = f'完了 ({count_str})'
+                    elif t:
+                        last_summary = f'完了 ({t})'
+                    else:
+                        last_summary = '完了'
+                    last_success = True
+                elif '対象商品がありません' in full:
+                    t = _calc_elapsed_from_log(log_files[0])
+                    last_summary = f'対象なし (0件, {t})' if t else '対象なし (0件)'
+                    last_success = True
+                elif 'ERROR' in full or 'エラー' in full:
+                    t = _calc_elapsed_from_log(log_files[0])
+                    last_summary = f'エラーあり ({t})' if t else 'エラーあり'
+                elif running:
+                    last_summary = '実行中...'
+            except Exception:
+                pass
+
+        progress = None
+        if running and log_content:
+            progress = {'step': '同期中...', 'percent': 50, 'detail': ''}
+            m = re.search(r'全商品数: (\d+)件', log_content)
+            if m:
+                progress['detail'] = f'全{m.group(1)}件から対象を抽出中'
+            m2 = re.search(r'対象商品数: (\d+)件', log_content)
+            if m2:
+                progress['step'] = 'スプレッドシート反映中'
+                progress['percent'] = 70
+                progress['detail'] = f'{m2.group(1)}件の説明を反映中'
+            if '更新完了' in log_content or '完了:' in log_content:
+                progress['step'] = '完了'
+                progress['percent'] = 100
+
+        return {
+            'running': running,
+            'last_summary': last_summary,
+            'last_success': last_success,
+            'log': log_content,
+            'progress': progress,
+        }
+
+    def _ds_run(self, filter_val: str = 'all'):
+        if _is_running(DS_LOCK):
+            return {'ok': False, 'message': '既に実行中です'}
+
+        env = _subprocess_env()
+        LOG_DIR.mkdir(exist_ok=True)
+        timestamp = subprocess.check_output(['date', '+%Y%m%d_%H%M%S'], text=True).strip()
+        log_file = LOG_DIR / f"desc-sync-{timestamp}.log"
+
+        # フィルター引数を構築
+        if filter_val == 'all':
+            filter_args = ['--all']
+        else:
+            filter_args = ['--hours', filter_val]
+
+        with open(log_file, 'w') as f:
+            f.write(f"[{timestamp}] 商品説明同期 開始 (フィルター: {filter_val})\n")
+        with open(log_file, 'a') as f:
+            proc = subprocess.Popen(
+                [PYTHON, '-m', 'src.download_colorme_descriptions'] + filter_args,
+                cwd=str(PROJECT_DIR), env=env, stdout=f, stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        DS_LOCK.write_text(str(proc.pid))
+        return {'ok': True, 'message': '商品説明同期を開始しました'}
+
+    def _ds_stop(self):
+        if DS_LOCK.exists():
+            try:
+                pid = int(DS_LOCK.read_text().strip())
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+            except (ValueError, ProcessLookupError, PermissionError, OSError):
+                pass
+        subprocess.run(['pkill', '-f', 'src.download_colorme_descriptions'], capture_output=True)
+        try:
+            DS_LOCK.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return {'ok': True, 'message': '停止しました'}
+
     def _po_benchmark(self, row: int = 3):
         """指定行のベンチマーク確認（check_row3.pyをサブプロセスで実行）"""
         env = _subprocess_env()
@@ -1630,6 +2196,7 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             'bs': ['bs-scrape-*.log', 'bs-register-*.log'],
             'ap': ['ap-scrape-*.log', 'ap-register-*.log'],
             'po': ['cm-price-only-*.log', 'price-only-step1-*.log', 'price-only-step2-*.log'],
+            'ds': ['desc-sync-*.log'],
         }
         deleted = 0
         for pattern in patterns.get(task, []):
