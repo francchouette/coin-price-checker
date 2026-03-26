@@ -65,7 +65,7 @@ log "=========================================="
 
 START=$(date +%s)
 
-if "${PYTHON}" -m src.register_adopted_products --source bs --verbose >> "${LOG_FILE}" 2>&1; then
+if "${PYTHON}" -m src.register_adopted_products --source bs --upload-images --verbose >> "${LOG_FILE}" 2>&1; then
     END=$(date +%s)
     ELAPSED=$(( END - START ))
     log ""

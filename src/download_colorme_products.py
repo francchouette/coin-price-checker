@@ -234,10 +234,18 @@ def main():
                         help="ダウンロード後にカラーミーAPIへ即時同期（1行ずつ）")
     parser.add_argument("--verbose", "-v", action="store_true", help="詳細ログ")
     parser.add_argument("--limit", type=int, default=0, help="処理件数制限（0=無制限）")
+    parser.add_argument("--sync-fields", type=str, default="",
+                        help="同期項目をカンマ区切りで指定（空=全項目）: price,name,description,category,model,stock,display,stock_settings,shipping,seo,options")
     args = parser.parse_args()
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
+
+    # 同期項目フィルター
+    sync_fields = None
+    if args.sync_fields:
+        sync_fields = set(f.strip() for f in args.sync_fields.split(",") if f.strip())
+        logger.info(f"同期項目フィルター: {', '.join(sorted(sync_fields))}")
 
     mode_label = "カラーミー商品ダウンロード+同期" if args.sync else "カラーミー商品ダウンロード"
     logger.info(f"=== {mode_label}開始 ===")
@@ -473,12 +481,19 @@ def main():
                         supplier_url_for_scrape = get_cell(existing[row_idx], Col.SUPPLIER_URL)
 
                     if supplier_url_for_scrape and supplier_url_for_scrape.startswith("http"):
+                        # Bullionstar: .co.nz/.us → .com に変換（.co.nz/.usはタイムアウトするため）
+                        scrape_url_target = supplier_url_for_scrape
+                        if "bullionstar.co.nz" in scrape_url_target:
+                            scrape_url_target = scrape_url_target.replace("bullionstar.co.nz", "bullionstar.com")
+                        elif "bullionstar.us" in scrape_url_target:
+                            scrape_url_target = scrape_url_target.replace("bullionstar.us", "bullionstar.com")
+
                         # キャッシュチェック（同一URL重複防止）
-                        if supplier_url_for_scrape in price_cache:
-                            scraped_result = price_cache[supplier_url_for_scrape]
+                        if scrape_url_target in price_cache:
+                            scraped_result = price_cache[scrape_url_target]
                         else:
-                            scraped_result = scrape_url(scraper_manager, supplier_url_for_scrape)
-                            price_cache[supplier_url_for_scrape] = scraped_result
+                            scraped_result = scrape_url(scraper_manager, scrape_url_target)
+                            price_cache[scrape_url_target] = scraped_result
 
                             if scraped_result.scraped_data.error:
                                 scrape_fail += 1
@@ -545,7 +560,7 @@ def main():
 
                 # === A-F列: 操作項目 ===
                 row[Col.SYNC_MODE.index] = preserve_or_set(existing_row, Col.SYNC_MODE, "変更なし", old_row_num, new_row_num)
-                row[Col.DISPLAY_SETTING.index] = preserve_or_set(existing_row, Col.DISPLAY_SETTING, display_state, old_row_num, new_row_num)
+                row[Col.DISPLAY_SETTING.index] = preserve_or_set(existing_row, Col.DISPLAY_SETTING, display_state, old_row_num, new_row_num, preserve_existing=True)
                 row[Col.PRICE_UPDATE.index] = preserve_or_set(existing_row, Col.PRICE_UPDATE, "ON", old_row_num, new_row_num)
                 row[Col.STOCK_SYNC.index] = preserve_or_set(existing_row, Col.STOCK_SYNC, "OFF", old_row_num, new_row_num)
                 row[Col.DISPLAY_SYNC.index] = preserve_or_set(existing_row, Col.DISPLAY_SYNC, "OFF", old_row_num, new_row_num)
@@ -553,7 +568,7 @@ def main():
 
                 # === G-I列: 識別情報 ===
                 row[Col.PRODUCT_ID.index] = str(product_id)
-                row[Col.NAME.index] = product.get("name", "")
+                row[Col.NAME.index] = preserve_or_set(existing_row, Col.NAME, product.get("name", ""), old_row_num, new_row_num, preserve_existing=True)
                 row[Col.COLORME_URL.index] = f"https://ybx.jp/?pid={product_id}"
 
                 # === J-L列: 仕入れ先基本情報 ===
@@ -648,8 +663,7 @@ def main():
                 # === AK-AN列: カテゴリー・グループ ===
                 row[Col.CATEGORY_ID_BIG.index] = preserve_or_set(existing_row, Col.CATEGORY_ID_BIG, str(category_id_big) if category_id_big else "", old_row_num, new_row_num)
                 row[Col.CATEGORY_NAME_BIG.index] = preserve_or_set(existing_row, Col.CATEGORY_NAME_BIG, "", old_row_num, new_row_num)
-                # グループIDは常にAPIの値で上書き（preserve_existing=Falseで壊れた数値を修復）
-                row[Col.GROUP_IDS.index] = preserve_or_set(existing_row, Col.GROUP_IDS, group_ids_str, old_row_num, new_row_num, preserve_existing=False)
+                row[Col.GROUP_IDS.index] = preserve_or_set(existing_row, Col.GROUP_IDS, group_ids_str, old_row_num, new_row_num, preserve_existing=True)
                 row[Col.GROUP_NAMES.index] = preserve_or_set(existing_row, Col.GROUP_NAMES, "", old_row_num, new_row_num)
 
                 # === AO列: 型番 ===
@@ -658,13 +672,13 @@ def main():
                 # === AP-AV列: 在庫管理 ===
                 # 在庫数: ユーザーがスプレッドシート上で変更した値を保持する（カラーミーの値で上書きしない）
                 row[Col.STOCKS.index] = preserve_or_set(existing_row, Col.STOCKS, str(product.get("stocks") or 0), old_row_num, new_row_num, preserve_existing=True)
-                row[Col.STOCK_MANAGED.index] = preserve_or_set(existing_row, Col.STOCK_MANAGED, "する" if product.get("stock_managed", True) else "しない", old_row_num, new_row_num, preserve_existing=False)
-                row[Col.FEW_NUM.index] = preserve_or_set(existing_row, Col.FEW_NUM, str(product.get("few_num") or 0), old_row_num, new_row_num, preserve_existing=False)
+                row[Col.STOCK_MANAGED.index] = preserve_or_set(existing_row, Col.STOCK_MANAGED, "する" if product.get("stock_managed", True) else "しない", old_row_num, new_row_num, preserve_existing=True)
+                row[Col.FEW_NUM.index] = preserve_or_set(existing_row, Col.FEW_NUM, str(product.get("few_num") or 0), old_row_num, new_row_num, preserve_existing=True)
                 soldout_display = product.get("soldout_display", True)
-                row[Col.SOLDOUT_DISPLAY.index] = preserve_or_set(existing_row, Col.SOLDOUT_DISPLAY, "表示" if soldout_display else "非表示", old_row_num, new_row_num, preserve_existing=False)
-                row[Col.MIN_NUM.index] = preserve_or_set(existing_row, Col.MIN_NUM, str(product.get("min_num") or 1), old_row_num, new_row_num, preserve_existing=False)
-                row[Col.MAX_NUM.index] = preserve_or_set(existing_row, Col.MAX_NUM, str(product.get("max_num") or 0), old_row_num, new_row_num, preserve_existing=False)
-                row[Col.UNIT.index] = preserve_or_set(existing_row, Col.UNIT, product.get("unit", "") or "", old_row_num, new_row_num, preserve_existing=False)
+                row[Col.SOLDOUT_DISPLAY.index] = preserve_or_set(existing_row, Col.SOLDOUT_DISPLAY, "表示" if soldout_display else "非表示", old_row_num, new_row_num, preserve_existing=True)
+                row[Col.MIN_NUM.index] = preserve_or_set(existing_row, Col.MIN_NUM, str(product.get("min_num") or 1), old_row_num, new_row_num, preserve_existing=True)
+                row[Col.MAX_NUM.index] = preserve_or_set(existing_row, Col.MAX_NUM, str(product.get("max_num") or 0), old_row_num, new_row_num, preserve_existing=True)
+                row[Col.UNIT.index] = preserve_or_set(existing_row, Col.UNIT, product.get("unit", "") or "", old_row_num, new_row_num, preserve_existing=True)
 
                 # === AW-AZ列: 送料・配送 ===
                 row[Col.DELIVERY_CHARGE.index] = preserve_or_set(existing_row, Col.DELIVERY_CHARGE, str(product.get("delivery_charge") or 0), old_row_num, new_row_num)
@@ -674,7 +688,7 @@ def main():
 
                 # === BA-BD列: 商品説明 ===
                 row[Col.EXPL.index] = preserve_or_set(existing_row, Col.EXPL, product.get("expl", "") or "", old_row_num, new_row_num)
-                row[Col.SIMPLE_EXPL.index] = preserve_or_set(existing_row, Col.SIMPLE_EXPL, product.get("simple_expl", "") or "", old_row_num, new_row_num)
+                row[Col.SIMPLE_EXPL.index] = preserve_or_set(existing_row, Col.SIMPLE_EXPL, product.get("simple_expl", "") or "", old_row_num, new_row_num, preserve_existing=True)
                 row[Col.MOBILE_EXPL.index] = preserve_or_set(existing_row, Col.MOBILE_EXPL, "", old_row_num, new_row_num)
                 row[Col.MEMO.index] = preserve_or_set(existing_row, Col.MEMO, "", old_row_num, new_row_num)
 
@@ -781,7 +795,7 @@ def main():
                                         updated_row[cell_idx] = str(val) if val else ""
 
                             # 更新データを構築（フルスペック）
-                            data = row_to_update_data(updated_row, price_only=False)
+                            data = row_to_update_data(updated_row, price_only=False, sync_fields=sync_fields)
 
                             if not data or not data.get("updates"):
                                 sync_skip += 1

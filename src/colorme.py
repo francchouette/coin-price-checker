@@ -15,6 +15,51 @@ from .config import Config
 logger = logging.getLogger(__name__)
 
 
+import re as _re
+import unicodedata as _unicodedata
+
+def _sanitize_for_colorme(text: str) -> str:
+    """カラーミーAPIで利用できない文字を除去/置換する
+
+    AI生成テキストに韓国語(Hangul)、ヒンディー語(Devanagari)等が
+    混入する場合があり、カラーミーAPIが422エラーを返す。
+    許可: ASCII, 日本語(ひらがな/カタカナ/漢字), 一般記号, 全角/半角
+    """
+    if not text:
+        return text
+    cleaned = []
+    removed = []
+    for ch in text:
+        cp = ord(ch)
+        # ASCII (制御文字含む: 改行等)
+        if cp <= 0x7F:
+            cleaned.append(ch)
+            continue
+        name = _unicodedata.name(ch, '')
+        # 日本語: ひらがな、カタカナ、CJK漢字、CJK記号
+        if any(k in name for k in ('HIRAGANA', 'KATAKANA', 'CJK', 'IDEOGRAPH')):
+            cleaned.append(ch)
+            continue
+        # 全角・半角文字
+        if 'FULLWIDTH' in name or 'HALFWIDTH' in name:
+            cleaned.append(ch)
+            continue
+        # 一般的な記号・句読点 (U+2000-U+2BFF, U+3000-U+303F)
+        if 0x2000 <= cp <= 0x2BFF or 0x3000 <= cp <= 0x303F:
+            cleaned.append(ch)
+            continue
+        # Latin Extended (アクセント付き文字等)
+        if 0x00A0 <= cp <= 0x024F:
+            cleaned.append(ch)
+            continue
+        # それ以外は除去
+        removed.append(ch)
+    if removed:
+        unique = set(removed)
+        logger.warning(f"  カラーミー非対応文字を{len(removed)}文字除去: {unique}")
+    return ''.join(cleaned)
+
+
 @dataclass
 class ColorMeProduct:
     """カラーミー商品のデータクラス"""
@@ -866,6 +911,13 @@ class ColorMeClient:
         if errors:
             return 0, "バリデーションエラー: " + ", ".join(errors)
 
+        # テキストフィールドをサニタイズ（カラーミー非対応文字を除去）
+        product.name = _sanitize_for_colorme(product.name)
+        if product.expl:
+            product.expl = _sanitize_for_colorme(product.expl)
+        if product.simple_expl:
+            product.simple_expl = _sanitize_for_colorme(product.simple_expl)
+
         # 登録データ作成
         # price: 定価, sales_price: 販売価格（通常の販売価格）
         product_data = {
@@ -982,7 +1034,17 @@ class ColorMeClient:
 
         except requests.RequestException as e:
             error_msg = str(e)
-            logger.error(f"商品新規登録エラー: {product.name} - {error_msg}")
+            # 422等のHTTPエラーの場合、レスポンスボディにバリデーション詳細が含まれる
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_body = e.response.json()
+                    logger.error(f"商品新規登録エラー: {product.name} - {error_msg}")
+                    logger.error(f"  APIエラー詳細: {error_body}")
+                except Exception:
+                    logger.error(f"商品新規登録エラー: {product.name} - {error_msg}")
+                    logger.error(f"  レスポンスボディ: {e.response.text[:500]}")
+            else:
+                logger.error(f"商品新規登録エラー: {product.name} - {error_msg}")
             return 0, error_msg
 
     def _download_and_convert_image(self, image_url: str) -> tuple[bytes, str]:

@@ -29,13 +29,15 @@ def parse_bool_ja(value: str, true_value: str = "する") -> bool:
     return value.strip() == true_value
 
 
-def row_to_update_data(row: list, price_only: bool = False) -> dict:
+def row_to_update_data(row: list, price_only: bool = False, sync_fields: set | None = None) -> dict:
     """
     シートの行データをAPI更新用の辞書に変換する
 
     Args:
         row: シートの行データ
         price_only: Trueの場合、価格・在庫・表示状態のみ（カテゴリ・型番・説明等を除外）
+        sync_fields: 同期する項目セット（None=全項目）
+            price, name, description, category, model, stock, display, stock_settings, shipping, seo, options
 
     Returns:
         dict: API更新用のデータ（操作フラグ含む）
@@ -56,18 +58,22 @@ def row_to_update_data(row: list, price_only: bool = False) -> dict:
     # 在庫状況をブール値に変換（"Out of Stock" の場合のみ在庫なし）
     is_in_stock = supplier_stock.lower() != "out of stock"
 
+    # sync_fieldsが指定されている場合、該当項目のみ同期
+    def _enabled(field: str) -> bool:
+        return sync_fields is None or field in sync_fields
+
     # 更新データを構築
     updates = {}
     log_parts = []  # ログ用の更新内容
 
     # 商品名（price_only時はスキップ）
     name = get_cell(row, Col.NAME)
-    if name and not price_only:
+    if name and not price_only and _enabled("name"):
         updates["name"] = name
 
     # 価格情報（C列が"OFF"でない限り更新する）
     # AE列（販売価格）の数式で計算された値を優先、なければAB列（適正価格）をフォールバック
-    if price_update_enabled:
+    if price_update_enabled and _enabled("price"):
         # デバッグ: 生の値をログに記録（数式エラー等の検出用）
         sales_price_raw = get_cell(row, Col.SALES_PRICE)
         proper_price_raw = get_cell(row, Col.PROPER_PRICE)
@@ -85,20 +91,29 @@ def row_to_update_data(row: list, price_only: bool = False) -> dict:
         else:
             logger.warning(f"  価格が0のため更新スキップ: AE列='{sales_price_raw}', AB列='{proper_price_raw}'")
 
-    # カテゴリー（price_only時はスキップ）
-    if not price_only:
+    # カテゴリー・グループID（price_only時はスキップ）
+    if not price_only and _enabled("category"):
         category_id_big = get_cell_int(row, Col.CATEGORY_ID_BIG)
         if category_id_big > 0:
             updates["category_id_big"] = category_id_big
 
+        group_ids_str = get_cell(row, Col.GROUP_IDS).strip().lstrip("'")
+        if group_ids_str:
+            try:
+                group_ids = [int(g.strip()) for g in group_ids_str.split(",") if g.strip()]
+                if group_ids:
+                    updates["group_ids"] = group_ids
+            except ValueError:
+                pass
+
     # 型番（price_only時はスキップ）
-    if not price_only:
+    if not price_only and _enabled("model"):
         model_number = get_cell(row, Col.MODEL_NUMBER)
         if model_number:
             updates["model_number"] = model_number
 
     # 在庫連動（D列がONの場合）
-    if stock_sync_enabled:
+    if stock_sync_enabled and _enabled("stock"):
         # 仕入れ先の在庫状態に連動
         # - 在庫あり: AP列の在庫数をそのまま使用（ユーザーが0に設定した場合もそのまま）
         # - 在庫なし: 0に設定
@@ -109,7 +124,7 @@ def row_to_update_data(row: list, price_only: bool = False) -> dict:
         else:
             updates["stocks"] = 0
             log_parts.append("在庫: 0（在庫なし連動）")
-    else:
+    elif _enabled("stock"):
         # 在庫連動OFFの場合はAZ列の値をそのまま使用
         stocks = get_cell_int(row, Col.STOCKS, -1)
         if stocks >= 0:
@@ -127,8 +142,10 @@ def row_to_update_data(row: list, price_only: bool = False) -> dict:
     # B列の掲載設定を取得
     display_setting = get_cell(row, Col.DISPLAY_SETTING)
 
+    if not _enabled("display"):
+        pass  # 表示状態の同期をスキップ
     # B列=「掲載しない」の場合は、E列の設定に関係なく常に掲載しない
-    if display_setting == "掲載しない":
+    elif display_setting == "掲載しない":
         updates["display_state"] = "hidden"
         log_parts.append("表示: 掲載しない（B列で固定）")
     elif display_sync_mode == "連動" or display_sync_mode.upper() == "ON":
@@ -155,7 +172,7 @@ def row_to_update_data(row: list, price_only: bool = False) -> dict:
             updates["display_state"] = display_state_map[display_setting]
 
     # 以下はprice_only時はスキップ（在庫管理フラグ、送料、説明文等）
-    if not price_only:
+    if not price_only and _enabled("stock_settings"):
         # 在庫管理
         stock_managed_str = get_cell(row, Col.STOCK_MANAGED)
         if stock_managed_str:
@@ -185,11 +202,13 @@ def row_to_update_data(row: list, price_only: bool = False) -> dict:
         if unit:
             updates["unit"] = unit
 
+    if not price_only and _enabled("shipping"):
         # 個別送料
         delivery_charge = get_cell_int(row, Col.DELIVERY_CHARGE, -1)
         if delivery_charge >= 0:
             updates["delivery_charge"] = delivery_charge
 
+    if not price_only and _enabled("description"):
         # 商品説明
         expl = get_cell(row, Col.EXPL)
         if expl:
@@ -198,6 +217,38 @@ def row_to_update_data(row: list, price_only: bool = False) -> dict:
         simple_expl = get_cell(row, Col.SIMPLE_EXPL)
         if simple_expl:
             updates["simple_expl"] = simple_expl
+
+    if not price_only and _enabled("seo"):
+        # SEO項目（ページタイトル・メタディスクリプション・メタキーワード）
+        # ※カラーミーAPIでは現在これらのフィールドは無視される可能性あり
+        #   Playwright経由の管理画面更新が必要な場合あり
+        page_title = get_cell(row, Col.PAGE_TITLE)
+        if page_title:
+            updates["title_tag"] = page_title
+
+        meta_desc = get_cell(row, Col.META_DESC)
+        if meta_desc:
+            updates["meta_description"] = meta_desc
+
+        meta_keywords = get_cell(row, Col.META_KEYWORDS)
+        if meta_keywords:
+            updates["meta_keywords"] = meta_keywords
+
+    if not price_only and _enabled("options"):
+        # 軽減税率対象
+        reduced_tax = get_cell(row, Col.REDUCED_TAX)
+        if reduced_tax:
+            updates["tax_reduced"] = reduced_tax in ("対象", "する", "TRUE", "true", "True", "ON", "1")
+
+        # デジタルコンテンツ
+        digital_content = get_cell(row, Col.DIGITAL_CONTENT)
+        if digital_content:
+            updates["digital_content"] = digital_content in ("する", "TRUE", "true", "True", "ON", "1")
+
+        # 定期購入
+        subscription = get_cell(row, Col.SUBSCRIPTION)
+        if subscription:
+            updates["regular_purchase"] = subscription in ("する", "TRUE", "true", "True", "ON", "1")
 
     return {
         "product_id": product_id,
@@ -349,6 +400,8 @@ def main():
                         help="シートの価格とカラーミーの価格を比較（同期は実行しない）")
     parser.add_argument("--limit", type=int, default=0,
                         help="処理件数制限（0=無制限）")
+    parser.add_argument("--sync-fields", type=str, default="",
+                        help="同期項目をカンマ区切りで指定（空=全項目）: price,name,description,category,model,stock,display,stock_settings,shipping,seo,options")
     args = parser.parse_args()
 
     if args.verbose or args.compare:
@@ -356,6 +409,12 @@ def main():
 
     if args.compare:
         return compare_prices(args)
+
+    # 同期項目フィルター
+    sync_fields = None
+    if args.sync_fields:
+        sync_fields = set(f.strip() for f in args.sync_fields.split(",") if f.strip())
+        logger.info(f"同期項目フィルター: {', '.join(sorted(sync_fields))}")
 
     mode_label = "価格のみ同期" if args.price_only else "商品同期"
     logger.info(f"=== カラーミー{mode_label}開始 ===")
@@ -402,7 +461,7 @@ def main():
         sync_mode = get_cell(row, Col.SYNC_MODE)
 
         if sync_mode == "更新":
-            data = row_to_update_data(row, price_only=args.price_only)
+            data = row_to_update_data(row, price_only=args.price_only, sync_fields=sync_fields)
             if data and data.get("product_id", 0) > 0:
                 data["row_num"] = row_num
                 update_targets.append(data)

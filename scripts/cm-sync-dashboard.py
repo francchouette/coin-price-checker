@@ -22,6 +22,7 @@ import signal
 import subprocess
 import sys
 import glob
+from datetime import datetime
 from pathlib import Path
 
 PORT = 8765
@@ -65,8 +66,10 @@ def _subprocess_env() -> dict:
     return env
 
 # ロックファイル用の一時ディレクトリ（Windows/macOS両対応）
+# macOSでは tempfile.gettempdir() が /var/folders/... を返すが、
+# シェルスクリプトは /tmp/ を使うため、/tmp/ に統一する
 import tempfile
-_TEMP_DIR = Path(tempfile.gettempdir())
+_TEMP_DIR = Path("/tmp") if sys.platform != "win32" else Path(tempfile.gettempdir())
 
 # カラーミー同期
 CM_SCRIPT = PROJECT_DIR / "scripts" / "cm-sync-prices.sh"
@@ -334,6 +337,16 @@ HTML = """<!DOCTYPE html>
   .task-card { background: #fff; border-radius: 12px; padding: 20px;
                box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: flex; flex-direction: column; gap: 14px; }
   .task-card h2 { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .sheet-badge { font-size: 10px; font-weight: 500; color: #fff; background: #6e6e73; border-radius: 4px; padding: 2px 6px; white-space: nowrap; }
+  details.data-flow { margin-top: -4px; }
+  details.data-flow summary { font-size: 11px; color: #6e6e73; cursor: pointer; user-select: none; }
+  details.data-flow summary:hover { color: #1d1d1f; }
+  details.data-flow .flow-table { font-size: 10px; color: #515154; margin-top: 6px; border-collapse: collapse; width: 100%; }
+  details.data-flow .flow-table th { text-align: left; padding: 3px 6px; background: #f5f5f7; border-bottom: 1px solid #e5e5ea; font-weight: 600; }
+  details.data-flow .flow-table td { padding: 3px 6px; border-bottom: 1px solid #f0f0f2; }
+  details.data-flow .flow-table .dir-sheet { color: #0071e3; font-weight: 600; }
+  details.data-flow .flow-table .dir-api { color: #bf4800; font-weight: 600; }
+  details.data-flow .flow-table .dir-none { color: #86868b; }
 
   .status-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; }
   .status-row + .status-row { border-top: 1px solid #f0f0f0; }
@@ -474,7 +487,7 @@ HTML = """<!DOCTYPE html>
 
     <!-- ======== カラーミー同期 ======== -->
     <div class="task-card" data-component="card-cm-sync">
-      <h2 data-component="card-cm-sync-title">カラーミー同期</h2>
+      <h2 data-component="card-cm-sync-title">カラーミー同期 <span class="sheet-badge">新カラーミー商品管理</span></h2>
 
       <div data-component="card-cm-sync-status">
         <div class="status-row">
@@ -494,12 +507,55 @@ HTML = """<!DOCTYPE html>
       </div>
 
       <div class="btn-group" data-component="card-cm-sync-actions">
-        <button class="btn btn-primary" id="btn-cm-run" onclick="doAction('cm','run')">フルスペック同期</button>
+        <button class="btn btn-primary" id="btn-cm-run" onclick="cmRunWithFields()">シート→API同期</button>
+        <button class="btn btn-secondary" id="btn-cm-full" onclick="cmRunFull()">フルスペック</button>
         <button class="btn btn-danger" id="btn-cm-stop" onclick="doAction('cm','stop')" disabled>停止</button>
       </div>
-      <div style="font-size:11px;color:#86868b;margin-top:-6px" data-component="card-cm-sync-description">
-        1行ずつ: ダウンロード → スクレイピング → 数式復元 → カラーミーAPI同期
+      <div style="font-size:11px;color:#86868b;margin-top:-6px;line-height:1.5" data-component="card-cm-sync-description">
+        <b>シート→API同期</b>: スプレッドシートの値を直接カラーミーAPIに送信（高速）<br>
+        <b>フルスペック</b>: APIダウンロード→スクレイピング→シート更新→API同期（2〜3時間）
       </div>
+      <details class="data-flow" style="margin-top:2px">
+        <summary>同期項目の選択</summary>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;margin-top:6px;font-size:11px">
+          <label><input type="checkbox" class="cm-field" value="price" checked> 価格（AE列）</label>
+          <label><input type="checkbox" class="cm-field" value="name" checked> 商品名（H列）</label>
+          <label><input type="checkbox" class="cm-field" value="description" checked> 商品説明（BA-BB列）</label>
+          <label><input type="checkbox" class="cm-field" value="category" checked> カテゴリ・グループ（AK,AM列）</label>
+          <label><input type="checkbox" class="cm-field" value="model" checked> 型番（AO列）</label>
+          <label><input type="checkbox" class="cm-field" value="stock" checked> 在庫数（AP列）</label>
+          <label><input type="checkbox" class="cm-field" value="display" checked> 表示状態（B列）</label>
+          <label><input type="checkbox" class="cm-field" value="stock_settings" checked> 在庫管理設定（AQ-AV列）</label>
+          <label><input type="checkbox" class="cm-field" value="shipping" checked> 送料（AW列）</label>
+          <label><input type="checkbox" class="cm-field" value="seo" checked> SEO（BO-BQ列）</label>
+          <label><input type="checkbox" class="cm-field" value="options" checked> オプション（BR-BT列）</label>
+        </div>
+        <div style="margin-top:6px;display:flex;gap:8px">
+          <button class="btn-text" onclick="document.querySelectorAll('.cm-field').forEach(c=>c.checked=true)">全選択</button>
+          <button class="btn-text" onclick="document.querySelectorAll('.cm-field').forEach(c=>c.checked=false)">全解除</button>
+        </div>
+      </details>
+      <details class="data-flow">
+        <summary>データフロー設定</summary>
+        <table class="flow-table">
+          <tr><th>項目</th><th>列</th><th>ダウンロード時</th><th>同期時</th></tr>
+          <tr><td>商品名</td><td>H</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
+          <tr><td>表示状態</td><td>B</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
+          <tr><td>商品説明</td><td>BA</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
+          <tr><td>簡易説明</td><td>BB</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
+          <tr><td>型番</td><td>AO</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
+          <tr><td>価格</td><td>AE</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
+          <tr><td>在庫数</td><td>AP</td><td class="dir-sheet">シート優先</td><td>連動ON時のみ</td></tr>
+          <tr><td>在庫管理</td><td>AQ-AV</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
+          <tr><td>送料</td><td>AW</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
+          <tr><td>カテゴリID</td><td>AK</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
+          <tr><td>グループID</td><td>AM</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
+          <tr><td>画像</td><td>BE-BN</td><td class="dir-sheet">シート優先</td><td class="dir-none">送信しない</td></tr>
+        </table>
+        <div style="font-size:10px;color:#86868b;margin-top:4px">
+          <span class="dir-sheet">シート優先</span> = 初回はAPIの値で登録、以降はシートの値を保持
+        </div>
+      </details>
 
       <div class="sched-row" data-component="card-cm-sync-schedule">
         <span class="sched-label">定期実行</span>
@@ -525,7 +581,7 @@ HTML = """<!DOCTYPE html>
 
     <!-- ======== ブリオンスター商品取得 ======== -->
     <div class="task-card" data-component="card-bs-fetch">
-      <h2 data-component="card-bs-fetch-title">ブリオンスター商品取得</h2>
+      <h2 data-component="card-bs-fetch-title">ブリオンスター商品取得 <span class="sheet-badge">ブリオンスター商品ページ一覧</span></h2>
 
       <div data-component="card-bs-fetch-status">
         <div class="status-row">
@@ -547,11 +603,26 @@ HTML = """<!DOCTYPE html>
       <div class="btn-group" data-component="card-bs-fetch-actions">
         <button class="btn btn-orange" id="btn-bs-run" onclick="doAction('bs','run')">商品取得開始</button>
         <button class="btn btn-secondary" id="btn-bs-register" onclick="doAction('bs','register')">カラーミー登録</button>
+        <button class="btn btn-secondary" id="btn-bs-images" onclick="doAction('bs','images-only')">画像のみ</button>
         <button class="btn btn-danger" id="btn-bs-stop" onclick="doAction('bs','stop')" disabled>停止</button>
       </div>
-      <div style="font-size:11px;color:#86868b;margin-top:-6px" data-component="card-bs-fetch-description">
-        商品取得: 一覧スクレイピング / カラーミー登録: 採用商品をカラーミーに登録
+      <div style="font-size:11px;color:#86868b;margin-top:-6px;line-height:1.5" data-component="card-bs-fetch-description">
+        <b>商品取得</b>: BullionstarAPIから商品一覧・価格・在庫を取得しシートに保存<br>
+        <b>カラーミー登録</b>: A列が「採用」の商品をカラーミーAPIに登録 → <span style="background:#e8e8ed;border-radius:3px;padding:0 4px;font-size:10px">商品仕入れ先一覧</span> に自動同期<br>
+        <b>画像のみ</b>: 登録済み商品に画像アップロード
       </div>
+      <details class="data-flow">
+        <summary>データフロー設定</summary>
+        <table class="flow-table">
+          <tr><th>ボタン</th><th>方向</th><th>説明</th></tr>
+          <tr><td>商品取得</td><td>Bullionstar→シート</td><td>商品一覧・価格・在庫をシートに書き込み</td></tr>
+          <tr><td>カラーミー登録</td><td>シート→API</td><td>採用商品を初期登録（1回限り）</td></tr>
+          <tr><td>画像のみ</td><td>シート→API</td><td>画像URLをブラウザ経由でアップロード</td></tr>
+        </table>
+        <div style="font-size:10px;color:#86868b;margin-top:4px">
+          初期登録専用。登録後の運用は「カラーミー同期」「価格のみ同期」で管理
+        </div>
+      </details>
 
       <div class="sched-row" data-component="card-bs-fetch-schedule">
         <span class="sched-label">定期実行</span>
@@ -577,7 +648,7 @@ HTML = """<!DOCTYPE html>
 
     <!-- ======== APMEX商品取得 ======== -->
     <div class="task-card" data-component="card-ap-fetch">
-      <h2 data-component="card-ap-fetch-title">APMEX商品取得</h2>
+      <h2 data-component="card-ap-fetch-title">APMEX商品取得 <span class="sheet-badge">APMEX商品ページ一覧</span></h2>
 
       <div data-component="card-ap-fetch-status">
         <div class="status-row">
@@ -600,11 +671,27 @@ HTML = """<!DOCTYPE html>
         <button class="btn btn-purple" id="btn-ap-run" onclick="doAction('ap','run')">商品取得開始</button>
         <button class="btn btn-secondary" id="btn-ap-fill-ai" onclick="doAction('ap','fill-ai')">AI生成</button>
         <button class="btn btn-secondary" id="btn-ap-register" onclick="doAction('ap','register')">カラーミー登録</button>
+        <button class="btn btn-secondary" id="btn-ap-images" onclick="doAction('ap','images-only')">画像のみ</button>
         <button class="btn btn-danger" id="btn-ap-stop" onclick="doAction('ap','stop')" disabled>停止</button>
       </div>
-      <div style="font-size:11px;color:#86868b;margin-top:-6px" data-component="card-ap-fetch-description">
-        スクレイピング / AI生成 / カラーミー登録: 採用商品を登録
+      <div style="font-size:11px;color:#86868b;margin-top:-6px;line-height:1.5" data-component="card-ap-fetch-description">
+        <b>商品取得</b>: APMEXから商品一覧・価格・在庫をスクレイピングしシートに保存<br>
+        <b>カラーミー登録</b>: 採用商品をカラーミーAPIに登録 → <span style="background:#e8e8ed;border-radius:3px;padding:0 4px;font-size:10px">商品仕入れ先一覧</span> に自動同期<br>
+        <b>画像のみ</b>: 登録済み商品に画像アップロード
       </div>
+      <details class="data-flow">
+        <summary>データフロー設定</summary>
+        <table class="flow-table">
+          <tr><th>ボタン</th><th>方向</th><th>説明</th></tr>
+          <tr><td>商品取得</td><td>APMEX→シート</td><td>商品一覧・価格・在庫をシートに書き込み</td></tr>
+          <tr><td>AI生成</td><td>AI→シート</td><td>既存商品の説明文をAIで生成</td></tr>
+          <tr><td>カラーミー登録</td><td>シート→API</td><td>採用商品を初期登録（1回限り）</td></tr>
+          <tr><td>画像のみ</td><td>シート→API</td><td>画像URLをブラウザ経由でアップロード</td></tr>
+        </table>
+        <div style="font-size:10px;color:#86868b;margin-top:4px">
+          初期登録専用。登録後の運用は「カラーミー同期」「価格のみ同期」で管理
+        </div>
+      </details>
 
       <div class="sched-row" data-component="card-ap-fetch-schedule">
         <span class="sched-label">定期実行</span>
@@ -630,7 +717,7 @@ HTML = """<!DOCTYPE html>
 
     <!-- ======== 価格のみ同期 ======== -->
     <div class="task-card" data-component="card-po-sync">
-      <h2 data-component="card-po-sync-title">価格のみ同期</h2>
+      <h2 data-component="card-po-sync-title">価格のみ同期 <span class="sheet-badge">新カラーミー商品管理</span></h2>
 
       <div data-component="card-po-sync-status">
         <div class="status-row">
@@ -650,13 +737,25 @@ HTML = """<!DOCTYPE html>
       </div>
 
       <div class="btn-group" data-component="card-po-sync-actions">
-        <button class="btn btn-success" id="btn-po-run" onclick="doAction('po','run')">Step1+2 全実行</button>
-        <button class="btn btn-primary" id="btn-po-sync" onclick="doAction('po','sync-only')">Step2のみ</button>
+        <button class="btn btn-success" id="btn-po-run" onclick="doAction('po','run')">実行</button>
         <button class="btn btn-danger" id="btn-po-stop" onclick="doAction('po','stop')" disabled>停止</button>
       </div>
-      <div style="font-size:11px;color:#86868b;margin-top:-6px" data-component="card-po-sync-description">
-        Step1: 仕入れ先スクレイピング → Step2: カラーミーAPI同期
+      <div style="font-size:11px;color:#86868b;margin-top:-6px;line-height:1.5" data-component="card-po-sync-description">
+        仕入れ先サイトから最新の価格・在庫をスクレイピング → シートのM-Q列・S列を更新 → 数式再計算 → カラーミーAPIに価格・在庫・表示を同期
       </div>
+      <details class="data-flow">
+        <summary>データフロー設定</summary>
+        <table class="flow-table">
+          <tr><th>項目</th><th>方向</th><th>説明</th></tr>
+          <tr><td>仕入れ先価格</td><td>仕入れ先→シート</td><td>M-Q列・S列をスクレイピング結果で更新</td></tr>
+          <tr><td>販売価格</td><td>シート→API</td><td>数式で再計算されたAE列の値を送信</td></tr>
+          <tr><td>在庫</td><td>シート→API</td><td>D列=ON時、仕入れ先在庫に連動</td></tr>
+          <tr><td>表示状態</td><td>シート→API</td><td>E列=連動時、仕入れ先在庫に連動</td></tr>
+        </table>
+        <div style="font-size:10px;color:#86868b;margin-top:4px">
+          カラーミーからのダウンロードなし。シートの値をそのままAPIに送信
+        </div>
+      </details>
 
       <div class="sched-row" data-component="card-po-sync-schedule">
         <span class="sched-label">定期実行</span>
@@ -689,7 +788,7 @@ HTML = """<!DOCTYPE html>
 
     <!-- ======== 商品説明同期 ======== -->
     <div class="task-card" data-component="card-ds-sync">
-      <h2 data-component="card-ds-sync-title">商品説明同期</h2>
+      <h2 data-component="card-ds-sync-title">商品説明同期 <span class="sheet-badge">新カラーミー商品管理</span></h2>
 
       <div data-component="card-ds-sync-status">
         <div class="status-row">
@@ -725,6 +824,17 @@ HTML = """<!DOCTYPE html>
       <div style="font-size:11px;color:#86868b;margin-top:-6px" data-component="card-ds-sync-description">
         カラーミー管理画面の商品説明 → スプレッドシート BA・BB列に反映
       </div>
+      <details class="data-flow">
+        <summary>データフロー設定</summary>
+        <table class="flow-table">
+          <tr><th>項目</th><th>列</th><th>方向</th><th>説明</th></tr>
+          <tr><td>商品説明</td><td>BA</td><td>API→シート</td><td class="dir-sheet">シートが空の場合のみAPIの値を書き込み</td></tr>
+          <tr><td>簡易説明</td><td>BB</td><td>API→シート</td><td class="dir-sheet">シートが空の場合のみAPIの値を書き込み</td></tr>
+        </table>
+        <div style="font-size:10px;color:#86868b;margin-top:4px">
+          シートに既存の説明文がある場合は上書きしない（シート優先）
+        </div>
+      </details>
 
       <div class="log-header" data-component="card-ds-sync-log-header">
         <span>ログ</span>
@@ -785,11 +895,13 @@ async function refresh() {
       cmEl.textContent = '実行中';
       cmEl.className = 'badge badge-blue';
       document.getElementById('btn-cm-run').disabled = true;
+      document.getElementById('btn-cm-full').disabled = true;
       document.getElementById('btn-cm-stop').disabled = false;
     } else {
       cmEl.textContent = '停止中';
       cmEl.className = 'badge badge-yellow';
       document.getElementById('btn-cm-run').disabled = false;
+      document.getElementById('btn-cm-full').disabled = false;
       document.getElementById('btn-cm-stop').disabled = true;
     }
     document.getElementById('cm-last').textContent = data.cm.last_summary || 'なし';
@@ -814,12 +926,14 @@ async function refresh() {
       bsEl.className = 'badge badge-blue';
       document.getElementById('btn-bs-run').disabled = true;
       document.getElementById('btn-bs-register').disabled = true;
+      document.getElementById('btn-bs-images').disabled = true;
       document.getElementById('btn-bs-stop').disabled = false;
     } else {
       bsEl.textContent = '停止中';
       bsEl.className = 'badge badge-yellow';
       document.getElementById('btn-bs-run').disabled = false;
       document.getElementById('btn-bs-register').disabled = false;
+      document.getElementById('btn-bs-images').disabled = false;
       document.getElementById('btn-bs-stop').disabled = true;
     }
     document.getElementById('bs-last').textContent = data.bs.last_summary || 'なし';
@@ -845,6 +959,7 @@ async function refresh() {
       document.getElementById('btn-ap-run').disabled = true;
       document.getElementById('btn-ap-fill-ai').disabled = true;
       document.getElementById('btn-ap-register').disabled = true;
+      document.getElementById('btn-ap-images').disabled = true;
       document.getElementById('btn-ap-stop').disabled = false;
     } else {
       apEl.textContent = '停止中';
@@ -852,6 +967,7 @@ async function refresh() {
       document.getElementById('btn-ap-run').disabled = false;
       document.getElementById('btn-ap-fill-ai').disabled = false;
       document.getElementById('btn-ap-register').disabled = false;
+      document.getElementById('btn-ap-images').disabled = false;
       document.getElementById('btn-ap-stop').disabled = true;
     }
     document.getElementById('ap-last').textContent = data.ap.last_summary || 'なし';
@@ -875,13 +991,11 @@ async function refresh() {
       poEl.textContent = '実行中';
       poEl.className = 'badge badge-blue';
       document.getElementById('btn-po-run').disabled = true;
-      document.getElementById('btn-po-sync').disabled = true;
       document.getElementById('btn-po-stop').disabled = false;
     } else {
       poEl.textContent = '停止中';
       poEl.className = 'badge badge-yellow';
       document.getElementById('btn-po-run').disabled = false;
-      document.getElementById('btn-po-sync').disabled = false;
       document.getElementById('btn-po-stop').disabled = true;
     }
     document.getElementById('po-last').textContent = data.po.last_summary || 'なし';
@@ -973,22 +1087,41 @@ function setRefreshRate(ms) {
   refreshTimer._ms = ms;
 }
 
+async function cmRunWithFields() {
+  const checks = document.querySelectorAll('.cm-field:checked');
+  const fields = Array.from(checks).map(c => c.value).join(',');
+  if (!fields) { showToast('同期項目を1つ以上選択してください', 'error'); return; }
+  const allChecks = document.querySelectorAll('.cm-field');
+  const suffix = checks.length < allChecks.length ? '?fields=' + encodeURIComponent(fields) : '';
+  doAction('cm', 'run-fast' + suffix);
+}
+async function cmRunFull() {
+  const checks = document.querySelectorAll('.cm-field:checked');
+  const fields = Array.from(checks).map(c => c.value).join(',');
+  if (!fields) { showToast('同期項目を1つ以上選択してください', 'error'); return; }
+  const allChecks = document.querySelectorAll('.cm-field');
+  const suffix = checks.length < allChecks.length ? '?fields=' + encodeURIComponent(fields) : '';
+  doAction('cm', 'run' + suffix);
+}
+
 async function doAction(task, action) {
   const labels = {
-    'cm-run': '同期を開始しています...',
+    'cm-run': 'フルスペック同期を開始しています...',
+    'cm-run-fast': 'シート→API同期を開始しています...',
     'cm-stop': '停止しています...',
     'bs-run': '商品取得を開始しています...',
     'bs-register': 'カラーミー登録を開始しています...',
+    'bs-images-only': '画像アップロードを開始しています...',
     'bs-stop': '停止しています...',
     'ap-run': 'APMEX商品取得を開始しています...',
     'ap-fill-ai': 'AI生成を開始しています...',
     'ap-register': 'カラーミー登録を開始しています...',
+    'ap-images-only': '画像アップロードを開始しています...',
     'ap-stop': '停止しています...',
     'ap-clear-logs': 'ログをリセットしました',
     'ap-sched-enable': 'APMEX定期実行を有効にしました',
     'ap-sched-disable': 'APMEX定期実行を無効にしました',
     'po-run': 'スクレイピング+カラーミー同期を開始しています...',
-    'po-sync-only': 'カラーミー同期のみ（Step2）を開始しています...',
     'po-stop': '停止しています...',
     'cm-clear-logs': 'ログをリセットしました',
     'bs-clear-logs': 'ログをリセットしました',
@@ -1003,13 +1136,15 @@ async function doAction(task, action) {
     'po-sched-enable': '価格のみ定期実行を有効にしました',
     'po-sched-disable': '価格のみ定期実行を無効にしました',
   };
-  const key = task + '-' + action;
+  const key = task + '-' + action.split('?')[0];
   toast(labels[key] || '処理中...');
 
   // ボタン無効化
   const btnRun = document.getElementById('btn-' + task + '-run');
+  const btnFull = document.getElementById('btn-' + task + '-full');
   const btnStop = document.getElementById('btn-' + task + '-stop');
   if (btnRun) btnRun.disabled = true;
+  if (btnFull) btnFull.disabled = true;
 
   await api(task + '/' + action);
   setTimeout(refresh, 1500);
@@ -1182,6 +1317,33 @@ setRefreshRate(10000);
 """
 
 
+def _parse_register_log(full: str, latest: str, running: bool) -> tuple:
+    """登録/画像アップロードログを解析して (last_summary, last_success) を返す"""
+    if 'カラーミー登録 完了' in full or '処理完了' in full:
+        m = re.search(r'所要時間: (.+)', full)
+        t = m.group(1) if m else _calc_elapsed_from_log(latest)
+        # 画像アップロード結果
+        img_m = re.search(r'画像アップロード結果: 成功=(\d+)件, 失敗=(\d+)件, スキップ=(\d+)件', full)
+        reg_m = re.search(r'カラーミー登録結果: 成功=(\d+)件', full)
+        if img_m:
+            label = f'画像UP完了 (成功:{img_m.group(1)},失敗:{img_m.group(2)},スキップ:{img_m.group(3)}, {t})'
+        elif reg_m:
+            label = f'登録完了 (成功:{reg_m.group(1)}件, {t})'
+        else:
+            label = f'登録完了 ({t})' if t else '登録完了'
+        return label, True
+    elif 'ERROR' in full:
+        t = _calc_elapsed_from_log(latest)
+        return (f'登録エラー ({t})' if t else '登録エラー'), False
+    elif running:
+        return '実行中...', False
+    # ログはあるが完了/エラーのどちらでもない（プロセスが異常終了した可能性）
+    elif full.strip():
+        t = _calc_elapsed_from_log(latest)
+        return (f'中断 ({t})' if t else '中断'), False
+    return '', False
+
+
 def _calc_elapsed_from_log(log_file: str) -> str:
     """ログファイル名のタイムスタンプとファイル更新日時から経過時間を算出"""
     try:
@@ -1210,14 +1372,25 @@ def _calc_elapsed_from_log(log_file: str) -> str:
 
 
 def _is_running(lock_file: Path) -> bool:
-    """ロックファイルからプロセスが実行中か確認"""
+    """ロックファイルからプロセスが実行中か確認（子プロセスも検出）"""
     if not lock_file.exists():
         return False
     try:
         pid = int(lock_file.read_text().strip())
         os.kill(pid, 0)
         return True
-    except (ValueError, ProcessLookupError, PermissionError):
+    except ProcessLookupError:
+        # シェルスクリプトは終了したが子プロセス(Python)がまだ動いている場合
+        try:
+            result = subprocess.run(
+                ['pgrep', '-P', str(pid)], capture_output=True, text=True
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return True
+        except Exception:
+            pass
+        return False
+    except (ValueError, PermissionError):
         return False
 
 
@@ -1277,7 +1450,17 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         if path == 'status':
             self._respond_json(self._get_status())
         elif parts == ['cm', 'run']:
-            self._respond_json(self._cm_run())
+            # フルスペック同期（download_colorme_products.py経由）
+            from urllib.parse import urlparse, parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            sync_fields = qs.get('fields', [''])[0]
+            self._respond_json(self._cm_run(sync_fields=sync_fields))
+        elif parts == ['cm', 'run-fast']:
+            # シート→API直接同期（sync_colorme_products.py）
+            from urllib.parse import urlparse, parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            sync_fields = qs.get('fields', [''])[0]
+            self._respond_json(self._cm_run_fast(sync_fields=sync_fields))
         elif parts == ['cm', 'stop']:
             self._respond_json(self._cm_stop())
         elif parts == ['cm', 'clear-logs']:
@@ -1286,6 +1469,8 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             self._respond_json(self._bs_run())
         elif parts == ['bs', 'register']:
             self._respond_json(self._bs_register())
+        elif parts == ['bs', 'images-only']:
+            self._respond_json(self._bs_images_only())
         elif parts == ['bs', 'stop']:
             self._respond_json(self._bs_stop())
         elif parts == ['bs', 'clear-logs']:
@@ -1302,6 +1487,8 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             self._respond_json(self._ap_fill_ai())
         elif parts == ['ap', 'register']:
             self._respond_json(self._ap_register())
+        elif parts == ['ap', 'images-only']:
+            self._respond_json(self._ap_images_only())
         elif parts == ['ap', 'stop']:
             self._respond_json(self._ap_stop())
         elif parts == ['ap', 'clear-logs']:
@@ -1314,8 +1501,6 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             self._respond_json({'ok': True})
         elif parts == ['po', 'run']:
             self._respond_json(self._po_run())
-        elif parts == ['po', 'sync-only']:
-            self._respond_json(self._po_sync_only())
         elif parts == ['po', 'stop']:
             self._respond_json(self._po_stop())
         elif parts == ['po', 'clear-logs']:
@@ -1433,6 +1618,11 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         _, main_log = _get_latest_log("cm-sync-*.log", 8)
         header = main_log.strip()
 
+        # シート→API直接同期の場合: cm-sync-*.log に全ログが入っている
+        if 'シート→API同期開始' in header:
+            _, full_log = _get_latest_log("cm-sync-*.log", TAIL)
+            return full_log.strip() if full_log else header
+
         # 詳細ログ: sync-all-*.log（新形式）またはstep1/step2（旧形式）
         detail = ""
         sync_all_logs = sorted(glob.glob(str(LOG_DIR / "sync-all-*.log")), reverse=True)
@@ -1469,7 +1659,32 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
 
     def _cm_progress(self):
         """カラーミー同期の進捗"""
-        # 新形式: sync-all-*.log（1行ずつ即時同期）
+        # シート→API直接同期: cm-sync-*.log に [N/M] パターン
+        cm_logs = sorted(glob.glob(str(LOG_DIR / "cm-sync-*.log")), reverse=True)
+        if cm_logs:
+            try:
+                with open(cm_logs[0], 'r', encoding='utf-8', errors='replace') as f:
+                    content = f.read()
+                if 'シート→API同期開始' in content:
+                    matches = re.findall(r'\[(\d+)/(\d+)\]', content)
+                    if matches:
+                        current, total = int(matches[-1][0]), int(matches[-1][1])
+                        pct = (current * 100 // total) if total > 0 else 0
+                        ok = content.count('更新成功')
+                        fail = content.count('更新失敗')
+                        detail = f'{current}/{total}件'
+                        if ok or fail:
+                            detail += f' (成功:{ok} 失敗:{fail})'
+                        return {'step': 'シート→API同期', 'percent': pct, 'detail': detail}
+                    if '更新対象:' in content:
+                        m = re.search(r'更新対象: (\d+)件', content)
+                        total = m.group(1) if m else '?'
+                        return {'step': 'シート→API同期', 'percent': 3, 'detail': f'更新対象: {total}件'}
+                    return {'step': 'シート読み込み中...', 'percent': 1, 'detail': ''}
+            except Exception:
+                pass
+
+        # フルスペック: sync-all-*.log（1行ずつ即時同期）
         sync_all_logs = sorted(glob.glob(str(LOG_DIR / "sync-all-*.log")), reverse=True)
         if sync_all_logs:
             try:
@@ -1537,31 +1752,47 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         log_files_register = sorted(glob.glob(str(LOG_DIR / "bs-register-*.log")), reverse=True)
         latest_scrape = log_files_scrape[0] if log_files_scrape else ""
         latest_register = log_files_register[0] if log_files_register else ""
-        if latest_register > latest_scrape:
+        # mtimeで新しい方のログを表示
+        if latest_register and latest_scrape:
+            if os.path.getmtime(latest_register) >= os.path.getmtime(latest_scrape):
+                log_content = log2
+            else:
+                log_content = log1
+        elif latest_register:
             log_content = log2
         else:
             log_content = log1
 
-        # 前回結果
-        log_files = sorted(glob.glob(str(LOG_DIR / "bs-scrape-*.log")), reverse=True)
+        # 前回結果: スクレイピングと登録の最新ログから判定
         last_summary = ""
         last_success = False
-        if log_files:
+        # 最新のログファイルを特定（mtimeで比較）
+        all_log_files = sorted(
+            glob.glob(str(LOG_DIR / "bs-scrape-*.log")) + glob.glob(str(LOG_DIR / "bs-register-*.log")),
+            key=lambda f: os.path.getmtime(f),
+            reverse=True,
+        )
+        if all_log_files:
+            latest = all_log_files[0]
+            is_register = 'bs-register-' in latest
             try:
-                with open(log_files[0], 'r', encoding='utf-8', errors='replace') as f:
+                with open(latest, 'r', encoding='utf-8', errors='replace') as f:
                     full = f.read()
-                if '処理完了' in full:
-                    m = re.search(r'取得件数: (\d+)件', full)
-                    count = m.group(1) if m else '?'
-                    m2 = re.search(r'所要時間: (.+)', full)
-                    t = m2.group(1) if m2 else _calc_elapsed_from_log(log_files[0])
-                    last_summary = f'完了 ({count}件, {t})' if t else f'完了 ({count}件)'
-                    last_success = True
-                elif 'ERROR' in full or 'エラー' in full:
-                    t = _calc_elapsed_from_log(log_files[0])
-                    last_summary = f'エラーあり ({t})' if t else 'エラーあり'
-                elif running:
-                    last_summary = '実行中...'
+                if is_register:
+                    last_summary, last_success = _parse_register_log(full, latest, running)
+                else:
+                    if '処理完了' in full:
+                        m = re.search(r'取得件数: (\d+)件', full)
+                        count = m.group(1) if m else '?'
+                        m2 = re.search(r'所要時間: (.+)', full)
+                        t = m2.group(1) if m2 else _calc_elapsed_from_log(latest)
+                        last_summary = f'完了 ({count}件, {t})' if t else f'完了 ({count}件)'
+                        last_success = True
+                    elif 'ERROR' in full or 'エラー' in full:
+                        t = _calc_elapsed_from_log(latest)
+                        last_summary = f'エラーあり ({t})' if t else 'エラーあり'
+                    elif running:
+                        last_summary = '実行中...'
             except Exception:
                 pass
 
@@ -1638,31 +1869,46 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         log_files_register = sorted(glob.glob(str(LOG_DIR / "ap-register-*.log")), reverse=True)
         latest_scrape = log_files_scrape[0] if log_files_scrape else ""
         latest_register = log_files_register[0] if log_files_register else ""
-        if latest_register > latest_scrape:
+        # mtimeで新しい方のログを表示
+        if latest_register and latest_scrape:
+            if os.path.getmtime(latest_register) >= os.path.getmtime(latest_scrape):
+                log_content = log2
+            else:
+                log_content = log1
+        elif latest_register:
             log_content = log2
         else:
             log_content = log1
 
-        # 前回結果
-        log_files = sorted(glob.glob(str(LOG_DIR / "ap-scrape-*.log")), reverse=True)
+        # 前回結果: スクレイピングと登録の最新ログから判定
         last_summary = ""
         last_success = False
-        if log_files:
+        all_log_files = sorted(
+            glob.glob(str(LOG_DIR / "ap-scrape-*.log")) + glob.glob(str(LOG_DIR / "ap-register-*.log")),
+            key=lambda f: os.path.getmtime(f),
+            reverse=True,
+        )
+        if all_log_files:
+            latest = all_log_files[0]
+            is_register = 'ap-register-' in latest
             try:
-                with open(log_files[0], 'r', encoding='utf-8', errors='replace') as f:
+                with open(latest, 'r', encoding='utf-8', errors='replace') as f:
                     full = f.read()
-                if 'APMEX商品取得 完了' in full:
-                    m = re.search(r'所要時間: (.+)', full)
-                    t = m.group(1) if m else _calc_elapsed_from_log(log_files[0])
-                    m2 = re.search(r'新規追加: (\d+)件', full)
-                    count = m2.group(1) if m2 else '?'
-                    last_summary = f'完了 ({count}件, {t})' if t else f'完了 ({count}件)'
-                    last_success = True
-                elif 'ERROR' in full or 'エラー' in full:
-                    t = _calc_elapsed_from_log(log_files[0])
-                    last_summary = f'エラーあり ({t})' if t else 'エラーあり'
-                elif running:
-                    last_summary = '実行中...'
+                if is_register:
+                    last_summary, last_success = _parse_register_log(full, latest, running)
+                else:
+                    if 'APMEX商品取得 完了' in full:
+                        m = re.search(r'所要時間: (.+)', full)
+                        t = m.group(1) if m else _calc_elapsed_from_log(latest)
+                        m2 = re.search(r'新規追加: (\d+)件', full)
+                        count = m2.group(1) if m2 else '?'
+                        last_summary = f'完了 ({count}件, {t})' if t else f'完了 ({count}件)'
+                        last_success = True
+                    elif 'ERROR' in full or 'エラー' in full:
+                        t = _calc_elapsed_from_log(latest)
+                        last_summary = f'エラーあり ({t})' if t else 'エラーあり'
+                    elif running:
+                        last_summary = '実行中...'
             except Exception:
                 pass
 
@@ -1752,20 +1998,60 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
     # カラーミー同期アクション
     # ========================================
 
-    def _cm_run(self):
+    def _cm_run(self, sync_fields: str = ''):
         if _is_running(CM_LOCK):
             return {'ok': False, 'message': '既に実行中です'}
+        env = _subprocess_env()
+        if sync_fields:
+            env['SYNC_FIELDS'] = sync_fields
         subprocess.Popen(['bash', str(CM_SCRIPT)], cwd=str(PROJECT_DIR),
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return {'ok': True, 'message': '同期を開始しました'}
+                         env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+        msg = '同期を開始しました'
+        if sync_fields:
+            msg += f'（項目: {sync_fields}）'
+        return {'ok': True, 'message': msg}
+
+    def _cm_run_fast(self, sync_fields: str = ''):
+        """シート→API直接同期（sync_colorme_products.pyを直接実行）"""
+        if _is_running(CM_LOCK):
+            return {'ok': False, 'message': '既に実行中です'}
+        env = _subprocess_env()
+        LOG_DIR.mkdir(exist_ok=True)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        log_file = LOG_DIR / f"cm-sync-{timestamp}.log"
+        lock_file = str(CM_LOCK)
+        sync_fields_opt = f' --sync-fields {sync_fields}' if sync_fields else ''
+        # ロックファイルの管理とログ書き込みを含むシェルコマンド
+        shell_cmd = (
+            f'echo $$ > "{lock_file}" && '
+            f'trap \'rm -f "{lock_file}"\' EXIT && '
+            f'echo "[{timestamp}] シート→API同期開始" > "{log_file}" && '
+            f'echo "[{timestamp}] 同期項目: {sync_fields or "全項目"}" >> "{log_file}" && '
+            f'"{PYTHON}" -u -m src.sync_colorme_products --verbose{sync_fields_opt} >> "{log_file}" 2>&1'
+        )
+        subprocess.Popen(
+            ['bash', '-c', shell_cmd], cwd=str(PROJECT_DIR), env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        msg = 'シート→API同期を開始しました'
+        if sync_fields:
+            msg += f'（項目: {sync_fields}）'
+        return {'ok': True, 'message': msg}
 
     def _cm_stop(self):
+        killed = False
         if CM_LOCK.exists():
             try:
                 pid = int(CM_LOCK.read_text().strip())
-                os.kill(pid, signal.SIGTERM)
-            except (ValueError, ProcessLookupError, PermissionError):
+                # プロセスグループごとkill（子プロセスも含む）
+                pgid = os.getpgid(pid)
+                os.killpg(pgid, signal.SIGTERM)
+                killed = True
+            except (ValueError, ProcessLookupError, PermissionError, OSError):
                 pass
+        # フォールバック: 個別プロセスをkill
         for proc_name in ['src.download_colorme_products', 'src.sync_colorme_products', 'src.restore_formulas']:
             subprocess.run(['pkill', '-f', proc_name], capture_output=True)
         try:
@@ -1782,15 +2068,35 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         if _is_running(BS_LOCK):
             return {'ok': False, 'message': '既に実行中です'}
         subprocess.Popen(['bash', str(BS_SCRIPT)], cwd=str(PROJECT_DIR),
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
         return {'ok': True, 'message': '商品取得を開始しました'}
 
     def _bs_register(self):
         if _is_running(BS_LOCK) or _is_running(BS_REG_LOCK):
             return {'ok': False, 'message': '既に実行中です'}
         subprocess.Popen(['bash', str(BS_REG_SCRIPT)], cwd=str(PROJECT_DIR),
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
         return {'ok': True, 'message': 'カラーミー登録を開始しました'}
+
+    def _bs_images_only(self):
+        if _is_running(BS_LOCK) or _is_running(BS_REG_LOCK):
+            return {'ok': False, 'message': '既に実行中です'}
+        env = _subprocess_env()
+        LOG_DIR.mkdir(exist_ok=True)
+        timestamp = subprocess.check_output(['date', '+%Y%m%d_%H%M%S'], text=True).strip()
+        log_file = LOG_DIR / f"bs-register-{timestamp}.log"
+        with open(log_file, 'w') as f:
+            f.write(f"[{timestamp}] BS画像アップロード開始\n")
+        with open(log_file, 'a') as f:
+            proc = subprocess.Popen(
+                [PYTHON, '-m', 'src.register_adopted_products', '--source', 'bs', '--images-only', '--verbose'],
+                cwd=str(PROJECT_DIR), env=env, stdout=f, stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        BS_REG_LOCK.write_text(str(proc.pid))
+        return {'ok': True, 'message': 'BS画像アップロードを開始しました'}
 
     def _bs_stop(self):
         for lock in [BS_LOCK, BS_REG_LOCK]:
@@ -1801,6 +2107,7 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                 except (ValueError, ProcessLookupError, PermissionError, OSError):
                     pass
         subprocess.run(['pkill', '-f', 'src.bullionstar_products'], capture_output=True)
+        subprocess.run(['pkill', '-f', 'src.register_adopted_products'], capture_output=True)
         for lock in [BS_LOCK, BS_REG_LOCK]:
             try:
                 lock.unlink(missing_ok=True)
@@ -1816,7 +2123,8 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         if _is_running(AP_LOCK):
             return {'ok': False, 'message': '既に実行中です'}
         subprocess.Popen(['bash', str(AP_SCRIPT)], cwd=str(PROJECT_DIR),
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
         return {'ok': True, 'message': 'APMEX商品取得を開始しました'}
 
     def _ap_fill_ai(self):
@@ -1842,8 +2150,27 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         if _is_running(AP_LOCK) or _is_running(AP_REG_LOCK):
             return {'ok': False, 'message': '既に実行中です'}
         subprocess.Popen(['bash', str(AP_REG_SCRIPT)], cwd=str(PROJECT_DIR),
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
         return {'ok': True, 'message': 'カラーミー登録を開始しました'}
+
+    def _ap_images_only(self):
+        if _is_running(AP_LOCK) or _is_running(AP_REG_LOCK):
+            return {'ok': False, 'message': '既に実行中です'}
+        env = _subprocess_env()
+        LOG_DIR.mkdir(exist_ok=True)
+        timestamp = subprocess.check_output(['date', '+%Y%m%d_%H%M%S'], text=True).strip()
+        log_file = LOG_DIR / f"ap-register-{timestamp}.log"
+        with open(log_file, 'w') as f:
+            f.write(f"[{timestamp}] AP画像アップロード開始\n")
+        with open(log_file, 'a') as f:
+            proc = subprocess.Popen(
+                [PYTHON, '-m', 'src.register_adopted_products', '--source', 'ap', '--images-only', '--verbose'],
+                cwd=str(PROJECT_DIR), env=env, stdout=f, stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        AP_REG_LOCK.write_text(str(proc.pid))
+        return {'ok': True, 'message': 'AP画像アップロードを開始しました'}
 
     def _ap_stop(self):
         for lock in [AP_LOCK, AP_REG_LOCK]:
@@ -1854,6 +2181,7 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                 except (ValueError, ProcessLookupError, PermissionError, OSError):
                     pass
         subprocess.run(['pkill', '-f', 'src.apmex_products'], capture_output=True)
+        subprocess.run(['pkill', '-f', 'src.register_adopted_products'], capture_output=True)
         for lock in [AP_LOCK, AP_REG_LOCK]:
             try:
                 lock.unlink(missing_ok=True)
@@ -2025,30 +2353,16 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         if _is_running(PO_LOCK):
             return {'ok': False, 'message': '既に実行中です'}
         subprocess.Popen(['bash', str(PO_SCRIPT)], cwd=str(PROJECT_DIR),
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
         return {'ok': True, 'message': 'スクレイピング+カラーミー同期を開始しました'}
-
-    def _po_sync_only(self):
-        """Step2のみ: シートの現在値でカラーミーに同期"""
-        if _is_running(PO_LOCK):
-            return {'ok': False, 'message': '既に実行中です'}
-        env = _subprocess_env()
-        LOG_DIR.mkdir(exist_ok=True)
-        timestamp = subprocess.check_output(['date', '+%Y%m%d_%H%M%S'], text=True).strip()
-        log_file = LOG_DIR / f"price-only-step2-{timestamp}.log"
-        with open(log_file, 'w') as f:
-            subprocess.Popen(
-                [PYTHON, '-m', 'src.sync_colorme_products', '--price-only', '--verbose'],
-                cwd=str(PROJECT_DIR), env=env, stdout=f, stderr=subprocess.STDOUT,
-            )
-        return {'ok': True, 'message': 'カラーミー同期のみ（Step2）を開始しました'}
 
     def _po_stop(self):
         if PO_LOCK.exists():
             try:
                 pid = int(PO_LOCK.read_text().strip())
-                os.kill(pid, signal.SIGTERM)
-            except (ValueError, ProcessLookupError, PermissionError):
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+            except (ValueError, ProcessLookupError, PermissionError, OSError):
                 pass
         for proc_name in ['src.fetch_supplier_prices', 'src.sync_colorme_products']:
             subprocess.run(['pkill', '-f', proc_name], capture_output=True)

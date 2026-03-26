@@ -1136,10 +1136,14 @@ def fetch_bullionstar_products(limit: Optional[int] = None) -> list[BullionstarP
 
 def get_existing_urls_from_spreadsheet() -> set[str]:
     """
-    スプレッドシートから既存商品のURLを取得
+    スプレッドシートから既存商品のURLを取得（価格取得済みのもののみ）
+
+    価格(PRICE列)が空の商品は「未取得」としてスクレイピング対象に含める。
+    これにより .co.nz / .us ドメインの商品など、
+    まだ価格が取得されていない既存商品も再スクレイピングされる。
 
     Returns:
-        set[str]: 既存商品URLのセット
+        set[str]: 既存かつ価格取得済み商品URLのセット
     """
     client = SpreadsheetClient()
     if not client.connect():
@@ -1148,10 +1152,20 @@ def get_existing_urls_from_spreadsheet() -> set[str]:
 
     try:
         sheet = client._spreadsheet.worksheet(Config.SHEET_BULLIONSTAR_PRODUCTS)
-        # F列（PRODUCT_URL）のみ取得（高速化のため）
-        url_column = sheet.col_values(Col.PRODUCT_URL.index + 1)  # 1-basedインデックス
-        existing_urls = set(url_column[1:])  # ヘッダー行をスキップ
-        logger.info(f"既存商品URL: {len(existing_urls)}件")
+        data = sheet.get_all_values()
+        existing_urls = set()
+        no_price_count = 0
+        for row in data[1:]:  # ヘッダー行をスキップ
+            url = row[Col.PRODUCT_URL.index].strip() if Col.PRODUCT_URL.index < len(row) else ""
+            price = row[Col.PRICE.index].strip() if Col.PRICE.index < len(row) else ""
+            if url:
+                if price:
+                    existing_urls.add(url)
+                else:
+                    no_price_count += 1
+        logger.info(f"既存商品URL: {len(existing_urls)}件（価格取得済み）")
+        if no_price_count > 0:
+            logger.info(f"  → 価格未取得の既存商品: {no_price_count}件（スクレイピング対象に含む）")
         return existing_urls
     except Exception as e:
         logger.warning(f"既存URL取得エラー: {e}")
@@ -1195,7 +1209,7 @@ def fetch_prices_for_products(
     # 為替レートを事前取得（SGD等の通貨に対応）
     # Bullionstarは主にSGD価格を返すため、事前に取得しておく
     logger.info("為替レートを事前取得中...")
-    pre_fetched_rates = fetch_exchange_rates(["SGD", "USD", "EUR", "AUD"], exchange_type)
+    pre_fetched_rates = fetch_exchange_rates(["SGD", "USD", "EUR", "AUD", "NZD"], exchange_type)
     logger.info(f"為替レート取得完了: {pre_fetched_rates}")
 
     timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")

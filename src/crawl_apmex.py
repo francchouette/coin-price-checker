@@ -20,7 +20,7 @@ from google.oauth2.service_account import Credentials
 from playwright.async_api import async_playwright
 
 from .config import Config
-from .crawlers.apmex import ApmexProduct
+from .crawlers.apmex import ApmexProduct, ApmexCrawler
 
 # 日本時間 (JST = UTC+9)
 JST = timezone(timedelta(hours=9))
@@ -420,7 +420,7 @@ class SpreadsheetSaver:
                 self._sheet.append_row(SHEET_HEADERS, value_input_option='RAW')
                 logger.info("ヘッダー行を追加（空シート）")
                 existing_data = [SHEET_HEADERS]
-            elif existing_data[0] != SHEET_HEADERS and existing_data[0][0] != "URL":
+            elif not existing_data[0] or (existing_data[0] != SHEET_HEADERS and existing_data[0][0] != "URL"):
                 # 1行目がヘッダーではない場合、ヘッダーを先頭に挿入
                 self._sheet.insert_row(SHEET_HEADERS, 1, value_input_option='RAW')
                 logger.info("ヘッダー行を先頭に挿入")
@@ -885,6 +885,46 @@ def run_incremental(category: str = None, reset: bool = False, max_pages: int = 
     asyncio.run(run_incremental_async(category=category, reset=reset, max_pages=max_pages))
 
 
+def run_local_stealth(category: str = None, max_pages: int = None):
+    """playwright-stealthを使ったローカルクロール（Bright Data不要）"""
+    logger.info("=" * 60)
+    logger.info("APMEX 商品一覧クロール（playwright-stealth方式）")
+    logger.info("=" * 60)
+
+    start_time = datetime.now()
+
+    # スプレッドシートに接続
+    saver = SpreadsheetSaver()
+    if not saver.connect():
+        logger.error("スプレッドシート接続に失敗")
+        sys.exit(1)
+
+    total_new = 0
+    total_update = 0
+
+    with ApmexCrawler() as crawler:
+        # カテゴリフィルタ
+        if category:
+            crawler.MAIN_CATEGORIES = [
+                c for c in crawler.MAIN_CATEGORIES if c["name"] == category
+            ]
+
+        products = crawler.crawl_all(max_pages_per_category=max_pages)
+
+    if products:
+        new_count, update_count = saver.save_products(products)
+        total_new += new_count
+        total_update += update_count
+
+    elapsed = (datetime.now() - start_time).total_seconds()
+    logger.info("\n" + "=" * 60)
+    logger.info(f"クロール完了")
+    logger.info(f"  新規追加: {total_new}件")
+    logger.info(f"  更新: {total_update}件")
+    logger.info(f"  所要時間: {elapsed:.1f}秒（{elapsed/60:.1f}分）")
+    logger.info("=" * 60)
+
+
 async def run_detail_fetch_async(max_items: int = 20):
     """詳細ページ取得専用（非同期）"""
     logger.info("=" * 60)
@@ -1000,5 +1040,8 @@ if __name__ == "__main__":
 
     if mode == "detail":
         run_detail_fetch(max_items=max_items)
-    else:
+    elif Config.is_brightdata_browser_enabled():
         run_incremental(category=category, reset=reset, max_pages=max_pages)
+    else:
+        logger.info("BRIGHTDATA_BROWSER_WS 未設定 → playwright-stealth方式で実行")
+        run_local_stealth(category=category, max_pages=max_pages)

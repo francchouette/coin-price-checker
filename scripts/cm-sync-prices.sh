@@ -77,7 +77,18 @@ log "カラーミー商品ダウンロード + スクレイピング + カラー
 log "-------------------------------------------"
 
 DETAIL_LOG="${LOG_DIR}/sync-all-${TIMESTAMP}.log"
-if "${PYTHON}" -m src.download_colorme_products --fetch-prices --sync --verbose > "${DETAIL_LOG}" 2>&1; then
+SYNC_FIELDS_OPT=""
+FETCH_PRICES_OPT="--fetch-prices"
+if [ -n "${SYNC_FIELDS:-}" ]; then
+    SYNC_FIELDS_OPT="--sync-fields ${SYNC_FIELDS}"
+    log "同期項目フィルター: ${SYNC_FIELDS}"
+    # priceが含まれていない場合はスクレイピングをスキップ
+    if ! echo "${SYNC_FIELDS}" | grep -q "price"; then
+        FETCH_PRICES_OPT=""
+        log "価格同期なし → スクレイピングをスキップ"
+    fi
+fi
+if "${PYTHON}" -m src.download_colorme_products ${FETCH_PRICES_OPT} --sync --verbose ${SYNC_FIELDS_OPT} > "${DETAIL_LOG}" 2>&1; then
     OVERALL_END=$(date +%s)
     OVERALL_ELAPSED=$(( OVERALL_END - OVERALL_START ))
     log "処理完了 (所要時間: $((OVERALL_ELAPSED / 60))分$((OVERALL_ELAPSED % 60))秒)"

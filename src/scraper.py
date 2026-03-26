@@ -280,7 +280,7 @@ def detect_shop_from_url(url: str) -> str:
     """
     url_lower = url.lower()
 
-    if "bullionstar.com" in url_lower:
+    if "bullionstar.com" in url_lower or "bullionstar.co.nz" in url_lower or "bullionstar.us" in url_lower:
         return "Bullionstar"
     elif "apmex.com" in url_lower:
         return "APMEX"

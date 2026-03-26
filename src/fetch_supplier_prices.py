@@ -178,13 +178,20 @@ def main():
             product_name = get_cell(value_row, Col.NAME)[:30] or url[:40]
             logger.info(f"[{i+1}/{len(targets)}] {product_name} (行: {row_num})")
 
+            # Bullionstar: .co.nz/.us → .com に変換（.co.nz/.usはタイムアウトするため）
+            scrape_url_target = url
+            if "bullionstar.co.nz" in scrape_url_target:
+                scrape_url_target = scrape_url_target.replace("bullionstar.co.nz", "bullionstar.com")
+            elif "bullionstar.us" in scrape_url_target:
+                scrape_url_target = scrape_url_target.replace("bullionstar.us", "bullionstar.com")
+
             # キャッシュチェック
-            if url in price_cache:
-                scraped_result = price_cache[url]
+            if scrape_url_target in price_cache:
+                scraped_result = price_cache[scrape_url_target]
                 logger.info(f"  キャッシュ使用")
             else:
-                scraped_result = scrape_url(scraper_manager, url)
-                price_cache[url] = scraped_result
+                scraped_result = scrape_url(scraper_manager, scrape_url_target)
+                price_cache[scrape_url_target] = scraped_result
 
             scraped = scraped_result.scraped_data
 

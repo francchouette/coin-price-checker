@@ -107,6 +107,163 @@ def map_category(top_category: str, parent_category: str, child_category: str) -
     return (DEFAULT_CATEGORY_BIG, DEFAULT_CATEGORY_SMALL)
 
 
+async def upload_images_only(
+    source: str = "bs",
+    limit: Optional[int] = None,
+    dry_run: bool = False,
+) -> tuple[int, int, int]:
+    """
+    登録済み商品で画像未アップロードのものに画像のみアップロード
+
+    対象: B列="登録済" かつ E列にカラーミーURL あり かつ 画像URLあり
+    アップロード成功後、新カラーミー商品管理シートのBE-BN列に画像URLを書き戻す
+
+    Returns:
+        (成功数, 失敗数, スキップ数)
+    """
+    import re as _re
+    from src.cm_sheet_columns import Col as CMCol, cell_ref as cm_cell_ref
+
+    client = SpreadsheetClient()
+    if not client.connect():
+        logger.error("スプレッドシートへの接続に失敗しました")
+        return (0, 0, 0)
+
+    source_name = "APMEX" if source == "ap" else "ブリオンスター"
+    sheet_name = Config.SHEET_APMEX_PRODUCTS if source == "ap" else Config.SHEET_BULLIONSTAR_PRODUCTS
+    bs_sheet = client._spreadsheet.worksheet(sheet_name)
+    bs_data = bs_sheet.get_all_values()
+
+    if len(bs_data) <= 1:
+        logger.info(f"{source_name}商品ページ一覧にデータがありません")
+        return (0, 0, 0)
+
+    # 新カラーミー商品管理シートを読み込み（画像URL書き戻し用）
+    cm_sheet = client._spreadsheet.worksheet(Config.SHEET_COLORME_V2)
+    cm_data = cm_sheet.get_all_values()
+    # カラーミー商品ID → 行番号のマッピング
+    cm_id_to_row = {}
+    for cm_row_idx, cm_row in enumerate(cm_data[1:], start=2):
+        cm_product_id = cm_row[CMCol.PRODUCT_ID.index].strip() if CMCol.PRODUCT_ID.index < len(cm_row) else ""
+        if cm_product_id:
+            cm_id_to_row[cm_product_id] = cm_row_idx
+
+    # B列="登録済" かつ E列にカラーミーURL がある商品を収集
+    target_products = []
+    for row_idx, row in enumerate(bs_data[1:], start=2):
+        registration_status = get_cell(row, Col.REGISTRATION_STATUS)
+        colorme_url = get_cell(row, Col.COLORME_URL)
+
+        if registration_status != "登録済" or not colorme_url:
+            continue
+
+        # カラーミー商品IDを抽出
+        m = _re.search(r'pid=(\d+)', colorme_url)
+        if not m:
+            continue
+        product_id = int(m.group(1))
+
+        # 画像URLを収集
+        image_urls = []
+        for i in range(10):
+            img_idx = Col.IMAGE_1.index + i
+            img_url = row[img_idx].strip() if img_idx < len(row) and row[img_idx] else ""
+            if img_url and img_url not in image_urls:
+                image_urls.append(img_url)
+
+        if not image_urls:
+            continue
+
+        product_name = get_cell(row, Col.PRODUCT_NAME)
+        target_products.append((row_idx, product_id, product_name, image_urls))
+
+    if limit:
+        target_products = target_products[:limit]
+
+    if not target_products:
+        logger.info("画像アップロード対象の商品がありません")
+        return (0, 0, 0)
+
+    logger.info(f"画像アップロード対象: {len(target_products)}件")
+
+    success_count = 0
+    error_count = 0
+    skip_count = 0
+
+    if dry_run:
+        for row_idx, product_id, name, urls in target_products:
+            logger.info(f"  [DRY-RUN] 行{row_idx}: ID={product_id} {name[:40]}... 画像{len(urls)}枚")
+            success_count += 1
+        return (success_count, 0, 0)
+
+    # 画像列の定義（BE-BN列: メイン画像, サムネイル, 画像URL1-8）
+    cm_image_cols = [
+        CMCol.MAIN_IMAGE, CMCol.THUMBNAIL,
+        CMCol.IMAGE_URL_1, CMCol.IMAGE_URL_2, CMCol.IMAGE_URL_3, CMCol.IMAGE_URL_4,
+        CMCol.IMAGE_URL_5, CMCol.IMAGE_URL_6, CMCol.IMAGE_URL_7, CMCol.IMAGE_URL_8,
+    ]
+
+    uploader = ColorMeImageUploader(headless=True)
+    async with uploader:
+        for idx, (row_idx, product_id, name, image_urls) in enumerate(target_products, 1):
+            logger.info(f"[{idx}/{len(target_products)}] 行{row_idx}: ID={product_id} {name[:40]}...")
+
+            try:
+                # 既に画像があるかチェック
+                existing_images = await uploader._fetch_uploaded_image_urls(product_id)
+                if existing_images:
+                    logger.info(f"  スキップ: 既に画像あり（{len(existing_images)}枚）")
+                    skip_count += 1
+                    # 既に画像があるがスプレッドシートに未記入の場合は書き戻す
+                    _write_image_urls_to_cm_sheet(
+                        cm_sheet, cm_id_to_row, str(product_id),
+                        existing_images, cm_image_cols, cm_cell_ref, logger
+                    )
+                    continue
+
+                result = await uploader.upload_product_images(product_id, image_urls)
+                if result.success:
+                    logger.info(f"  成功: {len(result.uploaded_urls)}枚アップロード")
+                    success_count += 1
+                    # 新カラーミー商品管理シートに画像URLを書き戻す
+                    _write_image_urls_to_cm_sheet(
+                        cm_sheet, cm_id_to_row, str(product_id),
+                        result.uploaded_urls, cm_image_cols, cm_cell_ref, logger
+                    )
+                else:
+                    logger.warning(f"  失敗: {result.error_message}")
+                    error_count += 1
+            except Exception as e:
+                logger.error(f"  エラー: {e}")
+                error_count += 1
+
+            time.sleep(2)
+
+    return (success_count, error_count, skip_count)
+
+
+def _write_image_urls_to_cm_sheet(cm_sheet, cm_id_to_row, product_id_str, image_urls, cm_image_cols, cm_cell_ref, logger):
+    """新カラーミー商品管理シートに画像URLを書き戻す"""
+    cm_row = cm_id_to_row.get(product_id_str)
+    if not cm_row:
+        logger.debug(f"  CM管理シートに商品ID {product_id_str} が見つからず、画像URL書き戻しスキップ")
+        return
+
+    batch_data = []
+    for i, col in enumerate(cm_image_cols):
+        url = image_urls[i] if i < len(image_urls) else ""
+        batch_data.append({
+            'range': cm_cell_ref(col, cm_row),
+            'values': [[url]]
+        })
+
+    try:
+        batch_update_with_retry(cm_sheet, batch_data)
+        logger.info(f"  CM管理シート行{cm_row}に画像URL {len(image_urls)}件を書き戻し")
+    except Exception as e:
+        logger.warning(f"  CM管理シート画像URL書き戻しエラー: {e}")
+
+
 async def register_adopted_products(
     dry_run: bool = False,
     limit: Optional[int] = None,
@@ -642,6 +799,8 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="実際の登録は行わない")
     parser.add_argument("--limit", type=int, help="処理する最大件数")
     parser.add_argument("--upload-images", action="store_true", help="画像アップロードを有効化（デフォルト: OFF）")
+    parser.add_argument("--images-only", action="store_true",
+                        help="登録済み商品に画像のみアップロード（新規登録はスキップ）")
     parser.add_argument("--verbose", "-v", action="store_true", help="詳細ログ出力")
     parser.add_argument("--skip-sync", action="store_true", help="仕入れ先一覧同期をスキップ")
     parser.add_argument("--source", choices=["bs", "ap"], default="bs",
@@ -658,11 +817,12 @@ def main():
     )
 
     source_name = "APMEX" if args.source == "ap" else "ブリオンスター"
+    mode_name = "画像のみアップロード" if args.images_only else "カラーミー自動登録"
     logger.info("=" * 60)
-    logger.info(f"採用商品カラーミー自動登録開始（{source_name}）")
+    logger.info(f"採用商品{mode_name}開始（{source_name}）")
     if args.dry_run:
         logger.info("※ ドライランモード（実際の登録は行いません）")
-    if args.upload_images:
+    if args.upload_images and not args.images_only:
         logger.info("※ 画像アップロード有効")
     logger.info("=" * 60)
 
@@ -679,16 +839,25 @@ def main():
         logger.error("カラーミーアクセストークンが設定されていません")
         sys.exit(1)
 
-    # 採用商品をカラーミーに登録
-    success, error, skip = asyncio.run(register_adopted_products(
-        dry_run=args.dry_run,
-        limit=args.limit,
-        upload_images=args.upload_images,
-        source=args.source
-    ))
-
-    logger.info("-" * 60)
-    logger.info(f"カラーミー登録結果: 成功={success}件, 失敗={error}件, スキップ={skip}件")
+    if args.images_only:
+        # 登録済み商品に画像のみアップロード
+        success, error, skip = asyncio.run(upload_images_only(
+            source=args.source,
+            limit=args.limit,
+            dry_run=args.dry_run,
+        ))
+        logger.info("-" * 60)
+        logger.info(f"画像アップロード結果: 成功={success}件, 失敗={error}件, スキップ={skip}件")
+    else:
+        # 採用商品をカラーミーに登録
+        success, error, skip = asyncio.run(register_adopted_products(
+            dry_run=args.dry_run,
+            limit=args.limit,
+            upload_images=args.upload_images,
+            source=args.source
+        ))
+        logger.info("-" * 60)
+        logger.info(f"カラーミー登録結果: 成功={success}件, 失敗={error}件, スキップ={skip}件")
 
     # 仕入れ先一覧同期（登録成功があり、スキップ指定がない場合）
     if success > 0 and not args.skip_sync and not args.dry_run:
