@@ -55,40 +55,73 @@ DESCRIPTION_PROMPT = """あなたは貴金属コイン・地金のECサイトの
 - 仕入れサイト説明: {source_description}
 - 仕入れサイト仕様: {source_specs}
 
+## ⚠ 最重要ルール（絶対厳守）
+1. **数値情報（重量・直径・純度・発行年・発行数）は「仕入れサイト仕様」または「仕入れサイト説明」に明記されているものだけ書くこと**
+2. **記載がない数値は絶対に憶測・捏造・下記の例の値のコピーをしないこと**（例: 直径が仕様に無ければ【直径】行は書かない）
+3. **「1オンス」「約XXmm」等はソースに書かれた通りの値を使うこと**。小数点は保持（0.56オンス、38.61mmなど）
+4. **重量の使い分け**:
+   - 「total weight」「gross weight」「coin weight」等 → コイン全体重量
+   - 「Fine Silver: X oz」「Silver content: X oz」「Actual Silver Weight」等 → 純銀含有量
+   - 両方ある場合はコイン重量を主表示、純銀含有量を補足
+   - コイン重量が不明で純銀含有量のみあれば、それを使う（例: 「0.56オンス純銀」）
+5. **商品名に「1 oz Silver」等と書いてあっても、それが純銀含有量か全体重量か不明な場合は判断せず、仕様に明記されていない限り「1オンス」と断定しない**
+6. **仕入れ先のショップ名（販売代理店名）を商品説明・簡易説明に含めないこと（絶対厳守）**
+   - 禁止例: BullionStar, Bullionstar, BullionStar社, ブリオンスター, APMEX, Apmex, エイペックス 等
+   - 「発行元」は必ず実際のミント・造幣局・メーカーを記載する
+     - 造幣局例: Perth Mint, Royal Canadian Mint, Austrian Mint (Münze Österreich), US Mint, Royal Mint, Singapore Mint 等
+     - インゴットメーカー例: PAMP, Valcambi, Argor-Heraeus, Heraeus, Metalor, Umicore 等
+   - ソースに造幣局・メーカー名が明記されていない場合は「発行元」への言及を省略する（推測しない）
+   - 販売代理店の名前を出さないことで、他店への流用リスクや誤情報を回避する
+
 ## 商品説明（詳細）の要件
 - 500文字以内に収めること（厳守）
-- できるだけ500文字に近づけること（450〜500文字程度）
 - HTMLタグは使用しないこと
-- 専門用語を適切に使用（地金型金貨、純金、K24など）
-- 日本の投資家・コレクター向けに魅力的な表現を使用
+- 専門用語は正確に使用（地金型金貨、純金、K24など）
+- **主観的表現・営業文句は禁止**（「魅力的な」「輝きを放つ」「ぜひお手元に」「大変喜ばれる」「希少価値」「資産形成」等）
+- **判明している事実のみを記載する**（推測・憶測・美辞麗句は書かない）
+- **判明する事実が少ない場合は無理に文字数を稼がない**（450文字未満でも良い）
 - 文章は句点（。）で自然に終わること
 
 ## 商品説明（詳細）の出力フォーマット
-以下の順番で出力すること：
-1. 【品位】【重量】【直径】などの【】囲みスペック行（わかる情報のみ）
-2. 空行
-3. 商品説明文（以下の内容を含める）
-   - 商品の概要・発行元
-   - 表面・裏面のデザイン詳細
-   - 素材・品質
-   - 投資価値・コレクション価値
-   - まとめ・おすすめポイント
 
-## 商品説明（詳細）の具体例
-【品位】　約99.99％K24純金
-【重量】　１オンス（31.1g）
-【直径】　約32.7mm
+### ブロック1: スペック行（【】囲み）
+以下の項目を上から順に、**判明しているもののみ**記載。不明な項目は該当行を丸ごと省略。
 
-シンガポール BullionStar社発行の2024年干支シリーズ「ドラゴン」金貨です。世界中のコレクターから高い評価を受けるシリーズの最新作をお届けします。
+- 【品位】　例: 純度99.9% 純銀（SV999） / 純度99.99% 純金（K24）
+- 【重量】　例: 1オンス（約31.1g） / 1/10オンス（約3.11g） / 100g
+- 【直径】　例: 約38.6mm
+- 【額面】　例: 1ドル / 50ユーロ / 100元
+- 【発行】　例: パースミント / ロイヤル・カナディアン・ミント / オーストリア造幣局
 
-表面には躍動感あふれる龍のデザインが施されています。力強く天を舞う龍の姿は繁栄と成功を象徴し、細部まで精緻に彫り込まれた鱗や爪の表現は職人技の結晶です。裏面には12の干支動物が円形に配置され、縁起の良いデザインとなっています。
+### ブロック2: 空行
 
-純度99.99%の高品質ゴールドを使用しており、光の当たり方によって美しく輝きを放ちます。干支シリーズは毎年限定発行されるためコレクターズアイテムとしての希少価値も期待でき、投資目的だけでなく贈り物としても大変喜ばれる逸品です。資産形成の一環として、または趣味のコレクションとして、ぜひお手元にお迎えください。
+### ブロック3: 本文（判明している事実のみ、以下の順序）
+1. **発行国・造幣局・法定通貨としての位置づけ**（例: 「○○国の法定通貨として、○○造幣局が発行する銀貨」）
+2. **表面・裏面のデザインと、その由来**（史実・出典が示せる範囲のみ。「〜を象徴する」等の主観的解釈は書かない）
+3. **素材と製造上の特徴**（偽造防止技術、鏡面仕上げ、リーデッドエッジ等、事実として確認できるもののみ）
+4. **同銘柄の他年号・他サイズとの違い**（データがある場合のみ。無ければ書かない）
+
+## 商品説明（詳細）の具体例（※以下の数値はサンプルであり、実際の商品で流用してはいけない）
+【品位】　純度99.9% 純銀（SV999）
+【重量】　1オンス（約31.1g）
+【直径】　約38.6mm
+【額面】　1ドル
+【発行】　パースミント
+
+オーストラリアの法定通貨として、西オーストラリア州政府所有のパースミントが発行する銀貨です。表面にはエリザベス2世女王の肖像とその名の元号が刻まれています。裏面には干支シリーズの主題である辰（ドラゴン）が中央に配置され、周囲に発行年と重量・純度が刻印されています。純度99.9%の銀を使用した地金型銀貨で、リーデッドエッジ（ふち加工）により偽造防止と識別性が確保されています。本シリーズは1996年開始のオーストラリア・ルナーシリーズの第三期にあたり、1オンスのほか1/2オンス、2オンス、5オンス、10オンス、1キログラムのサイズ展開があります。
+
+## スペック情報が不足している場合の対応例
+仕様に明記がない項目は【】行を省略する。例:
+- 直径・額面・発行元が不明なら「【品位】」「【重量】」の2行のみ出力
+- スペックが完全に空なら【】行を一切出力せず、本文のみで説明する
+- 本文の4項目についても、判明していない項目は該当箇所ごと丸ごと省略する（無理に埋めない）
 
 ## 簡易説明の要件
 - 1-2文（80-120文字）
 - HTMLタグなし・改行なし
-- 製造国・素材・重量・デザインの特徴・投資メリットを含める
+- 製造国・素材・重量・デザインの特徴を、判明している事実のみで簡潔に記載
+- 主観的表現・営業文句は禁止（「投資メリット」「魅力的」等は書かない）
+- 判明する事実が少ない場合は80文字未満でも良い
 
 JSON形式で出力してください:
 {{
@@ -546,6 +579,114 @@ class ProductScraper:
         except Exception as e:
             logger.error(f"BullionStarスクレイピングエラー: {e}")
             return None
+
+
+# AI商品名生成用プロンプトテンプレート
+# 事前に生成された商品説明を「正解データ」として参照し、それに合致する商品名を生成する
+NAME_PROMPT = """あなたは貴金属コイン・地金のECサイトの商品名策定担当です。
+
+## 入力情報
+- 仕入れ先の英語商品名: {product_name}
+- 仕入れ先の仕様: {source_specs}
+- 生成済み日本語商品説明（この内容と矛盾しない商品名にすること）: {ja_description}
+
+## 出力フォーマット
+必ず以下の形式で日本語商品名を生成してください:
+「[年号] [国名] [シリーズ名/メーカー名] [重量] [製品種類] 新品未使用 【{quantity}{unit_word}】」
+
+## 各要素の書き方
+- **年号**: 商品説明・英語名から抽出。不明なら省略。
+- **国名**: 発行国/製造国。日本語表記（例: オーストリア, カナダ, アメリカ, スイス, オーストラリア, フィジー, ニウエ, ツバル 等）。パースミント/PAMP/Valcambi等はメーカー名で、国名（スイス/オーストラリア）を別途付ける。
+- **シリーズ名/メーカー名**: 商品説明が最重要ソース。地金型の場合はシリーズ名（ウィーン、ブリタニア、メイプルリーフ、カンガルー、コアラ、パンダ、イーグル、クルーガーランド、ドラゴン等）。インゴットの場合はメーカー名（PAMP、Valcambi、Argor Heraeus、パースミント等）。プルーフや記念コインの場合は該当テーマ名。
+- **重量**: 小数点も正確に反映（例: 0.84オンス、1オンス、1/2オンス、10オンス、100グラム）。「84オンス」のような桁ずれは絶対禁止。
+  - **重量の優先順位**: (1) コイン全体の重量（total/gross weight）が明記されていればそれを使用。(2) 明記されず「〇oz Fine Silver」「Silver content: 〇oz」等の**純銀/純金含有量**しか書かれていない場合は、その含有量を使用（例: 0.56オンス）。
+  - **重量が全く不明な場合は省略**する（例: 「2025 カメルーン 花シリーズ マティス 地金型銀貨 新品未使用 【1枚】」）。憶測で「1オンス」等を書かない。
+- **製品種類**:
+  - 地金型金貨/銀貨/プラチナコイン/パラジウムコイン
+  - シルバーインゴット/ゴールドインゴット/プラチナインゴット
+  - プルーフ〇〇貨（プルーフ品の場合）
+  - 鑑定済み〇〇貨 (グレード) (鑑定機関)（鑑定品の場合）
+
+## 重要な注意事項
+- **説明文と矛盾しないこと**（説明文が最も信頼できるソース）
+- **重量の小数点を絶対に落とさない**
+- 「造幣局」「ミント」は使わず、「パース」「RCM」等の短縮表記
+- 出力は商品名1行のみ（余計な説明・引用符・JSONは不要）
+
+## 出力
+"""
+
+
+class AIProductNameGenerator:
+    """AIで日本語商品名を生成するクラス（商品説明を参照して精度を上げる）"""
+
+    def __init__(self):
+        self.genai_model = None
+        try:
+            import vertexai
+            from vertexai.generative_models import GenerativeModel
+            vertexai.init(project="coin-price-tracker-479614", location="us-central1")
+            self.genai_model = GenerativeModel("gemini-2.5-pro")
+            logger.info("AI商品名生成器: Vertex AI Gemini初期化完了")
+        except Exception as e:
+            logger.warning(f"AI商品名生成器: Vertex AI初期化エラー: {e}")
+
+    def generate(self, product_info: dict, quantity: int = 1) -> str:
+        """商品説明を参照して日本語商品名を生成
+
+        Args:
+            product_info: 商品情報
+                - name: 英語商品名
+                - specs: 仕様
+                - ja_description: AI生成済みの日本語商品説明（必須）
+            quantity: 枚数
+
+        Returns:
+            str: 日本語商品名（失敗時は空文字）
+        """
+        if not self.genai_model:
+            return ""
+
+        ja_desc = product_info.get("ja_description", "")
+        if not ja_desc:
+            logger.warning("  AI商品名生成: 日本語説明がないためスキップ")
+            return ""
+
+        # 単位語（インゴットは【1本】、コインは【1枚】など）
+        # 説明にインゴット/バーが含まれる場合は「本」、それ以外は「枚」
+        desc_lower = ja_desc.lower()
+        if "インゴット" in ja_desc or "バー" in ja_desc:
+            unit_word = "本"
+        else:
+            unit_word = "枚"
+
+        prompt = NAME_PROMPT.format(
+            product_name=product_info.get("name", ""),
+            source_specs=product_info.get("specs", ""),
+            ja_description=ja_desc[:600],
+            quantity=quantity,
+            unit_word=unit_word,
+        )
+
+        try:
+            logger.info("  Gemini APIを呼び出し中（商品名生成）...")
+            response = self.genai_model.generate_content(prompt)
+            name = response.text.strip()
+            # 余計な引用符や改行、コードブロックを削除
+            name = name.strip('"\'` \n\r\t')
+            # 複数行の場合は最初の非空行
+            for line in name.splitlines():
+                line = line.strip('"\'` \n\r\t')
+                if line:
+                    name = line
+                    break
+            if name:
+                logger.info(f"  AI商品名生成成功: {name[:60]}")
+                return name
+        except Exception as e:
+            logger.error(f"  AI商品名生成エラー: {e}")
+
+        return ""
 
 
 class DescriptionGenerator:
@@ -1404,6 +1545,110 @@ class CategoryDetector:
 
         return category_id, 0, group_ids
 
+    def detect_v2(self, product_name: str, url: str = "") -> tuple[int, int, list[int]]:
+        """
+        商品名から大カテゴリーIDとグループIDを動的に判定（カラーミーAPI取得のグループ一覧から直接選択）
+
+        旧 detect() はハードコード定数（GROUP_L1〜L5）に依存していたが、
+        本メソッドは __init__ で取得した self.existing_groups からAIに最適なグループ名を選ばせる。
+        グループ構成の変更に自動追従できる。
+
+        Args:
+            product_name: 商品名
+            url: 商品URL
+
+        Returns:
+            tuple[int, int, list[int]]: (大カテゴリーID, 0, グループIDリスト)
+        """
+        if not self.genai_model:
+            raise RuntimeError("AI APIが利用できません。Vertex AI認証を確認してください。")
+
+        # 大カテゴリーID判定（素材） — 旧 _detect_with_ai の metal 判定を流用
+        ai_meta = self._detect_with_ai(product_name, url)
+        metal = ai_meta.get("metal", "silver")
+        if metal not in self.CATEGORY_IDS:
+            metal = "silver"
+        category_id = self.CATEGORY_IDS[metal]
+
+        # グループ名候補（カラーミー登録済、"なし"は除外）
+        group_names = [n for n in self.existing_groups.keys() if n and n != "なし"]
+        if not group_names:
+            logger.warning("detect_v2: グループ一覧が空のためグループなしで返却")
+            return (category_id, 0, [])
+
+        prompt = f"""あなたは貴金属コイン・地金の専門家です。以下の商品を、提示されたグループ一覧から該当するグループに分類してください。
+
+## 商品情報
+- 商品名: {product_name}
+- URL: {url}
+
+## グループ一覧（この中から完全一致する名前のみ選択）
+{chr(10).join('- ' + n for n in group_names)}
+
+## 判定ルール
+1. **素材グループ**（ゴールド/シルバー/プラチナ/パラジウム/カッパー）から必ず1つ選ぶ
+2. **シリーズ/銘柄グループ**が該当する場合は追加で1つ選ぶ
+   例: American Eagle金貨 → 「アメリカンイーグル金貨」、Maple Leaf銀貨 → 「メイプルリーフ銀貨」、Vienna金貨 → 「ウィーン金貨」
+3. **インゴット系商品**（bar, ingot, バー, インゴット）:
+   - メーカー名（PAMP / Heraeus / Valcambi / その他インゴットメーカー）+「インゴット・バー」を選ぶ
+4. **コレクション系**（プルーフ・特殊仕上・キャラクター物・限定・記念）:
+   - 該当するコレクション系グループを追加（「プルーフ・特殊仕上げコイン」「映画・音楽・キャラクター・コラボ系コイン」「アート・特殊デザインコイン」「コレクション・特集」など）
+5. **鑑定済み**（NGC, PCGS, MS70, PF69 等）: 「鑑定済みコイン」を追加
+6. **干支シリーズ**（Lunar, Year of the Dragon/Tiger 等）:
+   - オーストラリアの干支 → 「オーストラリア・ルナーシリーズ(干支) 金貨/銀貨/プラチナコイン」
+   - それ以外の国の干支 → 「その他諸国の干支シリーズ」
+7. **特定シリーズグループに該当しない外国コイン**: 「世界各国のコイン」を追加
+8. **クイーンズビースト/チューダービースト系**: 「イギリス王室紋章シリーズ(クイーンズビースト・チューダービースト)」
+9. **オリンポスの神々シリーズ**: 「オリンポスの神々」
+10. **ノアの箱舟シリーズ**: 「ノアの箱舟」
+11. **アメリカ250周年関連**: 「アメリカ250周年記念」
+
+## 出力形式
+JSONのみ出力。説明や前置きは一切不要。グループ名はリスト内の名前と完全一致させること（漢字・カタカナ・スペース・括弧含む）。
+
+{{"groups": ["グループ名1", "グループ名2", ...]}}
+"""
+
+        try:
+            response = self.genai_model.generate_content(prompt)
+            response_text = response.text
+            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            if not json_match:
+                logger.warning(f"detect_v2: JSON取得失敗 → グループなし: {response_text[:200]}")
+                return (category_id, 0, [])
+
+            data = json.loads(json_match.group())
+            selected_names = data.get("groups", []) or []
+
+            group_ids = []
+            unknown = []
+            for name in selected_names:
+                if name in self.existing_groups:
+                    gid = self.existing_groups[name]["id"]
+                    if gid not in group_ids:
+                        group_ids.append(gid)
+                else:
+                    unknown.append(name)
+
+            if unknown:
+                logger.warning(f"detect_v2: 未知のグループ名（スキップ）: {unknown}")
+
+            name_pairs = [(g, self._gid_to_name(g)) for g in group_ids]
+            logger.info(f"  detect_v2判定: カテゴリ={category_id}, グループ={name_pairs}")
+            return (category_id, 0, group_ids)
+
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logger.warning(f"detect_v2 例外: {e}")
+            return (category_id, 0, [])
+
+    def _gid_to_name(self, gid: int) -> str:
+        for name, info in self.existing_groups.items():
+            if info["id"] == gid:
+                return name
+        return "?"
+
     def _detect_with_ai(self, product_name: str, url: str = "") -> dict:
         """
         AIを使って商品のカテゴリー情報を判定する（常時実行）
@@ -1543,6 +1788,7 @@ class JapaneseProductNameGenerator:
         "us": "アメリカ",
         "united states": "アメリカ",
         "america": "アメリカ",
+        "american": "アメリカ",
         "uk": "イギリス",
         "united kingdom": "イギリス",
         "britain": "イギリス",
@@ -1564,14 +1810,75 @@ class JapaneseProductNameGenerator:
         "turkish": "トルコ",
         "mexico": "メキシコ",
         "mexican": "メキシコ",
+        "solomon islands": "ソロモン諸島",
+        "solomon": "ソロモン諸島",
+        "si ": "ソロモン諸島",  # 略称 "SI" + 空白付きで誤マッチを避ける
+        "niue": "ニウエ",
+        "tuvalu": "ツバル",
+        "fiji": "フィジー",
+        "samoa": "サモア",
+        "tokelau": "トケラウ",
+        "barbados": "バルバドス",
+        "cook islands": "クック諸島",
+        "rwanda": "ルワンダ",
+        "ghana": "ガーナ",
+        "djibouti": "ジブチ",
+        "armenia": "アルメニア",
+        "andorra": "アンドラ",
+        "isle of man": "マン島",
+        "gibraltar": "ジブラルタル",
+        "italy": "イタリア",
+        "italian": "イタリア",
+        "france": "フランス",
+        "french": "フランス",
+        "spain": "スペイン",
+        "spanish": "スペイン",
+        "portugal": "ポルトガル",
+        "russia": "ロシア",
+        "russian": "ロシア",
+        "poland": "ポーランド",
+        "czech": "チェコ",
+        "hungary": "ハンガリー",
+        "korea": "韓国",
+        "japan": "日本",
+        "japanese": "日本",
+        "vietnam": "ベトナム",
+        "thailand": "タイ",
+        "india": "インド",
+        "indian": "インド",
+        "vatican city": "バチカン",
+        "vatican": "バチカン",
     }
 
     # シリーズ名マッピング
+    # ※ 複数単語のキー（例: "walking liberty"）は、1単語のキー（例: "liberty"）より先に記載すること
     SERIES_MAP = {
+        # 複合語（優先マッチ）
+        "incuse indian": "インディアン",
+        "saint gaudens": "セント・ゴーデンス",
+        "walking liberty": "ウォーキング・リバティ",
+        "peace silver dollar": "ピースダラー",
+        "peace dollar": "ピースダラー",
+        "morgan silver dollar": "モルガン",
+        "morgan dollar": "モルガン",
+        "queen's beast": "クイーンズビースト",
+        "queens beast": "クイーンズビースト",
+        "tudor beast": "チューダービースト",
+        "royal arms": "ロイヤルアームズ",
+        "maple leaf": "メイプルリーフ",
+        # ソブリン系（複合語を先にマッチ）
+        "half sovereign": "ハーフソブリン",
+        "quarter sovereign": "クォーターソブリン",
+        "double sovereign": "ダブルソブリン",
+        "sovereign": "ソブリン",
+        # 教皇シリーズ
+        "pope francis": "教皇フランシスコ",
+        "pope benedict": "教皇ベネディクト",
+        "pope john paul": "教皇ヨハネ・パウロ",
+        # 単一語
         "dragon": "ドラゴン",
         "eagle": "イーグル",
         "britannia": "ブリタニア",
-        "maple leaf": "メイプルリーフ",
         "maple": "メイプルリーフ",
         "kangaroo": "カンガルー",
         "koala": "コアラ",
@@ -1583,37 +1890,52 @@ class JapaneseProductNameGenerator:
         "buffalo": "バッファロー",
         "libertad": "リベルタード",
         "lunar": "干支",
-        "queen's beast": "クイーンズビースト",
-        "queens beast": "クイーンズビースト",
-        "tudor beast": "チューダービースト",
-        "royal arms": "ロイヤルアームズ",
+        "morgan": "モルガン",
     }
 
     # メーカー名マッピング
+    # ※ 複数単語のキー（例: "argor heraeus"）は単一語より先に記載すること
     MAKER_MAP = {
-        "pamp": "PAMP",
-        "valcambi": "ヴァルカンビ",
-        "nadir": "ナディール",
+        # 複合語（優先マッチ）
+        "argor heraeus": "Argor Heraeus",
         "9fine mint": "9ファインミント",
         "perth mint": "パースミント",
         "royal mint": "ロイヤルミント",
+        # 単一語
+        "pamp": "PAMP",
+        "heraeus": "Argor Heraeus",  # 単独 HERAEUS 表記でも Argor Heraeus に統一（同一社）
+        "valcambi": "Valcambi",
+        "nadir": "ナディール",
         "bullionstar": "ブリオンスター",
     }
+
+    # スイス製造のメーカー（国名抽出フォールバック用）
+    SWISS_MAKERS = ["pamp", "valcambi", "argor heraeus", "argor", "heraeus", "credit suisse"]
 
     # 素材マッピング
     METAL_MAP = {
         "gold": ("金貨", "ゴールド"),
         "silver": ("銀貨", "シルバー"),
-        "platinum": ("プラチナ貨", "プラチナ"),
-        "palladium": ("パラジウム貨", "パラジウム"),
+        "platinum": ("プラチナコイン", "プラチナ"),
+        "palladium": ("パラジウムコイン", "パラジウム"),
+        "copper": ("銅コイン", "カッパー"),
+        "bronze": ("ブロンズコイン", "ブロンズ"),
     }
 
     def generate(self, product_info: dict, quantity: int = 1) -> str:
         """
         英語の商品情報から日本語の商品名を生成する
 
+        命名規則（統一フォーマット）:
+          [年号] [国] [シリーズ/メーカー] [重量] [製品種類] 新品未使用 【数量+単位】
+
         Args:
             product_info: スクレイピングで取得した商品情報
+                - name: 英語商品名
+                - specs: 仕様
+                - description: 商品説明
+                - country: 製造国（スクレイパーが直接取得した値。最優先）
+                - url: 商品URL（国名ヒントに使用）
             quantity: 枚数（E列から取得）
 
         Returns:
@@ -1622,19 +1944,29 @@ class JapaneseProductNameGenerator:
         name = product_info.get("name", "")
         specs = product_info.get("specs", "")
         description = product_info.get("description", "")
+        scraped_country = product_info.get("country", "")
+        url = product_info.get("url", "")
+
+        name_lower = name.lower()
         full_text = f"{name} {specs} {description}".lower()
 
-        # 年号を抽出
-        year = self._extract_year(full_text)
+        # 年号を抽出（仕入れ元タイトルのみ対象、description由来の誤検出を防ぐ）
+        # タイトルに年号がない場合は空欄。必要なら人力で確認・追加。
+        year = self._extract_year(name_lower)
 
-        # 重量を抽出
-        weight = self._extract_weight(full_text)
-
-        # 素材を判定
+        # 素材を判定（重量抽出で銅の場合はAVDP表記を保持するため、先に判定）
         metal_type, is_ingot = self._detect_metal_and_type(full_text)
 
-        # 国名を抽出
-        country = self._extract_country(full_text)
+        # 重量を抽出（銅・ブロンズの場合はAVDP表記を保持）
+        weight = self._extract_weight(full_text, keep_avdp=(metal_type in ("copper", "bronze")))
+
+        # 国名を抽出（優先順位付き）
+        country = self._extract_country_prioritized(
+            scraped_country=scraped_country,
+            url=url,
+            name_text=name_lower,
+            full_text=full_text,
+        )
 
         # シリーズ名またはメーカー名を抽出
         series_or_maker = self._extract_series_or_maker(full_text, is_ingot)
@@ -1642,111 +1974,272 @@ class JapaneseProductNameGenerator:
         # 枚数の単位
         unit = "本" if is_ingot else "枚"
 
+        # 製品種類
         if is_ingot:
-            # インゴットの命名規則
-            # [年号] [メーカー名] [国名] [重量] [種類]インゴット 新品未使用【[個数]】
-            ingot_type = "ゴールドインゴット" if "gold" in metal_type else "シルバーインゴット"
-            if "platinum" in metal_type:
-                ingot_type = "プラチナインゴット"
-
-            parts = []
-            if year:
-                parts.append(year)
-            if series_or_maker:
-                parts.append(series_or_maker)
-            if country:
-                parts.append(country)
-            if weight:
-                parts.append(weight)
-            parts.append(ingot_type)
-            parts.append("新品未使用")
-            parts.append(f"【{quantity}{unit}】")
-
-            return " ".join(parts)
+            if "gold" in metal_type:
+                product_type = "ゴールドインゴット"
+            elif "platinum" in metal_type:
+                product_type = "プラチナインゴット"
+            elif "palladium" in metal_type:
+                product_type = "パラジウムインゴット"
+            elif "copper" in metal_type or "bronze" in metal_type:
+                product_type = "地金型銅メダル ブロンズ"
+            else:
+                product_type = "シルバーインゴット"
         else:
-            # コインの命名規則
-            # [年号] [シリーズ名] [国名] [額面] [重量] 新品未使用 [種類] 【[枚数]】 ([付属品])
-            coin_type = self.METAL_MAP.get(metal_type, ("地金型銀貨", "シルバー"))[0]
-            coin_type = f"地金型{coin_type}"
+            # 銅/ブロンズは専用の表記（SEO・ショップ内検索対策）
+            if metal_type in ("copper", "bronze"):
+                product_type = "地金型銅メダル ブロンズ"
+            else:
+                coin_type = self.METAL_MAP.get(metal_type, ("地金型銀貨", "シルバー"))[0]
+                product_type = f"地金型{coin_type}"  # 「地金型金貨」「地金型銀貨」等
 
-            parts = []
-            if year:
-                parts.append(year)
-            if series_or_maker:
-                parts.append(series_or_maker)
-            if country:
-                parts.append(country)
-            if weight:
-                parts.append(weight)
+        # 鑑定済み（MS70/PF69/PCGS/NGC等）の場合は「新品未使用」の代わりに鑑定ラベルを使う
+        grade_label = self._extract_grade_label(name)
+
+        # 統一フォーマットで組み立て
+        # [年号] [国] [シリーズ/メーカー] [重量] [製品種類] {鑑定ラベル or 新品未使用} 【数量+単位】
+        parts = []
+        if year:
+            parts.append(year)
+        if country:
+            parts.append(country)
+        if series_or_maker:
+            parts.append(series_or_maker)
+        if weight:
+            parts.append(weight)
+        parts.append(product_type)
+        if grade_label:
+            parts.append(grade_label)  # 例: "MS-70 PCGS"、"PF-69 NGC"
+        else:
             parts.append("新品未使用")
-            parts.append(coin_type)
-            parts.append(f"【{quantity}{unit}】")
-            parts.append("(コインケース付)")
+        parts.append(f"【{quantity}{unit}】")
 
-            return " ".join(parts)
+        return " ".join(parts)
+
+    def _extract_grade_label(self, text: str) -> str:
+        """
+        鑑定グレードラベルを抽出して「MS-70 PCGS」のような形に整形する
+
+        対応パターン:
+        - MS70, MS-70, MS 70 など
+        - PF70, PF-70, PR70 など
+        - 鑑定機関: PCGS, NGC, CAC
+
+        Returns:
+            空文字 = 鑑定情報なし（=新品未使用扱い）
+        """
+        import re
+
+        # グレード抽出（MS/PF/PR/SP/BU は除外: BU=Brilliant Uncirculatedは鑑定ではない）
+        grade_match = re.search(r'\b(MS|PF|PR|SP)[\s\-]?(70|69|68|67|66|65)\b', text, re.IGNORECASE)
+        # 鑑定機関抽出
+        grader_match = re.search(r'\b(PCGS|NGC|CAC)\b', text, re.IGNORECASE)
+
+        parts = []
+        if grade_match:
+            prefix = grade_match.group(1).upper()
+            suffix = grade_match.group(2)
+            parts.append(f"{prefix}-{suffix}")
+        if grader_match:
+            parts.append(grader_match.group(1).upper())
+
+        return " ".join(parts)
 
     def _extract_year(self, text: str) -> str:
-        """年号を抽出"""
+        """年号を抽出（1800年代〜2099年）
+
+        ヒストリカルコイン（モルガン1878、ピースダラー1921等）にも対応。
+        通常は仕入れ元タイトルのみから抽出することを推奨（descriptionからの誤検出を防ぐため）。
+        """
         import re
-        # 2000-2039の範囲で年号を検索
-        match = re.search(r'\b(20[0-3][0-9])\b', text)
+        # 1800-1899, 1900-1999, 2000-2099 の範囲で年号を検索
+        match = re.search(r'\b(1[89]\d{2}|20\d{2})\b', text)
         if match:
             return match.group(1)
         return ""
 
-    def _extract_weight(self, text: str) -> str:
-        """重量を抽出して日本語形式に変換"""
+    def _extract_weight(self, text: str, keep_avdp: bool = False) -> str:
+        """重量を抽出して日本語形式に変換
+
+        Args:
+            text: 解析対象テキスト
+            keep_avdp: Trueの場合、AVDP表記を保持（銅/ブロンズ商品用）
+                       通常は「1オンス」、keep_avdp=Trueかつ元文に AVDP があれば「1AVDPオンス」
+        """
         import re
 
-        # オンス表記
-        oz_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:oz|ounce)', text)
+        # 元文に AVDP が含まれているか
+        has_avdp = bool(re.search(r'\bavdp\b', text, re.IGNORECASE))
+        oz_unit = "AVDPオンス" if (has_avdp and keep_avdp) else "オンス"
+
+        # AVDP oz / Troy oz などの修飾語があっても正規表現でマッチするように
+        oz_suffix = r'(?:avdp\s+|troy\s+)?(?:oz|ounce)'
+
+        # 1. 分数表記を先にチェック（1/4 oz, 1/2 oz 等）
+        frac_match = re.search(rf'(\d+)\s*/\s*(\d+)\s*{oz_suffix}', text)
+        if frac_match:
+            numerator = int(frac_match.group(1))
+            denominator = int(frac_match.group(2))
+            if denominator > 0:
+                from math import gcd
+                g = gcd(numerator, denominator)
+                n, d = numerator // g, denominator // g
+                if d == 1:
+                    return f"{n}{oz_unit}"
+                return f"{n}/{d}{oz_unit}"
+
+        # 2. 整数/小数のオンス表記
+        oz_match = re.search(rf'(\d+(?:\.\d+)?)\s*{oz_suffix}', text)
         if oz_match:
             oz_val = float(oz_match.group(1))
-            if oz_val == 1:
-                return "1オンス"
-            elif oz_val == 0.5:
-                return "1/2オンス"
-            elif oz_val == 0.25:
-                return "1/4オンス"
-            elif oz_val == 0.1:
-                return "1/10オンス"
-            else:
-                return f"{oz_val}オンス"
+            if oz_val == int(oz_val):
+                return f"{int(oz_val)}{oz_unit}"
+            return f"{oz_val}{oz_unit}"
 
-        # グラム表記
-        g_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:g|gram)(?:s)?(?!\w)', text)
-        if g_match:
-            g_val = g_match.group(1)
-            return f"{g_val}g"
-
-        # kg表記
+        # 3. kg表記
         kg_match = re.search(r'(\d+(?:\.\d+)?)\s*kg', text)
         if kg_match:
-            kg_val = kg_match.group(1)
-            return f"{kg_val}kg"
+            return f"{kg_match.group(1)}kg"
+
+        # 4. グラム表記
+        g_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:g|gram)(?:s)?(?!\w)', text)
+        if g_match:
+            return f"{g_match.group(1)}g"
 
         return ""
 
     def _detect_metal_and_type(self, text: str) -> tuple[str, bool]:
         """素材とインゴットかどうかを判定"""
+        import re
         is_ingot = any(kw in text for kw in ["ingot", "bar", "インゴット", "バー"])
 
-        if "gold" in text or "金" in text:
+        # より具体的な素材から優先してチェック（gold/silver が description に含まれやすいため）
+        if "platinum" in text or "プラチナ" in text:
+            return "platinum", is_ingot
+        elif "palladium" in text or "パラジウム" in text:
+            return "palladium", is_ingot
+        elif "copper" in text or "銅" in text:
+            return "copper", is_ingot
+        elif "bronze" in text or "ブロンズ" in text:
+            return "bronze", is_ingot
+        elif "gold" in text or "金" in text:
             return "gold", is_ingot
         elif "silver" in text or "銀" in text:
             return "silver", is_ingot
-        elif "platinum" in text or "プラチナ" in text:
+
+        # 化学記号（Au=金、Ag=銀、Pt=プラチナ、Pd=パラジウム、Cu=銅）
+        # 単語境界チェックで "author", "again" 等の誤マッチを回避
+        if re.search(r"\bpt\b", text):
             return "platinum", is_ingot
-        elif "palladium" in text:
+        elif re.search(r"\bpd\b", text):
             return "palladium", is_ingot
+        elif re.search(r"\bcu\b", text):
+            return "copper", is_ingot
+        elif re.search(r"\bau\b", text):
+            return "gold", is_ingot
+        elif re.search(r"\bag\b", text):
+            return "silver", is_ingot
 
         return "silver", is_ingot  # デフォルト
 
-    def _extract_country(self, text: str) -> str:
-        """国名を抽出"""
+    # デザイン表現（国名の直後にこれらが来る場合は国名判定しない）
+    _DESIGN_WORDS = r"(?:dragon|design|style|panda|motif|theme|symbol|pattern|art|edition)"
+
+    def _country_word_search(self, text: str) -> str:
+        """
+        単語境界を考慮して国名辞書からマッチを返す。
+        「Chinese dragon」等のデザイン表現は国名としてカウントしない。
+        """
+        import re
         for eng, jpn in self.COUNTRY_MAP.items():
-            if eng in text:
-                return jpn
+            # 単語境界マッチ（"us"が"australia"に含まれる誤マッチを防ぐ）
+            # ハイフンやスラッシュもword boundaryとして扱うため、\b を使う
+            word_pattern = re.compile(rf"\b{re.escape(eng)}\b", re.IGNORECASE)
+            match = word_pattern.search(text)
+            if not match:
+                continue
+
+            # 除外チェック: 国名の直後がデザイン表現ならスキップ
+            exclude_pattern = re.compile(
+                rf"\b{re.escape(eng)}\s+{self._DESIGN_WORDS}\b", re.IGNORECASE
+            )
+            if exclude_pattern.search(text):
+                # 他の国名がテキスト内にあれば、それを優先して探す
+                other_hits_exist = any(
+                    re.search(rf"\b{re.escape(other)}\b", text, re.IGNORECASE)
+                    and not re.search(
+                        rf"\b{re.escape(other)}\s+{self._DESIGN_WORDS}\b",
+                        text, re.IGNORECASE,
+                    )
+                    for other in self.COUNTRY_MAP
+                    if other != eng
+                )
+                if other_hits_exist:
+                    continue
+            return jpn
+        return ""
+
+    def _extract_country(self, text: str) -> str:
+        """国名を抽出（単語境界マッチ、除外ワード考慮）"""
+        return self._country_word_search(text)
+
+    def _extract_country_prioritized(
+        self,
+        scraped_country: str = "",
+        url: str = "",
+        name_text: str = "",
+        full_text: str = "",
+    ) -> str:
+        """
+        国名を優先順位付きで抽出
+
+        優先度:
+          1. scraped_country（スクレイパーが直接取得した製造国）
+          2. URL内のヒント
+          3. 商品名のみ
+          4. 全文（仕様・説明含む、デザイン除外付き）
+        """
+        # 1. スクレイピング済みの製造国を最優先
+        if scraped_country:
+            sc_lower = scraped_country.strip().lower()
+            # 完全一致を最優先
+            for eng, jpn in self.COUNTRY_MAP.items():
+                if eng == sc_lower:
+                    return jpn
+            # 次に単語境界マッチ
+            found = self._country_word_search(sc_lower)
+            if found:
+                return found
+            # 辞書にない国名はそのまま返す（スクレイパーを信頼）
+            return scraped_country
+
+        # 2. URLから抽出
+        if url:
+            found = self._country_word_search(url.lower())
+            if found:
+                return found
+
+        # 3. 商品名のみから抽出
+        if name_text:
+            found = self._country_word_search(name_text)
+            if found:
+                return found
+
+        # 4. 全文から抽出（デザイン除外付き）
+        if full_text:
+            found = self._country_word_search(full_text)
+            if found:
+                return found
+
+        # 5. フォールバック: スイスメーカー名から国名を推定
+        # （PAMP/Valcambi/Heraeus/Argor 等は国名表記がなくてもスイスが正解）
+        for src in [name_text, full_text]:
+            src_lower = (src or "").lower()
+            for maker in self.SWISS_MAKERS:
+                if maker in src_lower:
+                    return "スイス"
+
         return ""
 
     def _extract_series_or_maker(self, text: str, is_ingot: bool) -> str:

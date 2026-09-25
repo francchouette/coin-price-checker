@@ -410,6 +410,7 @@ HTML = """<!DOCTYPE html>
     background: #fff; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: transform 0.2s; }
   .toggle-switch input:checked + .toggle-slider { background: #34c759; }
   .toggle-switch input:checked + .toggle-slider::before { transform: translateX(18px); }
+  .toggle-switch.toggle-danger input:checked + .toggle-slider { background: #c62828; }
 
   .vpn-bar { background: #fff; border-radius: 12px; padding: 14px 20px;
              box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: flex;
@@ -507,17 +508,74 @@ HTML = """<!DOCTYPE html>
       </div>
 
       <div class="btn-group" data-component="card-cm-sync-actions">
-        <button class="btn btn-primary" id="btn-cm-run" onclick="cmRunWithFields()">シート→API同期</button>
+        <button class="btn btn-primary" id="btn-cm-run" onclick="cmRunWithFields()">シート→API</button>
+        <button class="btn btn-secondary" id="btn-cm-download" onclick="cmDownload()">API→シート</button>
+        <button class="btn btn-secondary" id="btn-cm-supplier-sync" onclick="doAction('cm','sync-supplier')">仕入れ先一覧同期</button>
+        <button class="btn btn-secondary" id="btn-cm-competitor" onclick="doAction('cm','fetch-competitor')">競合価格取得</button>
+        <button class="btn btn-secondary" id="btn-cm-check" onclick="doAction('cm','check-integrity')">数式チェック</button>
         <button class="btn btn-secondary" id="btn-cm-full" onclick="cmRunFull()">フルスペック</button>
         <button class="btn btn-danger" id="btn-cm-stop" onclick="doAction('cm','stop')" disabled>停止</button>
       </div>
-      <div style="font-size:11px;color:#86868b;margin-top:-6px;line-height:1.5" data-component="card-cm-sync-description">
-        <b>シート→API同期</b>: スプレッドシートの値を直接カラーミーAPIに送信（高速）<br>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:2px">
+        <label class="toggle-switch toggle-danger">
+          <input type="checkbox" id="cm-overwrite">
+          <span class="toggle-slider"></span>
+        </label>
+        <span style="font-size:13px;font-weight:500;color:#c62828">API→シート: 既存値も上書き</span>
+      </div>
+      <div style="font-size:11px;color:#86868b;margin-top:-2px;line-height:1.5" data-component="card-cm-sync-description">
+        <b>シート→API</b>: スプレッドシートの値を直接カラーミーAPIに送信（高速）<br>
+        <b>API→シート</b>: カラーミーAPIから商品データをダウンロードしシートに書き込み<br>
+        <b>仕入れ先一覧同期</b>: BS/APMEX商品ページ一覧の登録済商品を商品仕入れ先一覧に同期（数秒）<br>
+        <b>競合価格取得</b>: BZ列の競合URLから価格を取得しCA-CC列に反映（数分）<br>
+        <b>数式チェック</b>: #REF!破損・他行参照ズレをスキャン。並び替え後の確認用（10秒）<br>
         <b>フルスペック</b>: APIダウンロード→スクレイピング→シート更新→API同期（2〜3時間）
       </div>
-      <details class="data-flow" style="margin-top:2px">
-        <summary>同期項目の選択</summary>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;margin-top:6px;font-size:11px">
+      <details class="data-flow" style="margin-top:6px">
+        <summary style="font-weight:600;color:#1d1d1f">操作ガイド（やりたいことから探す）</summary>
+        <table class="flow-table" style="margin-top:6px">
+          <tr><th style="width:55%">やりたいこと</th><th>操作</th></tr>
+          <tr>
+            <td>シートで計算した<b>価格</b>をカラーミーに反映したい</td>
+            <td>「価格」だけチェック → <b>シート→API</b></td>
+          </tr>
+          <tr>
+            <td>シートで作った<b>商品説明・SEO・型番</b>等を反映したい</td>
+            <td>該当項目だけチェック → <b>シート→API</b></td>
+          </tr>
+          <tr>
+            <td>カラーミー側で<b>CSV編集したカテゴリ・グループ</b>をシートに取り込みたい</td>
+            <td>「カテゴリ・グループ」だけチェック + <span style="color:#c62828">既存値も上書きON</span> → <b>API→シート</b></td>
+          </tr>
+          <tr>
+            <td>カラーミーの<b>新商品</b>をシートに取り込みたい（既存行はそのまま）</td>
+            <td>全選択 + 上書きOFF → <b>API→シート</b></td>
+          </tr>
+          <tr>
+            <td>カラーミー側で<b>画像を変更</b>したのをシートに反映したい</td>
+            <td>「画像URL」だけチェック + 上書きON → <b>API→シート</b></td>
+          </tr>
+          <tr>
+            <td>BS/APMEX商品の<b>登録済フラグ</b>を商品仕入れ先一覧に反映したい</td>
+            <td><b>仕入れ先一覧同期</b></td>
+          </tr>
+          <tr>
+            <td><b>全データの完全同期</b>（API取込→スクレイピング→同期）</td>
+            <td>全選択 → <b>フルスペック</b>（2〜3時間）</td>
+          </tr>
+        </table>
+        <div style="font-size:10px;color:#86868b;margin-top:4px;line-height:1.5">
+          🛡 <b>常時保護される列</b>（モード/項目選択に関係なく上書きされない）:<br>
+          ・<b>J列</b>（仕入れ先商品URL／手動入力）<br>
+          ・<b>M-Q列</b>（仕入れ先価格情報／VLOOKUP・スクレイピング由来）<br>
+          ・<b>R-AD列</b>（価格計算／数式）<br>
+          ・<b>AI-AJ列</b>（消費税込価格・税額／数式）<br>
+          ・<b>BZ-CC列</b>（競合価格情報／手動入力）
+        </div>
+      </details>
+      <div style="margin-top:4px;font-size:11px;color:#1d1d1f">
+        <div style="font-weight:600;margin-bottom:4px">同期項目の選択</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px">
           <label><input type="checkbox" class="cm-field" value="price" checked> 価格（AE列）</label>
           <label><input type="checkbox" class="cm-field" value="name" checked> 商品名（H列）</label>
           <label><input type="checkbox" class="cm-field" value="description" checked> 商品説明（BA-BB列）</label>
@@ -529,31 +587,36 @@ HTML = """<!DOCTYPE html>
           <label><input type="checkbox" class="cm-field" value="shipping" checked> 送料（AW列）</label>
           <label><input type="checkbox" class="cm-field" value="seo" checked> SEO（BO-BQ列）</label>
           <label><input type="checkbox" class="cm-field" value="options" checked> オプション（BR-BT列）</label>
+          <label><input type="checkbox" class="cm-field" value="images" checked> 画像URL（BE-BN列）</label>
         </div>
         <div style="margin-top:6px;display:flex;gap:8px">
           <button class="btn-text" onclick="document.querySelectorAll('.cm-field').forEach(c=>c.checked=true)">全選択</button>
           <button class="btn-text" onclick="document.querySelectorAll('.cm-field').forEach(c=>c.checked=false)">全解除</button>
         </div>
-      </details>
+      </div>
       <details class="data-flow">
         <summary>データフロー設定</summary>
         <table class="flow-table">
-          <tr><th>項目</th><th>列</th><th>ダウンロード時</th><th>同期時</th></tr>
-          <tr><td>商品名</td><td>H</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
-          <tr><td>表示状態</td><td>B</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
-          <tr><td>商品説明</td><td>BA</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
-          <tr><td>簡易説明</td><td>BB</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
-          <tr><td>型番</td><td>AO</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
-          <tr><td>価格</td><td>AE</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
-          <tr><td>在庫数</td><td>AP</td><td class="dir-sheet">シート優先</td><td>連動ON時のみ</td></tr>
-          <tr><td>在庫管理</td><td>AQ-AV</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
-          <tr><td>送料</td><td>AW</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
-          <tr><td>カテゴリID</td><td>AK</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
-          <tr><td>グループID</td><td>AM</td><td class="dir-sheet">シート優先</td><td>APIへ送信</td></tr>
-          <tr><td>画像</td><td>BE-BN</td><td class="dir-sheet">シート優先</td><td class="dir-none">送信しない</td></tr>
+          <tr><th>項目</th><th>列</th><th>シート→API</th><th>API→シート</th></tr>
+          <tr><td>商品名</td><td>H</td><td>送信</td><td class="dir-api">空欄のみ上書き</td></tr>
+          <tr><td>表示状態</td><td>B</td><td>送信</td><td class="dir-api">空欄のみ上書き</td></tr>
+          <tr><td>商品説明</td><td>BA-BB</td><td>送信</td><td class="dir-api">空欄のみ上書き</td></tr>
+          <tr><td>型番</td><td>AO</td><td>送信</td><td class="dir-api">空欄のみ上書き</td></tr>
+          <tr><td>価格</td><td>AE</td><td>送信</td><td class="dir-api">空欄のみ上書き</td></tr>
+          <tr><td>在庫数</td><td>AP</td><td>連動ON時</td><td class="dir-api">空欄のみ上書き</td></tr>
+          <tr><td>在庫管理</td><td>AQ-AV</td><td>送信</td><td class="dir-api">空欄のみ上書き</td></tr>
+          <tr><td>送料</td><td>AW</td><td>送信</td><td class="dir-api">空欄のみ上書き</td></tr>
+          <tr><td>カテゴリID</td><td>AK</td><td>送信</td><td class="dir-api">空欄のみ上書き</td></tr>
+          <tr><td>グループID</td><td>AM</td><td>送信</td><td class="dir-api">空欄のみ上書き</td></tr>
+          <tr><td>SEO</td><td>BO-BQ</td><td>送信※</td><td class="dir-api">空欄のみ上書き</td></tr>
+          <tr><td>オプション</td><td>BR-BT</td><td>送信</td><td class="dir-api">空欄のみ上書き</td></tr>
+          <tr><td>画像URL</td><td>BE-BN</td><td class="dir-none">API非対応</td><td class="dir-api">空欄のみ上書き</td></tr>
         </table>
-        <div style="font-size:10px;color:#86868b;margin-top:4px">
-          <span class="dir-sheet">シート優先</span> = 初回はAPIの値で登録、以降はシートの値を保持
+        <div style="font-size:10px;color:#86868b;margin-top:4px;line-height:1.5">
+          <span class="dir-api">空欄のみ上書き</span> = シートに既存値があれば保持（シート優先）<br>
+          ※同期項目のチェックを外した列はAPI→シート時も保持されます（上書きOFF同等）<br>
+          ※SEOはカラーミーAPIで非対応の場合あり（Playwright経由推奨）<br>
+          🛡 <b>J/M-Q/R-AD/AI-AJ/BZ-CC列は常時保護</b>（モード・項目選択に関わらず上書きしない）
         </div>
       </details>
 
@@ -577,6 +640,78 @@ HTML = """<!DOCTYPE html>
         <button class="btn-text" onclick="doAction('cm','clear-logs')">リセット</button>
       </div>
       <div id="cm-log" class="log-box" data-component="card-cm-sync-log"></div>
+    </div>
+
+    <!-- ======== 価格のみ同期 ======== -->
+    <div class="task-card" data-component="card-po-sync">
+      <h2 data-component="card-po-sync-title">価格のみ同期 <span class="sheet-badge">新カラーミー商品管理</span></h2>
+
+      <div data-component="card-po-sync-status">
+        <div class="status-row">
+          <span class="status-label">状態</span>
+          <span id="po-status" class="badge badge-gray">...</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">前回</span>
+          <span id="po-last" class="status-value">...</span>
+        </div>
+      </div>
+
+      <div id="po-progress" class="progress-wrap" data-component="card-po-sync-progress">
+        <div id="po-progress-step" class="progress-step"></div>
+        <div class="progress-bar-bg"><div id="po-progress-bar" class="progress-bar po" style="width:0%"></div></div>
+        <div id="po-progress-text" class="progress-text"></div>
+      </div>
+
+      <div class="btn-group" data-component="card-po-sync-actions">
+        <button class="btn btn-success" id="btn-po-run" onclick="doAction('po','run')">実行</button>
+        <button class="btn btn-danger" id="btn-po-stop" onclick="doAction('po','stop')" disabled>停止</button>
+      </div>
+      <div style="font-size:11px;color:#86868b;margin-top:-6px;line-height:1.5" data-component="card-po-sync-description">
+        仕入れ先サイトから最新の価格・在庫をスクレイピング → カラーミーAPIに同期 → 競合（野口コイン）の価格・在庫を取得
+      </div>
+      <details class="data-flow">
+        <summary>データフロー設定</summary>
+        <table class="flow-table">
+          <tr><th>項目</th><th>方向</th><th>説明</th></tr>
+          <tr><td>仕入れ先価格</td><td>仕入れ先→シート</td><td>M-Q列・S列をスクレイピング結果で更新</td></tr>
+          <tr><td>販売価格</td><td>シート→API</td><td>数式で再計算されたAE列の値を送信</td></tr>
+          <tr><td>在庫</td><td>シート→API</td><td>D列=ON時、仕入れ先在庫に連動</td></tr>
+          <tr><td>表示状態</td><td>シート→API</td><td>E列=連動時、仕入れ先在庫に連動</td></tr>
+          <tr><td>競合価格</td><td>競合→シート</td><td>BZ列のURLからCA-CC列（商品名・価格・在庫数）を更新</td></tr>
+        </table>
+        <div style="font-size:10px;color:#86868b;margin-top:4px">
+          カラーミーからのダウンロードなし。シートの値をそのままAPIに送信
+        </div>
+      </details>
+
+      <div class="sched-row" data-component="card-po-sync-schedule">
+        <span class="sched-label">定期実行</span>
+        <select id="po-interval" class="interval-select" onchange="changeInterval('po')">
+          <option value="30">30分</option><option value="60">1時間</option>
+          <option value="120">2時間</option><option value="180">3時間</option>
+          <option value="240">4時間</option><option value="360">6時間</option>
+          <option value="480">8時間</option><option value="720">12時間</option>
+          <option value="1440">24時間</option>
+        </select>
+        <label class="toggle-switch">
+          <input type="checkbox" id="po-sched-toggle" onchange="toggleSched('po', this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="bench-input-row" data-component="card-po-sync-benchmark">
+        <span class="sched-label">ベンチマーク</span>
+        <input type="number" id="bench-row" value="3" min="2" max="1000" class="bench-input">
+        <span style="font-size:13px;color:#86868b">行目</span>
+        <button class="btn btn-secondary btn-sm" id="btn-bench" onclick="runBenchmark()">確認</button>
+      </div>
+
+      <div class="log-header" data-component="card-po-sync-log-header">
+        <span>ログ</span>
+        <button class="btn-text" onclick="doAction('po','clear-logs')">リセット</button>
+      </div>
+      <div id="po-log" class="log-box" data-component="card-po-sync-log"></div>
     </div>
 
     <!-- ======== ブリオンスター商品取得 ======== -->
@@ -715,77 +850,6 @@ HTML = """<!DOCTYPE html>
       <div id="ap-log" class="log-box" data-component="card-ap-fetch-log"></div>
     </div>
 
-    <!-- ======== 価格のみ同期 ======== -->
-    <div class="task-card" data-component="card-po-sync">
-      <h2 data-component="card-po-sync-title">価格のみ同期 <span class="sheet-badge">新カラーミー商品管理</span></h2>
-
-      <div data-component="card-po-sync-status">
-        <div class="status-row">
-          <span class="status-label">状態</span>
-          <span id="po-status" class="badge badge-gray">...</span>
-        </div>
-        <div class="status-row">
-          <span class="status-label">前回</span>
-          <span id="po-last" class="status-value">...</span>
-        </div>
-      </div>
-
-      <div id="po-progress" class="progress-wrap" data-component="card-po-sync-progress">
-        <div id="po-progress-step" class="progress-step"></div>
-        <div class="progress-bar-bg"><div id="po-progress-bar" class="progress-bar po" style="width:0%"></div></div>
-        <div id="po-progress-text" class="progress-text"></div>
-      </div>
-
-      <div class="btn-group" data-component="card-po-sync-actions">
-        <button class="btn btn-success" id="btn-po-run" onclick="doAction('po','run')">実行</button>
-        <button class="btn btn-danger" id="btn-po-stop" onclick="doAction('po','stop')" disabled>停止</button>
-      </div>
-      <div style="font-size:11px;color:#86868b;margin-top:-6px;line-height:1.5" data-component="card-po-sync-description">
-        仕入れ先サイトから最新の価格・在庫をスクレイピング → シートのM-Q列・S列を更新 → 数式再計算 → カラーミーAPIに価格・在庫・表示を同期
-      </div>
-      <details class="data-flow">
-        <summary>データフロー設定</summary>
-        <table class="flow-table">
-          <tr><th>項目</th><th>方向</th><th>説明</th></tr>
-          <tr><td>仕入れ先価格</td><td>仕入れ先→シート</td><td>M-Q列・S列をスクレイピング結果で更新</td></tr>
-          <tr><td>販売価格</td><td>シート→API</td><td>数式で再計算されたAE列の値を送信</td></tr>
-          <tr><td>在庫</td><td>シート→API</td><td>D列=ON時、仕入れ先在庫に連動</td></tr>
-          <tr><td>表示状態</td><td>シート→API</td><td>E列=連動時、仕入れ先在庫に連動</td></tr>
-        </table>
-        <div style="font-size:10px;color:#86868b;margin-top:4px">
-          カラーミーからのダウンロードなし。シートの値をそのままAPIに送信
-        </div>
-      </details>
-
-      <div class="sched-row" data-component="card-po-sync-schedule">
-        <span class="sched-label">定期実行</span>
-        <select id="po-interval" class="interval-select" onchange="changeInterval('po')">
-          <option value="30">30分</option><option value="60">1時間</option>
-          <option value="120">2時間</option><option value="180">3時間</option>
-          <option value="240">4時間</option><option value="360">6時間</option>
-          <option value="480">8時間</option><option value="720">12時間</option>
-          <option value="1440">24時間</option>
-        </select>
-        <label class="toggle-switch">
-          <input type="checkbox" id="po-sched-toggle" onchange="toggleSched('po', this.checked)">
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-
-      <div class="bench-input-row" data-component="card-po-sync-benchmark">
-        <span class="sched-label">ベンチマーク</span>
-        <input type="number" id="bench-row" value="3" min="2" max="1000" class="bench-input">
-        <span style="font-size:13px;color:#86868b">行目</span>
-        <button class="btn btn-secondary btn-sm" id="btn-bench" onclick="runBenchmark()">確認</button>
-      </div>
-
-      <div class="log-header" data-component="card-po-sync-log-header">
-        <span>ログ</span>
-        <button class="btn-text" onclick="doAction('po','clear-logs')">リセット</button>
-      </div>
-      <div id="po-log" class="log-box" data-component="card-po-sync-log"></div>
-    </div>
-
     <!-- ======== 商品説明同期 ======== -->
     <div class="task-card" data-component="card-ds-sync">
       <h2 data-component="card-ds-sync-title">商品説明同期 <span class="sheet-badge">新カラーミー商品管理</span></h2>
@@ -844,6 +908,49 @@ HTML = """<!DOCTYPE html>
     </div>
 
   </div>
+
+  <div data-component="ops-guide" style="margin-top:24px;padding:16px;background:#f5f5f7;border-radius:10px;font-size:12px;color:#1d1d1f;line-height:1.7">
+    <div style="font-weight:700;margin-bottom:8px;font-size:13px">新商品登録〜販売価格反映の手順</div>
+    <ol style="margin:0;padding-left:20px">
+      <li><b>採用フラグ設定</b>: BS/APMEX商品ページ一覧 シートのA列を「採用」に変更</li>
+      <li><b>カラーミー登録</b>（CLI）: <code>python -m src.register_adopted_products --source ap [--supplier-ids AP-XXXXX,...]</code></li>
+      <li><b>画像アップロード</b>（CLI）: <code>python -m src.register_adopted_products --source ap --images-only [--supplier-ids ...]</code></li>
+      <li><b>仕入れ先一覧同期</b>: ダッシュボードの「仕入れ先一覧同期」ボタン（または <code>python -m src.sync_supplier_list --source ap</code>）</li>
+      <li><b>API→シート</b>: ダッシュボードで同期項目チェック → 「API→シート」ボタン<br>
+        <span style="color:#86868b;font-size:11px">完了時に J列(仕入れ先URL) と K-AE列(VLOOKUP/数式) も自動補完されます</span></li>
+      <li><b>値確認</b>: CMシート上で AE列(販売価格) が妥当か目視</li>
+      <li><b>シート→API</b>: ダッシュボードで「価格」のみチェック → 「シート→API」ボタン → カラーミーに反映</li>
+    </ol>
+    <div style="margin-top:8px;color:#86868b;font-size:11px">
+      ※ カテゴリ・グループだけ反映したい場合: <b>API→シート</b> で「カテゴリ・グループ」のみチェック + 「既存値も上書き」ON<br>
+      ※ 商品削除順: <b>カラーミー管理画面 → シート</b>（逆だと API→シートで復活）
+    </div>
+  </div>
+
+  <div data-component="ops-guide-delete" style="margin-top:16px;padding:16px;background:#fff5f5;border-radius:10px;font-size:12px;color:#1d1d1f;line-height:1.7;border:1px solid #ffe0e0">
+    <div style="font-weight:700;margin-bottom:8px;font-size:13px;color:#c00">商品削除の手順（順序厳守）</div>
+    <ol style="margin:0;padding-left:20px">
+      <li><b>カラーミー管理画面で商品削除</b><br>
+        <span style="color:#86868b;font-size:11px">管理画面 → 商品管理 → 対象商品を選択 → 削除</span></li>
+      <li><b>CMシート（新カラーミー商品管理）から該当行を削除</b><br>
+        <span style="color:#86868b;font-size:11px">G列(カラーミー商品ID) で対象行を特定し、行ごと削除</span></li>
+      <li><b>ブリオンスター / APMEX商品ページ一覧のB列を「未登録」に戻す</b><br>
+        <span style="color:#86868b;font-size:11px">再登録の可能性があるため、W列(カラーミー商品ID) もクリア推奨</span></li>
+      <li><b>商品仕入れ先一覧シートから該当行を削除</b>（推奨）<br>
+        <span style="color:#86868b;font-size:11px">C列(仕入れ先商品URL)で対象行を特定。残しても実害少ないが、同じURLで再登録した際に古いデータが引かれるリスクあり</span></li>
+      <li><b>（必要なら）採用フラグを「除外」に変更</b><br>
+        <span style="color:#86868b;font-size:11px">再スクレイピングで復活させたくない場合はA列を「除外」に。「未採用」だと再スクレイピングで拾われる可能性あり</span></li>
+    </ol>
+
+    <div style="font-weight:700;margin-top:12px;margin-bottom:6px;font-size:13px;color:#c00">⚠ 注意点</div>
+    <ul style="margin:0;padding-left:20px">
+      <li><b>順序を間違えるとゾンビ行が復活する</b>: カラーミー削除より先にシート削除すると、次回 API→シート で該当商品が再取得され、シートに戻ってくる</li>
+      <li><b>商品仕入れ先一覧は自動削除されない</b>: sync_supplier_list は B列=登録済 の追加/更新のみ、削除は手動。CMシートの行を消せばVLOOKUP参照は切れるので実害は少ない</li>
+      <li><b>採用フラグ「未採用」と「除外」の違い</b>:「未採用」は再スクレイピング時に判定対象、「除外」は明示的にスキップされ再登場しない</li>
+      <li><b>削除確認</b>: 削除後は必ず API→シート を実行して、対象IDがシートに残っていないか確認</li>
+      <li><b>orphan検出</b>: scripts/find_orphan_cm_rows.py で、カラーミー削除済みだがシートに残っている行を検出可能</li>
+    </ul>
+  </div>
 </div>
 
 <div id="toast" class="toast" data-component="toast-notification"></div>
@@ -895,12 +1002,18 @@ async function refresh() {
       cmEl.textContent = '実行中';
       cmEl.className = 'badge badge-blue';
       document.getElementById('btn-cm-run').disabled = true;
+      document.getElementById('btn-cm-download').disabled = true;
+      document.getElementById('btn-cm-supplier-sync').disabled = true;
+      document.getElementById('btn-cm-check').disabled = true;
       document.getElementById('btn-cm-full').disabled = true;
       document.getElementById('btn-cm-stop').disabled = false;
     } else {
       cmEl.textContent = '停止中';
       cmEl.className = 'badge badge-yellow';
       document.getElementById('btn-cm-run').disabled = false;
+      document.getElementById('btn-cm-download').disabled = false;
+      document.getElementById('btn-cm-supplier-sync').disabled = false;
+      document.getElementById('btn-cm-check').disabled = false;
       document.getElementById('btn-cm-full').disabled = false;
       document.getElementById('btn-cm-stop').disabled = true;
     }
@@ -1095,6 +1208,18 @@ async function cmRunWithFields() {
   const suffix = checks.length < allChecks.length ? '?fields=' + encodeURIComponent(fields) : '';
   doAction('cm', 'run-fast' + suffix);
 }
+async function cmDownload() {
+  const checks = document.querySelectorAll('.cm-field:checked');
+  const fields = Array.from(checks).map(c => c.value).join(',');
+  if (!fields) { showToast('同期項目を1つ以上選択してください', 'error'); return; }
+  const overwrite = document.getElementById('cm-overwrite').checked;
+  const allChecks = document.querySelectorAll('.cm-field');
+  const params = [];
+  if (checks.length < allChecks.length) params.push('fields=' + encodeURIComponent(fields));
+  if (overwrite) params.push('overwrite=1');
+  const suffix = params.length ? '?' + params.join('&') : '';
+  doAction('cm', 'download' + suffix);
+}
 async function cmRunFull() {
   const checks = document.querySelectorAll('.cm-field:checked');
   const fields = Array.from(checks).map(c => c.value).join(',');
@@ -1108,6 +1233,9 @@ async function doAction(task, action) {
   const labels = {
     'cm-run': 'フルスペック同期を開始しています...',
     'cm-run-fast': 'シート→API同期を開始しています...',
+    'cm-download': 'API→シートダウンロードを開始しています...',
+    'cm-sync-supplier': '仕入れ先一覧同期を開始しています...',
+    'cm-fetch-competitor': '競合価格取得を開始しています...',
     'cm-stop': '停止しています...',
     'bs-run': '商品取得を開始しています...',
     'bs-register': 'カラーミー登録を開始しています...',
@@ -1461,6 +1589,22 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             qs = parse_qs(urlparse(self.path).query)
             sync_fields = qs.get('fields', [''])[0]
             self._respond_json(self._cm_run_fast(sync_fields=sync_fields))
+        elif parts == ['cm', 'download']:
+            # API→シートダウンロード（download_colorme_products.py --syncなし）
+            from urllib.parse import urlparse, parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            overwrite = qs.get('overwrite', [''])[0] == '1'
+            sync_fields = qs.get('fields', [''])[0]
+            self._respond_json(self._cm_download(overwrite=overwrite, sync_fields=sync_fields))
+        elif parts == ['cm', 'sync-supplier']:
+            # 商品仕入れ先一覧同期（sync_supplier_list.py --source all）
+            self._respond_json(self._cm_sync_supplier())
+        elif parts == ['cm', 'fetch-competitor']:
+            # 競合価格取得（fetch_competitor_prices.py）
+            self._respond_json(self._cm_fetch_competitor())
+        elif parts == ['cm', 'check-integrity']:
+            # シート整合性チェック（check_sheet_integrity.py）
+            self._respond_json(self._cm_check_integrity())
         elif parts == ['cm', 'stop']:
             self._respond_json(self._cm_stop())
         elif parts == ['cm', 'clear-logs']:
@@ -1587,7 +1731,19 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             try:
                 with open(log_files[0], 'r', encoding='utf-8', errors='replace') as f:
                     full = f.read()
-                if '同期' in full and '完了' in full:
+                # 整合性チェックの結果判定
+                if '整合性チェック完了' in full or '数式は完全にクリーンです' in full:
+                    t = _calc_elapsed_from_log(log_files[0])
+                    m_ref = re.search(r'#REF! 破損セル: (\d+)件', full)
+                    m_off = re.search(r'行ズレ参照セル: (\d+)件', full)
+                    ref_n = int(m_ref.group(1)) if m_ref else 0
+                    off_n = int(m_off.group(1)) if m_off else 0
+                    if ref_n == 0 and off_n == 0:
+                        last_summary = f'チェック✓クリーン ({t})' if t else 'チェック✓クリーン'
+                        last_success = True
+                    else:
+                        last_summary = f'チェック⚠破損{ref_n+off_n}件 ({t})' if t else f'チェック⚠破損{ref_n+off_n}件'
+                elif '同期' in full and '完了' in full:
                     m = re.search(r'合計所要時間: (.+)', full)
                     t = m.group(1) if m else _calc_elapsed_from_log(log_files[0])
                     last_summary = f'完了 ({t})' if t else '完了'
@@ -1615,11 +1771,16 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         TAIL = 60
 
         # メインログのヘッダー部分（開始時刻等）
-        _, main_log = _get_latest_log("cm-sync-*.log", 8)
+        latest_file, main_log = _get_latest_log("cm-sync-*.log", 8)
         header = main_log.strip()
 
+        # 整合性チェック: ファイル名で判定（末尾TAILだと開始行を見逃すため）
+        if latest_file and 'integrity' in latest_file:
+            _, full_log = _get_latest_log("cm-sync-*-integrity.log", 200)
+            return full_log.strip() if full_log else header
+
         # シート→API直接同期の場合: cm-sync-*.log に全ログが入っている
-        if 'シート→API同期開始' in header:
+        if 'シート→API同期開始' in header or 'API→シートダウンロード開始' in header:
             _, full_log = _get_latest_log("cm-sync-*.log", TAIL)
             return full_log.strip() if full_log else header
 
@@ -1681,6 +1842,22 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                         total = m.group(1) if m else '?'
                         return {'step': 'シート→API同期', 'percent': 3, 'detail': f'更新対象: {total}件'}
                     return {'step': 'シート読み込み中...', 'percent': 1, 'detail': ''}
+                if 'API→シートダウンロード開始' in content:
+                    # download_colorme_products.py の進捗
+                    matches = re.findall(r'\[(\d+)/(\d+)\]', content)
+                    if matches:
+                        current, total = int(matches[-1][0]), int(matches[-1][1])
+                        pct = (current * 100 // total) if total > 0 else 0
+                        written = content.count('シート書き込み')
+                        detail = f'{current}/{total}件'
+                        if written:
+                            detail += f' (書込:{written}回)'
+                        return {'step': 'API→シートダウンロード', 'percent': pct, 'detail': detail}
+                    if '商品を取得中' in content or 'ダウンロード' in content:
+                        m = re.search(r'(\d+)件の商品を取得', content)
+                        detail = f'{m.group(1)}件取得' if m else ''
+                        return {'step': 'カラーミーAPIから取得中...', 'percent': 10, 'detail': detail}
+                    return {'step': 'API→シートダウンロード準備中...', 'percent': 1, 'detail': ''}
             except Exception:
                 pass
 
@@ -2040,6 +2217,114 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             msg += f'（項目: {sync_fields}）'
         return {'ok': True, 'message': msg}
 
+    def _cm_download(self, overwrite: bool = False, sync_fields: str = ''):
+        """API→シートダウンロード（download_colorme_products.py を --sync なしで実行）"""
+        if _is_running(CM_LOCK):
+            return {'ok': False, 'message': '既に実行中です'}
+        env = _subprocess_env()
+        LOG_DIR.mkdir(exist_ok=True)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        log_file = LOG_DIR / f"cm-sync-{timestamp}.log"
+        lock_file = str(CM_LOCK)
+        overwrite_opt = ' --overwrite' if overwrite else ''
+        fields_opt = f' --sync-fields {sync_fields}' if sync_fields else ''
+        mode_label = '上書きモード' if overwrite else '空欄のみ'
+        fields_label = f'項目: {sync_fields}' if sync_fields else '項目: 全項目'
+        shell_cmd = (
+            f'echo $$ > "{lock_file}" && '
+            f'trap \'rm -f "{lock_file}"\' EXIT && '
+            f'echo "[{timestamp}] API→シートダウンロード開始（{mode_label} / {fields_label}）" > "{log_file}" && '
+            f'"{PYTHON}" -u -m src.download_colorme_products --verbose{overwrite_opt}{fields_opt} >> "{log_file}" 2>&1'
+        )
+        subprocess.Popen(
+            ['bash', '-c', shell_cmd], cwd=str(PROJECT_DIR), env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        msg = 'API→シートダウンロードを開始しました'
+        bits = []
+        if overwrite:
+            bits.append('上書き')
+        if sync_fields:
+            bits.append(f'項目={sync_fields}')
+        if bits:
+            msg += '（' + ' / '.join(bits) + '）'
+        return {'ok': True, 'message': msg}
+
+    def _cm_sync_supplier(self):
+        """商品仕入れ先一覧同期（sync_supplier_list.py --source all）"""
+        if _is_running(CM_LOCK):
+            return {'ok': False, 'message': '既に実行中です'}
+        env = _subprocess_env()
+        LOG_DIR.mkdir(exist_ok=True)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        log_file = LOG_DIR / f"cm-supplier-sync-{timestamp}.log"
+        lock_file = str(CM_LOCK)
+        shell_cmd = (
+            f'echo $$ > "{lock_file}" && '
+            f'trap \'rm -f "{lock_file}"\' EXIT && '
+            f'echo "[{timestamp}] 仕入れ先一覧同期開始" > "{log_file}" && '
+            f'"{PYTHON}" -u -m src.sync_supplier_list --source all --verbose >> "{log_file}" 2>&1'
+        )
+        subprocess.Popen(
+            ['bash', '-c', shell_cmd], cwd=str(PROJECT_DIR), env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return {'ok': True, 'message': '仕入れ先一覧同期を開始しました'}
+
+    def _cm_fetch_competitor(self):
+        """競合価格取得（fetch_competitor_prices.py）"""
+        if _is_running(CM_LOCK):
+            return {'ok': False, 'message': '既に実行中です'}
+        env = _subprocess_env()
+        LOG_DIR.mkdir(exist_ok=True)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        log_file = LOG_DIR / f"cm-competitor-{timestamp}.log"
+        lock_file = str(CM_LOCK)
+        shell_cmd = (
+            f'echo $$ > "{lock_file}" && '
+            f'trap \'rm -f "{lock_file}"\' EXIT && '
+            f'echo "[{timestamp}] 競合価格取得開始" > "{log_file}" && '
+            f'"{PYTHON}" -u -m src.fetch_competitor_prices --verbose >> "{log_file}" 2>&1'
+        )
+        subprocess.Popen(
+            ['bash', '-c', shell_cmd], cwd=str(PROJECT_DIR), env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return {'ok': True, 'message': '競合価格取得を開始しました'}
+
+    def _cm_check_integrity(self):
+        """シート整合性チェック（check_sheet_integrity.py）
+
+        読み取り専用の高速チェック(10秒程度)。他のCM操作と並行可能なので
+        CM_LOCK は取得しない。専用ロック(.cm-check.lock)で自身の二重実行のみ防止。
+        """
+        check_lock = _TEMP_DIR / "cm-check-integrity.lock"
+        if _is_running(check_lock):
+            return {'ok': False, 'message': 'チェックが既に実行中です'}
+        env = _subprocess_env()
+        LOG_DIR.mkdir(exist_ok=True)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        # 命名順: cm-sync-{timestamp}-integrity.log にすることで、
+        # 通常の cm-sync-{later_timestamp}.log の方が新しくソートされる
+        log_file = LOG_DIR / f"cm-sync-{timestamp}-integrity.log"
+        lock_file = str(check_lock)
+        shell_cmd = (
+            f'echo $$ > "{lock_file}" && '
+            f'trap \'rm -f "{lock_file}"\' EXIT && '
+            f'echo "[{timestamp}] 数式整合性チェック開始" > "{log_file}" && '
+            f'"{PYTHON}" -u -m src.check_sheet_integrity >> "{log_file}" 2>&1; '
+            f'echo "[$(date +%H:%M:%S)] 数式整合性チェック完了" >> "{log_file}"'
+        )
+        subprocess.Popen(
+            ['bash', '-c', shell_cmd], cwd=str(PROJECT_DIR), env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return {'ok': True, 'message': '数式整合性チェックを開始しました'}
+
     def _cm_stop(self):
         killed = False
         if CM_LOCK.exists():
@@ -2052,7 +2337,7 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             except (ValueError, ProcessLookupError, PermissionError, OSError):
                 pass
         # フォールバック: 個別プロセスをkill
-        for proc_name in ['src.download_colorme_products', 'src.sync_colorme_products', 'src.restore_formulas']:
+        for proc_name in ['src.download_colorme_products', 'src.sync_colorme_products', 'src.restore_formulas', 'src.check_sheet_integrity']:
             subprocess.run(['pkill', '-f', proc_name], capture_output=True)
         try:
             CM_LOCK.unlink(missing_ok=True)
@@ -2297,13 +2582,27 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             except Exception:
                 pass
 
-        if header and detail:
-            return header + "\n\n--- 詳細ログ ---\n" + detail
-        elif detail:
-            return detail
-        elif header:
-            return header
-        return ""
+        # 競合価格ログ
+        competitor_logs = sorted(glob.glob(str(LOG_DIR / "price-only-competitor-*.log")), reverse=True)
+        competitor_detail = ""
+        if competitor_logs:
+            try:
+                with open(competitor_logs[0], 'r', encoding='utf-8', errors='replace') as f:
+                    lines = f.readlines()
+                if lines:
+                    competitor_detail = ''.join(lines[-TAIL:])
+            except Exception:
+                pass
+
+        parts = []
+        if header:
+            parts.append(header)
+        if detail:
+            parts.append("--- 仕入れ先価格ログ ---\n" + detail)
+        if competitor_detail:
+            parts.append("--- 競合価格ログ ---\n" + competitor_detail)
+
+        return "\n\n".join(parts)
 
     def _po_progress(self):
         """価格のみ同期の進捗"""
@@ -2509,7 +2808,7 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             'cm': ['cm-sync-*.log', 'sync-all-*.log', 'step1-*.log', 'step2-*.log', 'restore-*.log'],
             'bs': ['bs-scrape-*.log', 'bs-register-*.log'],
             'ap': ['ap-scrape-*.log', 'ap-register-*.log'],
-            'po': ['cm-price-only-*.log', 'price-only-step1-*.log', 'price-only-step2-*.log'],
+            'po': ['cm-price-only-*.log', 'price-only-step1-*.log', 'price-only-step2-*.log', 'price-only-competitor-*.log'],
             'ds': ['desc-sync-*.log'],
         }
         deleted = 0

@@ -283,6 +283,8 @@ def supplement_ai_content(
                 "specs": specs,
                 "price": price_jpy,
                 "currency": "JPY",
+                "country": get_cell(row, Col.COUNTRY) or "",
+                "url": get_cell(row, Col.PRODUCT_URL) or "",
             }
 
             # 1. CM商品名の生成
