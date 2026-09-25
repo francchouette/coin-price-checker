@@ -70,3 +70,8 @@ temp/
 
 # Cache
 cache/
+
+# 作業ファイル・インストーラ・セッション設定（リポジトリに含めない）
+exports/
+google-cloud-cli-darwin-arm.tar.gz
+.claude/
