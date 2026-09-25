@@ -233,10 +233,38 @@ _SPEC_SELECTORS = [
     '#product-specs',
     '.product-attributes',
     'table.specs',
+    'ul.product-table',           # APMEX現行: <ul class="product-table left">
+    'ul.product-table.left',      # 明示指定
 ]
 _IMAGE_SIZE_RE = re.compile(r'width=\d+&height=\d+')
 _IMAGE_HIGH_RES = 'width=900&height=900'
 _STOCK_OUT_PATTERNS = ['out of stock', 'sold out', 'unavailable', 'no longer available']
+
+# 商品名にこれらのキーワードが含まれる商品は「BOXのみ等で不要」とみなして
+# 採用フラグを「未採用」で保存する（次回クロール時に重複検出でスキップされる）
+# 必要に応じて随時追加してください
+_EXCLUDE_NAME_PATTERNS = [
+    'ogp box',          # Original Government Packaging だけの商品（コインなし）
+    'off quality',      # 品質OFF（傷あり等）
+    'mintdirect',       # MintDirect（梱包未開封品系）
+    'abrasions',        # 傷あり品
+    'random year',      # ランダム年号商品
+    'secondary market', # 二次流通市場品
+    'apmex ',           # APMEXブランド商品（末尾空白で誤マッチ防止）
+    ' md ',             # MintDirect略称（前後空白）
+    ' md(',
+    '(md)',
+    ' md)',
+    '"md"',
+]
+
+
+def _is_excluded_product(name: str) -> bool:
+    """商品名から除外対象（BOXのみ等）を判定"""
+    if not name:
+        return False
+    name_lower = name.lower()
+    return any(pat in name_lower for pat in _EXCLUDE_NAME_PATTERNS)
 
 
 # ---------------------------------------------------------------------------
@@ -471,11 +499,21 @@ def _parse_detail_html(html: str, product_name: str = "") -> dict:
                 break
 
     # --- スペック ---
+    # APMEXは <ul class="product-table left"> と <ul class="product-table right"> の2列構成のため
+    # ul.product-table は全マッチを連結
     for sel in _SPEC_SELECTORS:
-        el = soup.select_one(sel)
-        if el:
-            result["specs"] = el.get_text(separator=' | ', strip=True)[:1000]
-            break
+        if sel.startswith('ul.product-table'):
+            # 複数マッチを連結
+            els = soup.select('ul.product-table')
+            if els:
+                joined = ' | '.join(el.get_text(separator=' | ', strip=True) for el in els)
+                result["specs"] = joined[:1500]
+                break
+        else:
+            el = soup.select_one(sel)
+            if el:
+                result["specs"] = el.get_text(separator=' | ', strip=True)[:1000]
+                break
 
     # --- スペック表からの追加抽出（製造国・発行数） ---
     for row in soup.select('tr, .spec-row, .attribute-row'):
@@ -621,6 +659,11 @@ def _parse_category_products(html: str, timestamp: str) -> list['ApmexProduct']:
             product_id=product_id,
             fetched_at=timestamp,
         )
+        # 除外パターン（OGP BOX/MintDirect/random year等）は「NG」で保存
+        # 次回クロール時の重複スキャン対象には残るが、register_adopted_productsの対象外
+        if _is_excluded_product(name):
+            ap.adopted_flag = "NG"
+            logger.debug(f"  → 除外パターン検出 → NGフラグでマーク: {name[:50]}")
         m = _YEAR_RE.match(name)
         if m:
             ap.mint_year = m.group(1)
@@ -1006,30 +1049,74 @@ def get_existing_urls_from_spreadsheet(price_fetched_only: bool = False) -> set[
 
     Args:
         price_fetched_only: Trueの場合、価格取得済み（R列に値あり）のURLのみ返す
+
+    Raises:
+        RuntimeError: API取得に3回リトライしても失敗した場合。
+            空セットを返すと全件が「新規」判定になり、暴走スクレイプが発生するため。
+    """
+    last_error = None
+    for attempt in range(3):
+        try:
+            client = SpreadsheetClient()
+            client.connect()
+            sheet = client._spreadsheet.worksheet(Config.SHEET_APMEX_PRODUCTS)
+
+            if price_fetched_only:
+                # F列（URL）とR列（価格）を両方取得し、価格ありのURLのみ返す
+                all_data = sheet.get_all_values()
+                existing_urls = set()
+                for row in all_data[1:]:  # ヘッダースキップ
+                    url_val = get_cell(row, Col.PRODUCT_URL)
+                    price_val = get_cell(row, Col.PRICE)
+                    if url_val and price_val:
+                        existing_urls.add(url_val)
+                logger.info(f"価格取得済み商品URL: {len(existing_urls)}件")
+                return existing_urls
+            else:
+                url_column = sheet.col_values(Col.PRODUCT_URL.index + 1)  # F列（1-based）
+                existing_urls = set(url_column[1:])  # ヘッダー行をスキップ
+                logger.info(f"既存商品URL: {len(existing_urls)}件")
+                return existing_urls
+        except Exception as e:
+            last_error = e
+            wait_sec = 5 * (attempt + 1)  # 5秒 → 10秒 → 15秒
+            logger.warning(f"既存URL取得エラー (試行 {attempt+1}/3): {e} → {wait_sec}秒後にリトライ")
+            time.sleep(wait_sec)
+
+    # 3回失敗 → 全件対象暴走を防ぐため例外を発生させる
+    raise RuntimeError(
+        f"既存URL取得に3回リトライしても失敗: {last_error}. "
+        "空セット返却は全件対象暴走を招くため、処理を中断します。"
+    )
+
+
+def get_adopted_urls_from_spreadsheet() -> set[str]:
+    """A列が「採用」または B列が「登録済」の商品URLを取得（価格再取得対象）
+
+    定期実行で採用済み商品の価格を最新化するために使う。
+    A列="除外"/"NG" の行は明示的に除外する（防御）。
     """
     try:
         client = SpreadsheetClient()
         client.connect()
         sheet = client._spreadsheet.worksheet(Config.SHEET_APMEX_PRODUCTS)
-
-        if price_fetched_only:
-            # F列（URL）とR列（価格）を両方取得し、価格ありのURLのみ返す
-            all_data = sheet.get_all_values()
-            existing_urls = set()
-            for row in all_data[1:]:  # ヘッダースキップ
-                url_val = get_cell(row, Col.PRODUCT_URL)
-                price_val = get_cell(row, Col.PRICE)
-                if url_val and price_val:
-                    existing_urls.add(url_val)
-            logger.info(f"価格取得済み商品URL: {len(existing_urls)}件")
-            return existing_urls
-        else:
-            url_column = sheet.col_values(Col.PRODUCT_URL.index + 1)  # F列（1-based）
-            existing_urls = set(url_column[1:])  # ヘッダー行をスキップ
-            logger.info(f"既存商品URL: {len(existing_urls)}件")
-            return existing_urls
+        all_data = sheet.get_all_values()
+        adopted_urls = set()
+        for row in all_data[1:]:  # ヘッダースキップ
+            adopted = get_cell(row, Col.ADOPTED_FLAG)
+            registration = get_cell(row, Col.REGISTRATION_STATUS)
+            url_val = get_cell(row, Col.PRODUCT_URL)
+            if not url_val:
+                continue
+            # 「除外」「NG」は完全除外（万一 B="登録済" でも触らない）
+            if adopted in ("除外", "NG"):
+                continue
+            if adopted in ("採用", "予約") or registration == "登録済":
+                adopted_urls.add(url_val)
+        logger.info(f"採用済み/登録済み商品URL: {len(adopted_urls)}件（価格再取得対象）")
+        return adopted_urls
     except Exception as e:
-        logger.warning(f"既存URL取得エラー: {e}")
+        logger.warning(f"採用URL取得エラー: {e}")
         return set()
 
 
@@ -1192,6 +1279,10 @@ def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = F
                                         {'userEnteredValue': '採用'},
                                         {'userEnteredValue': '未採用'},
                                         {'userEnteredValue': '検討中'},
+                                        {'userEnteredValue': 'NG'},
+                                        {'userEnteredValue': '除外'},
+                                        {'userEnteredValue': '作業完了'},
+                                        {'userEnteredValue': '保留'},
                                     ],
                                 },
                                 'showCustomUi': True,
@@ -1231,10 +1322,66 @@ def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = F
 
         total_new_saved = 0
         processed_count = 0
+        price_updates_batch = []  # 既存商品の価格更新用バッチ
+
+        def flush_price_updates():
+            """既存商品の価格更新バッチをまとめて書き込み"""
+            nonlocal price_updates_batch
+            if not price_updates_batch:
+                return
+            try:
+                sheet.spreadsheet.values_batch_update({
+                    'data': price_updates_batch,
+                    'valueInputOption': 'USER_ENTERED',
+                })
+                logger.info(f"  既存商品の価格更新: {len(price_updates_batch)}件")
+            except Exception as e:
+                logger.warning(f"  価格更新エラー: {e}")
+            price_updates_batch = []
+
+        # 採用済品再取得用の為替レート（1回だけ取得して使い回す）
+        _adopted_rates = fetch_exchange_rates("クレカ")
+        _adopted_usd_rate = _adopted_rates.get("USD", 0.0)
+        if _adopted_usd_rate <= 0:
+            logger.warning("採用済品再取得: USD為替レート取得失敗。W列は既存値を保持します")
 
         for product in products:
             if product.url in existing_by_url:
-                skipped_count += 1
+                # 既存商品: 価格・在庫・為替・日時のみ更新（採用フラグ等は保持）
+                row_idx, existing_row = existing_by_url[product.url]
+                if product.price and product.price > 0:
+                    exchange_rate = _adopted_usd_rate
+                    price_jpy = int(product.price * exchange_rate) if exchange_rate > 0 else 0
+                    # 前回価格と変動率
+                    prev_price_str = get_cell(existing_row, Col.PRICE) or ""
+                    change_rate_str = ""
+                    if prev_price_str:
+                        try:
+                            prev_price = float(prev_price_str)
+                            if prev_price > 0:
+                                rate = (product.price - prev_price) / prev_price * 100
+                                change_rate_str = f"{rate:+.2f}%"
+                        except ValueError:
+                            pass
+                    stock_str = "In Stock" if product.in_stock else "Out of Stock"
+                    now = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+                    # R(価格), S(前回価格), T(変動率), Q(在庫), W(為替), X(JPY), CE(同期日時), CF(作成日時)
+                    updates = [
+                        {'range': f"{sheet_name}!{Col.PRICE.letter}{row_idx}", 'values': [[str(product.price)]]},
+                        {'range': f"{sheet_name}!{Col.PREV_PRICE.letter}{row_idx}", 'values': [[prev_price_str]]},
+                        {'range': f"{sheet_name}!{Col.PRICE_CHANGE.letter}{row_idx}", 'values': [[change_rate_str]]},
+                        {'range': f"{sheet_name}!{Col.STOCK_STATUS.letter}{row_idx}", 'values': [[stock_str]]},
+                        {'range': f"{sheet_name}!{Col.CM_SYNC_AT.letter}{row_idx}", 'values': [[now]]},
+                    ]
+                    # 為替レート・JPY換算は取得成功時のみ書き込む（失敗時は既存値を保持）
+                    if exchange_rate > 0:
+                        updates.append({'range': f"{sheet_name}!{Col.EXCHANGE_RATE.letter}{row_idx}", 'values': [[str(exchange_rate)]]})
+                    if price_jpy > 0:
+                        updates.append({'range': f"{sheet_name}!{Col.PRICE_JPY.letter}{row_idx}", 'values': [[str(price_jpy)]]})
+                    price_updates_batch.extend(updates)
+                    if len(price_updates_batch) >= 50 * 7:  # 50商品ごとにフラッシュ
+                        flush_price_updates()
+                skipped_count += 1  # 新規行は追加しないので skip カウント
                 continue
 
             # 仕入れ先商品ID
@@ -1249,7 +1396,13 @@ def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = F
             cm_product_name = ""
             if name_generator:
                 try:
-                    info = {"name": product.name, "specs": product.specs, "description": product.description_en}
+                    info = {
+                        "name": product.name,
+                        "specs": product.specs,
+                        "description": product.description_en,
+                        "country": product.location,
+                        "url": product.url,
+                    }
                     cm_product_name = _run_with_timeout(
                         name_generator.generate, info, quantity=1, default=""
                     ) or ""
@@ -1414,7 +1567,9 @@ def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = F
                 "",                                                     # BB: 単位
 
                 # === 送料・配送（BC-BF: 4列）===
-                "1000",                                                 # BC: 個別送料
+                # BC: 個別送料は「空欄」が正解（カラーミーで「0」は送料無料扱い、
+                #     正の値だと送料無料ライン無効化）→ デフォルト送料を適用
+                "",                                                     # BC: 個別送料（空欄=デフォルト送料適用）
                 "",                                                     # BD: クール便料金
                 "",                                                     # BE: 重量(g)
                 "",                                                     # BF: 配送不要
@@ -1472,9 +1627,12 @@ def save_products_to_spreadsheet(products: list[ApmexProduct], dry_run: bool = F
             saved = save_batch(new_rows, total_new_saved)
             total_new_saved += saved
 
+        # 既存商品の価格更新バッチを最終フラッシュ
+        flush_price_updates()
+
         logger.info(f"\n=== 結果 ===")
         logger.info(f"新規追加: {total_new_saved}件")
-        logger.info(f"スキップ（既存）: {skipped_count}件")
+        logger.info(f"既存商品スキップ/更新: {skipped_count}件")
         return True
 
     except Exception as e:
@@ -1587,7 +1745,13 @@ def fill_ai_for_existing_products(limit: Optional[int] = None, dry_run: bool = F
 
         # CM商品名
         try:
-            info = {"name": product_name, "specs": specs, "description": description_en}
+            info = {
+                "name": product_name,
+                "specs": specs,
+                "description": description_en,
+                "country": get_cell(row, Col.COUNTRY) or "",
+                "url": product_url,
+            }
             cm_name = _run_with_timeout(name_generator.generate, info, quantity=1, default="") or ""
             if cm_name:
                 updates[Col.CM_PRODUCT_NAME.index] = cm_name
@@ -1751,17 +1915,25 @@ def main():
         logger.info("\n=== 詳細ページ取得開始 ===")
 
         # 既存商品URLを取得して差分チェック（価格取得済みのみスキップ）
+        # ただし採用済み/登録済みの商品は再取得対象として残す（最新価格を維持するため）
         if not args.dry_run:
             existing_urls = get_existing_urls_from_spreadsheet(price_fetched_only=True)
-            new_products = [p for p in products if p.url not in existing_urls]
-            skipped_count = len(products) - len(new_products)
+            adopted_urls = get_adopted_urls_from_spreadsheet()
+            # 新規 OR 採用/登録済み → 対象に残す
+            target_products = [
+                p for p in products
+                if p.url not in existing_urls or p.url in adopted_urls
+            ]
+            skipped_count = len(products) - len(target_products)
+            new_count = sum(1 for p in target_products if p.url not in existing_urls)
+            update_count = len(target_products) - new_count
             if skipped_count > 0:
                 logger.info(f"既存商品をスキップ: {skipped_count}件")
-                logger.info(f"スクレイピング対象: {len(new_products)}件（新規のみ）")
-            products = new_products
+            logger.info(f"スクレイピング対象: {len(target_products)}件（新規{new_count}件 + 採用済み更新{update_count}件）")
+            products = target_products
 
             if not products:
-                logger.info("新規商品はありません。終了します。")
+                logger.info("新規商品も採用済み更新商品もありません。終了します。")
                 return 0
 
         # 中間保存用コールバック（ドライランでない場合のみ）

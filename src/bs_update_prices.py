@@ -98,7 +98,8 @@ def update_prices(
     dry_run: bool = False,
     limit: Optional[int] = None,
     exchange_type: str = "クレカ",
-    pending_only: bool = False
+    pending_only: bool = False,
+    start_row: int = 2,
 ) -> dict:
     """
     既存商品の価格・為替レート・在庫状況を更新
@@ -136,20 +137,58 @@ def update_prices(
 
         logger.info(f"総商品数: {len(all_data) - 1}件")
 
+        # 今日の日付（既に本日更新済みの行をスキップするため）
+        today_str = datetime.now(JST).strftime("%Y-%m-%d")
+
         # 価格更新対象を抽出
         target_rows = []
+        skipped_us = 0
+        skipped_excluded = 0
+        skipped_recent = 0
+        skipped_before_start = 0
         for row_idx, row in enumerate(all_data[1:], start=2):  # ヘッダースキップ、行番号は2から
+            # --start-row 未満はスキップ（中断からの再開用）
+            if row_idx < start_row:
+                skipped_before_start += 1
+                continue
+
             url = get_cell(row, Col.PRODUCT_URL)
             if not url:
                 continue
 
+            # .us/.co.nz URLは日本からアクセス不可（タイムアウトするだけ）のためスキップ
+            # .us = 米国倉庫、.co.nz = ニュージーランド倉庫
+            if "bullionstar.us" in url or "bullionstar.co.nz" in url:
+                skipped_us += 1
+                continue
+
+            # A列=「除外」「NG」は明示的にスキップ
+            adopted_flag = get_cell(row, Col.ADOPTED_FLAG)
+            if adopted_flag in ("除外", "NG"):
+                skipped_excluded += 1
+                continue
+
             # 検討中のみモードの場合、A列が「検討中」の商品のみ対象
             if pending_only:
-                adopted_flag = get_cell(row, Col.ADOPTED_FLAG)
                 if adopted_flag != "検討中":
                     continue
 
+            # 本日既に更新済みの行はスキップ（中断・再開のため）
+            sync_at = get_cell(row, Col.CM_SYNC_AT)
+            if sync_at.startswith(today_str):
+                skipped_recent += 1
+                continue
+
             target_rows.append((row_idx, row, url))
+
+        if skipped_us:
+            logger.info(f"  .us/.co.nz URL スキップ: {skipped_us}件（米国/NZ倉庫、日本発送不可）")
+        if skipped_excluded:
+            logger.info(f"  除外/NG フラグ スキップ: {skipped_excluded}件")
+        if skipped_recent:
+            logger.info(f"  本日更新済みスキップ: {skipped_recent}件（同期日時が {today_str}）")
+        if skipped_before_start:
+            logger.info(f"  開始行より前をスキップ: {skipped_before_start}件（--start-row={start_row}）")
 
         if pending_only:
             logger.info(f"価格更新対象: {len(target_rows)}件（検討中の商品のみ）")
@@ -369,6 +408,12 @@ def main():
         help='検討中の商品のみを対象'
     )
     parser.add_argument(
+        '--start-row',
+        type=int,
+        default=2,
+        help='開始行番号（1-indexed、ヘッダーは1なのでデフォルト2）。中断からの再開に使用'
+    )
+    parser.add_argument(
         '-v', '--verbose',
         action='store_true',
         help='詳細ログを出力'
@@ -398,7 +443,8 @@ def main():
         dry_run=args.dry_run,
         limit=args.limit,
         exchange_type=args.exchange_type,
-        pending_only=args.pending_only
+        pending_only=args.pending_only,
+        start_row=args.start_row,
     )
     elapsed = time.time() - start_time
 

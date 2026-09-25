@@ -40,6 +40,14 @@ export GOOGLE_APPLICATION_CREDENTIALS="${GOOGLE_APPLICATION_CREDENTIALS:-${HOME}
 # Python出力バッファリングを無効化（リアルタイムでログに反映するため）
 export PYTHONUNBUFFERED=1
 
+# ---- 試験運用中（2026-09-11〜）: APMEXをcm-sync内のスクレイピング対象から除外 ----
+# APMEXはBot検知で成功率0%（毎回141件試行・0件成功・1件8.1秒待ち = 1回19分の無駄）。
+# 価格は専用ジョブ ap-scrape が取得しており、CMシートのN/M列はそこからのVLOOKUPなので
+# 除外してもシートへの出力は変わらない。
+# 【元に戻す場合】次の1行をコメントアウトするだけ（Pythonコードの変更は不要）
+export CM_SYNC_SKIP_SCRAPE_DOMAINS="apmex.com"
+# ------------------------------------------------------------------------------
+
 # === ログ設定 ===
 mkdir -p "${LOG_DIR}"
 TIMESTAMP=$(date '+%Y%m%d_%H%M%S')

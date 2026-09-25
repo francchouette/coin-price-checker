@@ -130,6 +130,7 @@ class WiseRateClient:
     def fetch_rate(self, from_currency: str, to_currency: str = "JPY") -> Optional[float]:
         """
         Wiseの為替レートを取得する
+        まず公式APIを試し、失敗（401等）した場合はHTMLスクレイプでフォールバック
 
         Args:
             from_currency: 変換元通貨
@@ -138,29 +139,42 @@ class WiseRateClient:
         Returns:
             float: 為替レート（取得失敗時はNone）
         """
+        src = from_currency.upper()
+        dst = to_currency.upper()
+
+        # 方法1: 公式API（要認証、2026以降401になる場合あり）
         try:
             response = requests.get(
                 self.API_URL,
-                params={
-                    "source": from_currency.upper(),
-                    "target": to_currency.upper()
-                },
+                params={"source": src, "target": dst},
                 timeout=10
             )
             response.raise_for_status()
             data = response.json()
-
             if data and len(data) > 0:
                 rate = data[0].get("rate")
                 if rate:
-                    logger.info(f"Wiseレート取得: 1 {from_currency} = {rate:.4f} {to_currency}")
+                    logger.info(f"Wiseレート取得(API): 1 {src} = {rate:.4f} {dst}")
                     return float(rate)
-
-            return None
-
         except requests.RequestException as e:
-            logger.warning(f"Wiseレート取得エラー: {e}")
-            return None
+            logger.warning(f"Wise API失敗（HTMLフォールバックへ）: {e}")
+
+        # 方法2: Web版currency converterからHTMLスクレイプ
+        try:
+            url = f"https://wise.com/gb/currency-converter/{src.lower()}-to-{dst.lower()}-rate"
+            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh)"}, timeout=10)
+            r.raise_for_status()
+            # "1 SGD = 125.0 JPY" のようなパターンを探す
+            import re as _re
+            m = _re.search(rf'1\s*{src}\s*=\s*([\d.,]+)\s*{dst}', r.text)
+            if m:
+                rate = float(m.group(1).replace(',', ''))
+                logger.info(f"Wiseレート取得(HTML): 1 {src} = {rate:.4f} {dst}")
+                return rate
+        except Exception as e:
+            logger.warning(f"Wise HTMLフォールバックも失敗: {e}")
+
+        return None
 
     def get_rate(self, from_currency: str, to_currency: str = "JPY") -> Optional[float]:
         """

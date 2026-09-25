@@ -118,6 +118,7 @@ def main():
     # ========================================
     targets = []  # [(row_num, url, value_row, formula_row), ...]
     currency_exchange_types = {}  # 通貨 -> 為替種類
+    skipped_us = 0  # bullionstar.us（日本発送不可）のスキップ件数
 
     for row_idx in range(1, len(existing)):  # ヘッダーをスキップ
         row = existing[row_idx]
@@ -125,6 +126,11 @@ def main():
 
         url = get_cell(row, Col.SUPPLIER_URL)
         if not url or not url.startswith("http"):
+            continue
+
+        # bullionstar.us は米国倉庫発送のため日本から購入不可 → 価格同期対象外
+        if 'bullionstar.us' in url.lower():
+            skipped_us += 1
             continue
 
         row_num = row_idx + 1  # 1-indexed（シート上の行番号）
@@ -146,6 +152,8 @@ def main():
         targets = targets[:args.limit]
 
     logger.info(f"スクレイピング対象: {len(targets)}件")
+    if skipped_us > 0:
+        logger.info(f"スキップ: {skipped_us}件（bullionstar.us = 米国倉庫発送・日本購入不可）")
 
     # ========================================
     # 3. 為替レート取得
@@ -243,10 +251,11 @@ def main():
                         pass
 
             # --- Q列: 通貨 ---
-            pending_updates.append({
-                'range': f'{Col.CURRENCY.letter}{row_num}',
-                'values': [[scraped.currency]]
-            })
+            if not _has_formula(formula_row, Col.CURRENCY):
+                pending_updates.append({
+                    'range': f'{Col.CURRENCY.letter}{row_num}',
+                    'values': [[scraped.currency]]
+                })
 
             # --- S列: 為替レート ---
             if not _has_formula(formula_row, Col.EXCHANGE_RATE):

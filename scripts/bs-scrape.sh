@@ -65,7 +65,7 @@ log "=========================================="
 
 START=$(date +%s)
 
-if "${PYTHON}" -m src.bullionstar_products --fetch-prices >> "${LOG_FILE}" 2>&1; then
+if "${PYTHON}" -m src.bullionstar_products --fetch-prices --exchange-type Wise >> "${LOG_FILE}" 2>&1; then
     END=$(date +%s)
     ELAPSED=$(( END - START ))
     log ""

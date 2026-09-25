@@ -63,6 +63,29 @@ logger = logging.getLogger(__name__)
 JST = timezone(timedelta(hours=9))
 
 
+# ---------------------------------------------------------------------------
+# 商品名NG文言（採用対象外）
+# ---------------------------------------------------------------------------
+# 商品タイトルに以下のキーワードが含まれる場合、自動的に「NG」フラグで保存する。
+# Bullionstarには MintDirect, APMEX, MD 等のAPMEX固有用語は存在しないため、
+# 該当する場合のみ追加してください。
+_EXCLUDE_NAME_PATTERNS = [
+    'off quality',      # 品質OFF（傷あり等）
+    'abrasions',        # 傷あり品
+    'random year',      # ランダム年号商品
+    'secondary market', # 二次流通市場品
+    'pre-owned',        # 中古品（Bullionstar特有）
+]
+
+
+def _is_excluded_product(name: str) -> bool:
+    """商品名から除外対象を判定（商品タイトルのみ参照、商品説明文は対象外）"""
+    if not name:
+        return False
+    name_lower = name.lower()
+    return any(pat in name_lower for pat in _EXCLUDE_NAME_PATTERNS)
+
+
 @dataclass
 class BullionstarProduct:
     """Bullionstar商品データ（84列対応: A-CF）
@@ -136,10 +159,10 @@ class BullionstarProduct:
 
 # 販売拠点定義（APIエンドポイント用）
 # 注: これは商品取得用であり、H列（製造国）には使用しない
+# .us（米国倉庫）と .co.nz（NZ倉庫）は日本から購入不可のため除外
+# → 同一商品の重複行がBSマスタに増え、後で仕入れ先一覧の同期が乱れる原因になる
 SALES_LOCATIONS = {
     1: ("Singapore", "https://www.bullionstar.com"),
-    2: ("USA", "https://www.bullionstar.us"),
-    3: ("New Zealand", "https://www.bullionstar.co.nz"),
 }
 
 
@@ -297,7 +320,7 @@ class BullionstarProductFetcher:
                             prod_name, group_name, prod_url
                         )
 
-                        products.append(BullionstarProduct(
+                        product_obj = BullionstarProduct(
                             name=prod_name[:200] if prod_name else "Unknown",
                             url=full_url,
                             top_category=top_category,
@@ -305,7 +328,12 @@ class BullionstarProductFetcher:
                             child_category=group_name[:100] if group_name else "",
                             location="",  # H列: 製造国はスクレイピング時に取得
                             fetched_at=timestamp
-                        ))
+                        )
+                        # 除外パターン（pre-owned等）は「NG」フラグで保存
+                        if _is_excluded_product(product_obj.name):
+                            product_obj.adopted_flag = "NG"
+                            logger.debug(f"  → 除外パターン検出 → NGフラグでマーク: {product_obj.name[:50]}")
+                        products.append(product_obj)
                         page_count += 1
 
                     # limitに達したら終了
@@ -606,7 +634,11 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                                         'values': [
                                             {'userEnteredValue': '採用'},
                                             {'userEnteredValue': '未採用'},
-                                            {'userEnteredValue': '検討中'}
+                                            {'userEnteredValue': '検討中'},
+                                            {'userEnteredValue': 'NG'},
+                                            {'userEnteredValue': '除外'},
+                                            {'userEnteredValue': '作業完了'},
+                                            {'userEnteredValue': '保留'}
                                         ]
                                     },
                                     'showCustomUi': True,
@@ -669,9 +701,56 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
 
         for product in products:
             if product.url in existing_by_url:
-                # 既存商品: 完全スキップ（価格更新は別のGitHub Actionで行う）
-                skipped_count += 1
-                logger.debug(f"  既存商品スキップ: {product.name}")
+                # 既存商品: 価格・在庫・為替関連列のみ更新
+                # （採用フラグ、CM商品名、カテゴリー、画像、SEO等はユーザー編集を保持）
+                row_idx, existing_row = existing_by_url[product.url]
+
+                if product.price is not None and product.price > 0:
+                    # S列 前回価格: 現在のR列(価格)の値を保存
+                    if len(existing_row) > Col.PRICE.index and existing_row[Col.PRICE.index]:
+                        try:
+                            prev_price = float(str(existing_row[Col.PRICE.index]).replace(',', ''))
+                            update_cells.append((row_idx, Col.PREV_PRICE.index + 1, str(prev_price)))
+                        except ValueError:
+                            pass
+
+                    # Q列 在庫状況
+                    if product.in_stock is not None:
+                        stock_status = "In Stock" if product.in_stock else "Out of Stock"
+                        update_cells.append((row_idx, Col.STOCK_STATUS.index + 1, stock_status))
+
+                    # R列 現在価格
+                    update_cells.append((row_idx, Col.PRICE.index + 1, str(product.price)))
+
+                    # U列 通貨
+                    if product.currency:
+                        update_cells.append((row_idx, Col.CURRENCY.index + 1, product.currency))
+
+                    # V列 為替種類
+                    if product.exchange_type:
+                        update_cells.append((row_idx, Col.EXCHANGE_TYPE.index + 1, product.exchange_type))
+
+                    # W列 為替レート
+                    if product.exchange_rate:
+                        update_cells.append((row_idx, Col.EXCHANGE_RATE.index + 1, str(product.exchange_rate)))
+
+                    # X列 日本円換算
+                    if product.price_jpy:
+                        update_cells.append((row_idx, Col.PRICE_JPY.index + 1, str(int(product.price_jpy))))
+
+                    # CC列 同期日時
+                    update_cells.append((row_idx, Col.CM_SYNC_AT.index + 1, product.last_price_updated or product.fetched_at))
+
+                    updated_count += 1
+                else:
+                    # 価格取得失敗時: 在庫状況のみ更新
+                    if product.in_stock is not None:
+                        stock_status = "In Stock" if product.in_stock else "Out of Stock"
+                        update_cells.append((row_idx, Col.STOCK_STATUS.index + 1, stock_status))
+                        updated_count += 1
+                    else:
+                        skipped_count += 1
+
                 continue
             else:
                 # 新規商品: 83列のデータを作成
@@ -688,6 +767,8 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     "name": product.name,
                     "specs": product.specs,
                     "description": product.description_en,
+                    "country": product.location,  # スクレイパーが取得した製造国
+                    "url": product.url,
                 }
                 cm_product_name = name_generator.generate(product_info, quantity=1)
                 if not cm_product_name:
@@ -853,7 +934,9 @@ def save_products_to_spreadsheet(products: list[BullionstarProduct]) -> bool:
                     "",                                             # BB: 単位（手入力、空欄可）
 
                     # === 送料・配送（BC-BF列: 4列）===
-                    "1000",                                         # BC: 個別送料（デフォルト1000）
+                    # BC: 個別送料は「空欄」が正解（カラーミーで「0」は送料無料扱い、
+                    #     正の値だと送料無料ライン無効化）→ デフォルト送料を適用
+                    "",                                             # BC: 個別送料（空欄=デフォルト送料適用）
                     "",                                             # BD: クール便料金（手入力）
                     "",                                             # BE: 重量(g)（手入力）
                     "",                                             # BF: 配送不要（手入力）
@@ -1169,6 +1252,35 @@ def get_existing_urls_from_spreadsheet() -> set[str]:
         return existing_urls
     except Exception as e:
         logger.warning(f"既存URL取得エラー: {e}")
+        return set()
+
+
+def get_adopted_urls_from_spreadsheet() -> set[str]:
+    """A列が「採用」「登録済」「作業完了」の商品URLを取得（価格再取得対象）
+
+    定期実行で採用/登録済み商品の価格を最新化するために使う。
+    A列「除外」「NG」は明示的にスキップ。
+    """
+    try:
+        client = SpreadsheetClient()
+        client.connect()
+        sheet = client._spreadsheet.worksheet(Config.SHEET_BULLIONSTAR_PRODUCTS)
+        data = sheet.get_all_values()
+        adopted_urls: set[str] = set()
+        for row in data[1:]:  # ヘッダースキップ
+            adopted = row[Col.ADOPTED_FLAG.index].strip() if Col.ADOPTED_FLAG.index < len(row) else ""
+            registration = row[Col.REGISTRATION_STATUS.index].strip() if Col.REGISTRATION_STATUS.index < len(row) else ""
+            url = row[Col.PRODUCT_URL.index].strip() if Col.PRODUCT_URL.index < len(row) else ""
+            if not url:
+                continue
+            if adopted in ("除外", "NG"):
+                continue
+            if adopted in ("採用", "予約", "作業完了") or registration == "登録済":
+                adopted_urls.add(url)
+        logger.info(f"採用/登録済/作業完了 商品URL: {len(adopted_urls)}件（価格再取得対象）")
+        return adopted_urls
+    except Exception as e:
+        logger.warning(f"採用URL取得エラー: {e}")
         return set()
 
 
@@ -1494,15 +1606,22 @@ def main():
         logger.info(f"価格・在庫情報を取得（為替種類: {args.exchange_type}）")
         logger.info("=" * 60)
 
-        # 既存商品URLを取得してスクレイピング対象から除外
+        # 既存商品URLを取得してスクレイピング対象を決定
+        # 新規 OR 採用/登録済/作業完了 → 対象に残す（採用済品も定期的に最新価格を維持）
         if not args.dry_run:
             existing_urls = get_existing_urls_from_spreadsheet()
-            new_products = [p for p in products if p.url not in existing_urls]
-            skipped_count = len(products) - len(new_products)
+            adopted_urls = get_adopted_urls_from_spreadsheet()
+            target_products = [
+                p for p in products
+                if p.url not in existing_urls or p.url in adopted_urls
+            ]
+            skipped_count = len(products) - len(target_products)
+            new_count = sum(1 for p in target_products if p.url not in existing_urls)
+            update_count = len(target_products) - new_count
             if skipped_count > 0:
                 logger.info(f"既存商品をスキップ: {skipped_count}件")
-                logger.info(f"スクレイピング対象: {len(new_products)}件（新規のみ）")
-            products = new_products
+            logger.info(f"スクレイピング対象: {len(target_products)}件（新規{new_count}件 + 採用済み更新{update_count}件）")
+            products = target_products
 
         # 中間保存用コールバック（ドライランでない場合のみ）
         save_callback = None

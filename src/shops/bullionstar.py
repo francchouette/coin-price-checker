@@ -16,7 +16,7 @@ class BullionstarScraper(BaseScraper):
     """Bullionstar用スクレイパー"""
 
     SHOP_NAME = "Bullionstar"
-    CURRENCY = "JPY"  # デフォルトをJPYに変更
+    CURRENCY = "SGD"  # デフォルトをSGDに（Wise為替換算を有効化するため。2026-08-03変更）
     WAIT_TIME_MS = 5000  # Bot検出対策のため長めに設定
 
     # セレクタ
@@ -56,18 +56,20 @@ class BullionstarScraper(BaseScraper):
         self._mintage = ""
 
     def _set_currency_cookie(self):
-        """JPY表示用のCookieを設定する（全ドメイン対応）"""
+        """SGD表示用のCookieを設定する（全ドメイン対応）
+
+        以前はJPY建てで取得していたが、Wise為替の恩恵を受けるためSGDに変更。
+        """
         if self._currency_set:
             return
 
         try:
-            # Bullionstarの全ドメインに通貨設定Cookieを追加
             context = self.page.context
             domains = [".bullionstar.com", ".bullionstar.us", ".bullionstar.co.nz"]
             cookies = [
                 {
                     "name": "currency",
-                    "value": "JPY",
+                    "value": "SGD",
                     "domain": domain,
                     "path": "/"
                 }
@@ -75,16 +77,16 @@ class BullionstarScraper(BaseScraper):
             ]
             context.add_cookies(cookies)
             self._currency_set = True
-            logger.info("Bullionstar: JPY通貨Cookieを設定しました（全ドメイン）")
+            logger.info("Bullionstar: SGD通貨Cookieを設定しました（全ドメイン）")
         except Exception as e:
             logger.warning(f"通貨Cookie設定エラー: {e}")
 
     def scrape(self, url: str) -> ScrapedData:
         """
-        商品ページをスクレイピングする（JPY通貨Cookie設定付き）
+        商品ページをスクレイピングする（SGD通貨Cookie設定付き）
         画像、仕様、商品説明、発行年、発行数も取得する
         """
-        # ページアクセス前にJPY通貨Cookieを設定
+        # ページアクセス前にSGD通貨Cookieを設定
         self._set_currency_cookie()
         # 親クラスのscrapeを呼び出す
         result = super().scrape(url)
