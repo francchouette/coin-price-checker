@@ -27,6 +27,7 @@ from src.colorme_image_uploader import (
     UploadProgress,
     DEFAULT_PROGRESS_FILE
 )
+from src.image_filter import select_product_images
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +66,14 @@ def get_products_needing_images(spreadsheet: SpreadsheetClient) -> list[tuple[in
             logger.debug(f"スキップ（全て登録済み）: {product.product_id}")
             continue
 
-        # 外部URLがあればアップロード対象
-        needs_upload.append((product.product_id, external_urls))
-        logger.debug(f"アップロード対象: {product.product_id} - {len(external_urls)}枚")
+        # ジャンク除外＋関連商品除外＋先頭3枚に絞り込み
+        filtered_urls = select_product_images(product.source_url or "", external_urls)
+        if not filtered_urls:
+            logger.warning(f"スキップ（フィルタ後画像なし）: {product.product_id}")
+            continue
+
+        needs_upload.append((product.product_id, filtered_urls))
+        logger.debug(f"アップロード対象: {product.product_id} - {len(filtered_urls)}枚")
 
     total_images = sum(len(urls) for _, urls in needs_upload)
     logger.info(f"画像アップロード対象: {len(needs_upload)}商品, {total_images}枚")

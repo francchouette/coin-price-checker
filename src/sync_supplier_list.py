@@ -171,45 +171,58 @@ def extract_colorme_id_from_url(url: str) -> str:
     return ""
 
 
-def sync_registered_products_to_supplier_list() -> bool:
+def sync_registered_products_to_supplier_list(
+    source_sheet_name: str = None,
+    source_label: str = "ブリオンスター",
+) -> bool:
     """
-    ブリオンスター商品ページ一覧から「登録済」商品を商品仕入れ先一覧にコピー
+    指定シートから「登録済」商品を商品仕入れ先一覧にコピー
+
+    APMEX商品ページ一覧 / ブリオンスター商品ページ一覧 共通で動作する。
+    両シートはA-X列の構造が同一のため、同じ列定数で処理可能。
 
     処理フロー:
-    1. ブリオンスター商品ページ一覧からB列=「登録済」の商品を取得
+    1. 指定シート（BS or APMEX）からB列=「登録済」の商品を取得
     2. 商品仕入れ先一覧に存在しない商品のみ追加
     3. 既存商品は価格情報を更新
+
+    Args:
+        source_sheet_name: ソースシート名（省略時はブリオンスター商品ページ一覧）
+        source_label: ログ表示用のラベル（"ブリオンスター" / "APMEX"）
 
     Returns:
         bool: 成功時True
     """
+    if source_sheet_name is None:
+        source_sheet_name = Config.SHEET_BULLIONSTAR_PRODUCTS
+
     client = SpreadsheetClient()
     if not client.connect():
         logger.error("スプレッドシートへの接続に失敗しました")
         return False
 
     try:
-        # ブリオンスター商品ページ一覧シートを取得
-        bs_sheet = client._spreadsheet.worksheet(Config.SHEET_BULLIONSTAR_PRODUCTS)
+        # ソースシートを取得
+        bs_sheet = client._spreadsheet.worksheet(source_sheet_name)
         bs_data = bs_sheet.get_all_values()
 
         if len(bs_data) <= 1:
-            logger.info("ブリオンスター商品ページ一覧にデータがありません")
+            logger.info(f"{source_label}商品ページ一覧にデータがありません")
             return True
 
-        # B列=「登録済」の商品をフィルタ（88列構造: A-CJ）
+        # B列=「登録済」の商品をフィルタ
         # B列(index 1) = カラーミー登録状況
-        # E列(index 4) = 仕入れ先商品URL（ユニークキー）
+        # F列(index 5) = 仕入れ先商品URL（ユニークキー）
         registered_products = []
         for row_idx, row in enumerate(bs_data[1:], start=2):
             if len(row) > BS_COL_REGISTRATION and row[BS_COL_REGISTRATION] == "登録済":
                 registered_products.append((row_idx, row))
 
         if not registered_products:
-            logger.info("「登録済」の商品がありません")
+            logger.info(f"{source_label}: 「登録済」の商品がありません")
             return True
 
-        logger.info(f"「登録済」商品数: {len(registered_products)}件")
+        logger.info(f"{source_label}「登録済」商品数: {len(registered_products)}件")
 
         # 商品仕入れ先一覧シートを取得
         try:
@@ -286,6 +299,21 @@ def sync_registered_products_to_supplier_list() -> bool:
                     currency = get_bs_value(bs_row, BS_COL_CURRENCY)
                     if currency:
                         update_cells.append((row_idx, SP_COL_CURRENCY + 1, currency))
+
+                    # M列: 為替種類
+                    exchange_type = get_bs_value(bs_row, BS_COL_EXCHANGE_TYPE)
+                    if exchange_type:
+                        update_cells.append((row_idx, SP_COL_EXCHANGE_TYPE + 1, exchange_type))
+
+                    # N列: 為替レート（JPYなら1、他通貨は実勢レート）
+                    exchange_rate = get_bs_value(bs_row, BS_COL_EXCHANGE_RATE)
+                    if exchange_rate:
+                        update_cells.append((row_idx, SP_COL_EXCHANGE_RATE + 1, exchange_rate))
+
+                    # O列: 日本円換算価格
+                    price_jpy = get_bs_value(bs_row, BS_COL_PRICE_JPY)
+                    if price_jpy:
+                        update_cells.append((row_idx, SP_COL_PRICE_JPY + 1, price_jpy))
 
                     # 注: 82列構造では以下の列は削除済み
                     # P列: 最終価格更新日時 - 現在時刻を設定
@@ -399,9 +427,15 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="ブリオンスター商品ページ一覧から「登録済」商品を商品仕入れ先一覧に同期"
+        description="ブリオンスター/APMEX商品ページ一覧から「登録済」商品を商品仕入れ先一覧に同期"
     )
     parser.add_argument("--verbose", "-v", action="store_true", help="詳細ログ出力")
+    parser.add_argument(
+        "--source",
+        choices=["bs", "ap", "all"],
+        default="all",
+        help="同期対象（bs=ブリオンスターのみ / ap=APMEXのみ / all=両方）デフォルト: all",
+    )
 
     args = parser.parse_args()
 
@@ -425,14 +459,38 @@ def main():
             logger.error(error)
         sys.exit(1)
 
-    if sync_registered_products_to_supplier_list():
-        elapsed = (datetime.now() - start_time).total_seconds()
-        logger.info("=" * 60)
+    overall_ok = True
+
+    # ブリオンスター
+    if args.source in ("bs", "all"):
+        logger.info("")
+        logger.info(">>> ブリオンスター商品ページ一覧 → 商品仕入れ先一覧")
+        if not sync_registered_products_to_supplier_list(
+            source_sheet_name=Config.SHEET_BULLIONSTAR_PRODUCTS,
+            source_label="ブリオンスター",
+        ):
+            overall_ok = False
+
+    # APMEX
+    if args.source in ("ap", "all"):
+        logger.info("")
+        logger.info(">>> APMEX商品ページ一覧 → 商品仕入れ先一覧")
+        if not sync_registered_products_to_supplier_list(
+            source_sheet_name=Config.SHEET_APMEX_PRODUCTS,
+            source_label="APMEX",
+        ):
+            overall_ok = False
+
+    elapsed = (datetime.now() - start_time).total_seconds()
+    logger.info("")
+    logger.info("=" * 60)
+    if overall_ok:
         logger.info(f"同期完了（所要時間: {elapsed:.1f}秒）")
         logger.info("=" * 60)
         return 0
     else:
-        logger.error("同期失敗")
+        logger.error(f"一部失敗あり（所要時間: {elapsed:.1f}秒）")
+        logger.info("=" * 60)
         return 1
 
 

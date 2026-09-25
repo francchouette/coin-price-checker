@@ -17,6 +17,7 @@ J列（仕入れ先商品URL）がある場合は、価格を自動取得してM
 import argparse
 import copy
 import logging
+import os
 import sys
 import time
 from dataclasses import dataclass
@@ -38,6 +39,48 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+# スクレイピング対象外にするドメイン（環境変数で指定・試験運用/ロールバック用）
+#   例: CM_SYNC_SKIP_SCRAPE_DOMAINS="apmex.com"
+# 未設定なら従来どおり全URLをスクレイピングする。
+#
+# apmex.com を除外する背景（2026-09-11 調査）:
+#   cm-sync は Playwright で商品ページを開いて価格を読むが、APMEX の Bot 検知に
+#   100%ブロックされている（毎回141件試行/0件成功、1件8.1秒待ち＝1回19分の無駄）。
+#   APMEX の価格は専用ジョブ ap-scrape がカテゴリ一覧のXHR経由で取得しており
+#   （成功率100%）、CMシートのN/M列はそこからのVLOOKUPなので鮮度に影響しない。
+#   スクレイプ失敗時は書き込みブロックごとスキップされるため、除外しても
+#   シートへの出力は従来と同一になる。
+SKIP_SCRAPE_DOMAINS = tuple(
+    d.strip().lower()
+    for d in os.environ.get("CM_SYNC_SKIP_SCRAPE_DOMAINS", "").split(",")
+    if d.strip()
+)
+
+
+# 同期項目（fields）→ 書き込み対象列インデックスのマップ
+# API→シート時、sync_fields に含まれない項目の列は preserve_existing=True を強制
+SYNC_FIELD_COLUMNS = {
+    "price": {Col.SALES_PRICE.index, Col.REGULAR_PRICE.index, Col.MEMBERS_PRICE.index, Col.COST.index},
+    "name": {Col.NAME.index},
+    "description": {Col.EXPL.index, Col.SIMPLE_EXPL.index, Col.MOBILE_EXPL.index, Col.MEMO.index},
+    "category": {Col.CATEGORY_ID_BIG.index, Col.GROUP_IDS.index},
+    "model": {Col.MODEL_NUMBER.index},
+    "stock": {Col.STOCKS.index},
+    "display": {Col.DISPLAY_SETTING.index},
+    "stock_settings": {Col.STOCK_MANAGED.index, Col.FEW_NUM.index, Col.SOLDOUT_DISPLAY.index,
+                       Col.MIN_NUM.index, Col.MAX_NUM.index, Col.UNIT.index},
+    "shipping": {Col.DELIVERY_CHARGE.index, Col.COOL_CHARGE.index, Col.WEIGHT.index, Col.NO_DELIVERY.index},
+    "seo": {Col.PAGE_TITLE.index, Col.META_DESC.index, Col.META_KEYWORDS.index},
+    "options": {Col.REDUCED_TAX.index, Col.DIGITAL_CONTENT.index, Col.SUBSCRIPTION.index},
+    "images": {Col.MAIN_IMAGE.index, Col.THUMBNAIL.index, Col.IMAGE_URL_1.index, Col.IMAGE_URL_2.index,
+               Col.IMAGE_URL_3.index, Col.IMAGE_URL_4.index, Col.IMAGE_URL_5.index,
+               Col.IMAGE_URL_6.index, Col.IMAGE_URL_7.index, Col.IMAGE_URL_8.index},
+}
+
+# 同期項目フィルタを無視して常に更新する列（同期実行のブックキーピング）
+ALWAYS_UPDATE_COLUMNS = {Col.SYNC_STATUS.index, Col.SYNC_DATETIME.index}
 
 
 def fetch_exchange_rates(currencies: list[str], exchange_types: dict[str, str]) -> dict[str, float]:
@@ -118,6 +161,32 @@ def _idx_to_letter(index: int) -> str:
     return result
 
 
+# USER_ENTERED で書くと Google Sheets に数値解釈されて壊れる列
+# 例: AM列 "3190096,3190107" → 31900963190107（カンマを桁区切りと解釈）
+#     → 再読込時に "31,900,963,190,107" となり、カンマ分割で無効なグループIDが
+#       カラーミーへ送られ PUT が 404 になる
+# これらの列は USER_ENTERED のバッチから除外し、RAW で別途書き込む
+RAW_ONLY_COLS = {Col.GROUP_IDS.index}
+
+
+def build_raw_segments(row_data: list, sheet_row: int) -> list:
+    """RAW_ONLY_COLS のセルを RAW 書き込み用データに変換する"""
+    out = []
+    for i in sorted(RAW_ONLY_COLS):
+        if i >= len(row_data):
+            continue
+        # USER_ENTERED 時代の名残でテキスト強制用の先頭 ' が付いている場合がある。
+        # RAW ではリテラル文字として保存されてしまうため取り除く
+        val = str(row_data[i]).lstrip("'").strip() if row_data[i] is not None else ""
+        if val == "":
+            continue
+        out.append({
+            'range': f'{_idx_to_letter(i)}{sheet_row}',
+            'values': [[val]]
+        })
+    return out
+
+
 def build_row_segments(row_data: list, raw_formula_row: list, sheet_row: int) -> list:
     """
     既存行の書き込み用: 数式セルをスキップしてセグメント単位のbatch_update用データを構築する。
@@ -125,13 +194,10 @@ def build_row_segments(row_data: list, raw_formula_row: list, sheet_row: int) ->
     raw_formula_row に数式（=で始まる）があり、row_data が数式を保持できていない場合、
     そのセルをスキップすることでシート上の数式を保護する。
     """
+    # 数式データが無くても RAW_ONLY_COLS は除外する必要があるため、
+    # 全列一括書き込みのショートカットは使わずに必ずループを通す
     if not raw_formula_row:
-        # 数式データなし → 全列書き込み
-        last_letter = _idx_to_letter(len(row_data) - 1)
-        return [{
-            'range': f'A{sheet_row}:{last_letter}{sheet_row}',
-            'values': [list(row_data)]
-        }]
+        raw_formula_row = []
 
     segments = []
     seg_start = None
@@ -148,7 +214,8 @@ def build_row_segments(row_data: list, raw_formula_row: list, sheet_row: int) ->
         new_has_formula = isinstance(row_data[i], str) and row_data[i].startswith("=")
 
         # 既存に数式があるのに新データが数式でない → スキップ（数式を保護）
-        skip = existing_has_formula and not new_has_formula
+        # RAW_ONLY_COLS は USER_ENTERED で書くと壊れるため常にスキップ（後で RAW 書き込み）
+        skip = (existing_has_formula and not new_has_formula) or i in RAW_ONLY_COLS
 
         if skip:
             # 現在のセグメントを閉じる
@@ -235,7 +302,9 @@ def main():
     parser.add_argument("--verbose", "-v", action="store_true", help="詳細ログ")
     parser.add_argument("--limit", type=int, default=0, help="処理件数制限（0=無制限）")
     parser.add_argument("--sync-fields", type=str, default="",
-                        help="同期項目をカンマ区切りで指定（空=全項目）: price,name,description,category,model,stock,display,stock_settings,shipping,seo,options")
+                        help="同期項目をカンマ区切りで指定（空=全項目）: price,name,description,category,model,stock,display,stock_settings,shipping,seo,options,images")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="既存のシート値をAPIの値で上書きする（デフォルト: 空欄のみ書き込み）")
     args = parser.parse_args()
 
     if args.verbose:
@@ -247,8 +316,12 @@ def main():
         sync_fields = set(f.strip() for f in args.sync_fields.split(",") if f.strip())
         logger.info(f"同期項目フィルター: {', '.join(sorted(sync_fields))}")
 
+    overwrite_mode = args.overwrite
+
     mode_label = "カラーミー商品ダウンロード+同期" if args.sync else "カラーミー商品ダウンロード"
     logger.info(f"=== {mode_label}開始 ===")
+    if overwrite_mode:
+        logger.info("上書きモード: APIの値で既存シート値を上書きします")
 
     # 設定の検証
     errors = Config.validate()
@@ -292,6 +365,36 @@ def main():
     try:
         sheet = client._spreadsheet.worksheet(Config.SHEET_COLORME_V2)
         last_col = Col.last_column_letter()
+
+        # BS/APMEX マスタシートから CM_ID → SEO のマップを構築（Colorme APIはSEOを返さないため）
+        # register_adopted_products.py が BS/APMEX シートのBU/BV/BW列にSEOを保存している
+        cm_id_to_seo = {}  # {cm_id: (page_title, meta_desc, meta_keywords)}
+        try:
+            from src.bs_sheet_columns import Col as BsCol
+            import re as _re
+            for _sheet_name in [Config.SHEET_BULLIONSTAR_PRODUCTS, Config.SHEET_APMEX_PRODUCTS]:
+                try:
+                    _ws = client._spreadsheet.worksheet(_sheet_name)
+                    _rows = _ws.get_all_values()
+                    for _r in _rows[1:]:
+                        # E列: カラーミー商品URL（https://ybx.jp/?pid=<CM_ID>）
+                        if len(_r) <= BsCol.COLORME_URL.index:
+                            continue
+                        _url = _r[BsCol.COLORME_URL.index]
+                        _m = _re.search(r'pid=(\d+)', _url or '')
+                        if not _m:
+                            continue
+                        _cm_id = int(_m.group(1))
+                        _pt = _r[BsCol.CM_PAGE_TITLE.index] if len(_r) > BsCol.CM_PAGE_TITLE.index else ''
+                        _md = _r[BsCol.CM_META_DESC.index] if len(_r) > BsCol.CM_META_DESC.index else ''
+                        _mk = _r[BsCol.CM_META_KEYWORDS.index] if len(_r) > BsCol.CM_META_KEYWORDS.index else ''
+                        if _pt or _md or _mk:
+                            cm_id_to_seo[_cm_id] = (_pt, _md, _mk)
+                except Exception:
+                    pass
+            logger.info(f"BS/APMEXマスタから SEO データ取得: {len(cm_id_to_seo)}件")
+        except Exception as _e:
+            logger.warning(f"BS/APMEXマスタからのSEO取得失敗（続行）: {_e}")
 
         # 既存データを取得（仕入れ先情報と数式を保持するため）
         # 値として取得（商品IDのマッピング用）
@@ -390,6 +493,22 @@ def main():
                         logger.error(f"  {description}: {MAX_RETRIES}回失敗: {e}")
                         raise
 
+        def raw_update_with_retry(batch_data: list, description: str):
+            """RAW でのバッチ書き込み（AM列などが数値解釈されるのを防ぐ）"""
+            for attempt in range(1, MAX_RETRIES + 1):
+                try:
+                    data_copy = copy.deepcopy(batch_data)
+                    sheet.batch_update(data_copy, value_input_option='RAW')
+                    return True
+                except Exception as e:
+                    if attempt < MAX_RETRIES:
+                        wait = 10 * attempt
+                        logger.warning(f"  {description}(RAW): エラー (試行{attempt}/{MAX_RETRIES}), {wait}秒後にリトライ: {e}")
+                        time.sleep(wait)
+                    else:
+                        logger.error(f"  {description}(RAW): {MAX_RETRIES}回失敗: {e}")
+                        raise
+
         def sheet_update_with_retry(values: list, range_name: str, description: str):
             """リトライ付きシート書き込み"""
             for attempt in range(1, MAX_RETRIES + 1):
@@ -409,6 +528,7 @@ def main():
             """溜まったバッチをシートに書き込む（既存行は数式セルをスキップ）"""
             if update_items:
                 batch_data = []
+                raw_data = []
                 for row_num, row_data in update_items:
                     sheet_row = row_num + 1  # 1-indexed（ヘッダー含む）
                     # 既存行の生データ（数式含む）を取得して数式セルをスキップ
@@ -417,8 +537,11 @@ def main():
                         raw_formula = existing_formulas[row_num]
                     segments = build_row_segments(row_data, raw_formula, sheet_row)
                     batch_data.extend(segments)
+                    raw_data.extend(build_raw_segments(row_data, sheet_row))
                 desc = f"既存更新 {updated_count+1}〜{updated_count+len(update_items)}"
                 batch_update_with_retry(batch_data, desc)
+                if raw_data:
+                    raw_update_with_retry(raw_data, desc)
                 updated_count += len(update_items)
                 logger.info(f"  [シート書き込み] 既存更新: {updated_count}件完了 ({len(batch_data)}セグメント)")
                 time.sleep(1)
@@ -426,8 +549,25 @@ def main():
             if new_items:
                 start_row = next_new_row + 1  # ヘッダー含む（1-indexed）
                 end_row = start_row + len(new_items) - 1
+                # シートの行数が足りない場合、append_rowsで拡張してから範囲書き込み
+                if end_row > sheet.row_count:
+                    needed = end_row - sheet.row_count
+                    logger.info(f"  シート行数拡張: {sheet.row_count} → {end_row} (+{needed}行)")
+                    sheet.add_rows(needed)
                 desc = f"新規追加 {added_count+1}〜{added_count+len(new_items)}"
-                sheet_update_with_retry(new_items, f'A{start_row}:{last_col}{end_row}', desc)
+                # RAW_ONLY_COLS は一括書き込みから外し（空欄で送る）、後段で RAW 書き込みする
+                raw_data = []
+                safe_items = []
+                for offset, row_data in enumerate(new_items):
+                    raw_data.extend(build_raw_segments(row_data, start_row + offset))
+                    item = list(row_data)
+                    for ci in RAW_ONLY_COLS:
+                        if ci < len(item):
+                            item[ci] = ""
+                    safe_items.append(item)
+                sheet_update_with_retry(safe_items, f'A{start_row}:{last_col}{end_row}', desc)
+                if raw_data:
+                    raw_update_with_retry(raw_data, desc)
                 added_count += len(new_items)
                 next_new_row += len(new_items)
                 logger.info(f"  [シート書き込み] 新規追加: {added_count}件完了")
@@ -438,12 +578,37 @@ def main():
         # ========================================
         # 商品ループ: スクレイピング → 全77列構築 → 10件ごとにシート書き込み
         # ========================================
+
+        # 同期項目フィルタ用に許可列インデックスを集計
+        allowed_field_indices = None
+        if sync_fields:
+            allowed_field_indices = set()
+            for f in sync_fields:
+                allowed_field_indices |= SYNC_FIELD_COLUMNS.get(f, set())
+            logger.info(f"書き込み対象列インデックス: {sorted(allowed_field_indices)} (+ {sorted(ALWAYS_UPDATE_COLUMNS)})")
+
+        # 上書きモード + sync_fields フィルタ: preserve_or_set のラッパー
+        # overwrite_mode=True の場合、preserve_existing を False に強制する
+        # sync_fields 指定時、非対象列は preserve_existing=True を強制（既存値を守る）
+        _orig_preserve_or_set = preserve_or_set
+        def _pos(existing_row, col, new_value, old_row_num, new_row_num, preserve_existing=True):
+            # sync_fields フィルタ: 既存行 かつ 非対象列 かつ 常時更新列でない → 強制保持
+            if (allowed_field_indices is not None
+                    and existing_row
+                    and col.index not in allowed_field_indices
+                    and col.index not in ALWAYS_UPDATE_COLUMNS):
+                return _orig_preserve_or_set(existing_row, col, new_value, old_row_num, new_row_num, preserve_existing=True)
+            if overwrite_mode and preserve_existing:
+                preserve_existing = False
+            return _orig_preserve_or_set(existing_row, col, new_value, old_row_num, new_row_num, preserve_existing=preserve_existing)
+
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         next_new_row = max_existing_row + 1
         updated_count = 0
         added_count = 0
         scrape_success = 0
         scrape_fail = 0
+        scrape_skipped = 0
         sync_success = 0
         sync_fail = 0
         sync_skip = 0
@@ -480,7 +645,14 @@ def main():
                     if row_idx < len(existing):
                         supplier_url_for_scrape = get_cell(existing[row_idx], Col.SUPPLIER_URL)
 
-                    if supplier_url_for_scrape and supplier_url_for_scrape.startswith("http"):
+                    skip_domain = next(
+                        (d for d in SKIP_SCRAPE_DOMAINS if d in (supplier_url_for_scrape or "").lower()),
+                        None,
+                    )
+                    if skip_domain:
+                        scrape_skipped += 1
+                        logger.debug(f"  スクレイピング除外({skip_domain}): {supplier_url_for_scrape[:60]}")
+                    elif supplier_url_for_scrape and supplier_url_for_scrape.startswith("http"):
                         # Bullionstar: .co.nz/.us → .com に変換（.co.nz/.usはタイムアウトするため）
                         scrape_url_target = supplier_url_for_scrape
                         if "bullionstar.co.nz" in scrape_url_target:
@@ -559,29 +731,29 @@ def main():
                     new_row_num = next_new_row + len(new_batch) + 1
 
                 # === A-F列: 操作項目 ===
-                row[Col.SYNC_MODE.index] = preserve_or_set(existing_row, Col.SYNC_MODE, "変更なし", old_row_num, new_row_num)
-                row[Col.DISPLAY_SETTING.index] = preserve_or_set(existing_row, Col.DISPLAY_SETTING, display_state, old_row_num, new_row_num, preserve_existing=True)
-                row[Col.PRICE_UPDATE.index] = preserve_or_set(existing_row, Col.PRICE_UPDATE, "ON", old_row_num, new_row_num)
-                row[Col.STOCK_SYNC.index] = preserve_or_set(existing_row, Col.STOCK_SYNC, "OFF", old_row_num, new_row_num)
-                row[Col.DISPLAY_SYNC.index] = preserve_or_set(existing_row, Col.DISPLAY_SYNC, "OFF", old_row_num, new_row_num)
-                row[Col.SYNC_STATUS.index] = preserve_or_set(existing_row, Col.SYNC_STATUS, "ダウンロード済", old_row_num, new_row_num, preserve_existing=False)
+                row[Col.SYNC_MODE.index] = _pos(existing_row, Col.SYNC_MODE, "変更なし", old_row_num, new_row_num)
+                row[Col.DISPLAY_SETTING.index] = _pos(existing_row, Col.DISPLAY_SETTING, display_state, old_row_num, new_row_num, preserve_existing=True)
+                row[Col.PRICE_UPDATE.index] = _pos(existing_row, Col.PRICE_UPDATE, "ON", old_row_num, new_row_num)
+                row[Col.STOCK_SYNC.index] = _pos(existing_row, Col.STOCK_SYNC, "OFF", old_row_num, new_row_num)
+                row[Col.DISPLAY_SYNC.index] = _pos(existing_row, Col.DISPLAY_SYNC, "OFF", old_row_num, new_row_num)
+                row[Col.SYNC_STATUS.index] = _pos(existing_row, Col.SYNC_STATUS, "ダウンロード済", old_row_num, new_row_num, preserve_existing=False)
 
                 # === G-I列: 識別情報 ===
                 row[Col.PRODUCT_ID.index] = str(product_id)
-                row[Col.NAME.index] = preserve_or_set(existing_row, Col.NAME, product.get("name", ""), old_row_num, new_row_num, preserve_existing=True)
+                row[Col.NAME.index] = _pos(existing_row, Col.NAME, product.get("name", ""), old_row_num, new_row_num, preserve_existing=True)
                 row[Col.COLORME_URL.index] = f"https://ybx.jp/?pid={product_id}"
 
                 # === J-L列: 仕入れ先基本情報 ===
-                row[Col.SUPPLIER_URL.index] = preserve_or_set(existing_row, Col.SUPPLIER_URL, "", old_row_num, new_row_num)
-                row[Col.SUPPLIER_NAME.index] = preserve_or_set(existing_row, Col.SUPPLIER_NAME, Formula.supplier_name(new_row_num), old_row_num, new_row_num)
-                row[Col.SUPPLIER_SITE.index] = preserve_or_set(existing_row, Col.SUPPLIER_SITE, Formula.supplier_site(new_row_num), old_row_num, new_row_num)
+                row[Col.SUPPLIER_URL.index] = _pos(existing_row, Col.SUPPLIER_URL, "", old_row_num, new_row_num)
+                row[Col.SUPPLIER_NAME.index] = _pos(existing_row, Col.SUPPLIER_NAME, Formula.supplier_name(new_row_num), old_row_num, new_row_num)
+                row[Col.SUPPLIER_SITE.index] = _pos(existing_row, Col.SUPPLIER_SITE, Formula.supplier_site(new_row_num), old_row_num, new_row_num)
 
                 # === M-Q列: 仕入れ先価格情報（既存値をベースに設定）===
-                row[Col.SUPPLIER_STOCK.index] = preserve_or_set(existing_row, Col.SUPPLIER_STOCK, "", old_row_num, new_row_num)
-                row[Col.SUPPLIER_PRICE.index] = preserve_or_set(existing_row, Col.SUPPLIER_PRICE, "", old_row_num, new_row_num)
-                row[Col.PREV_PRICE.index] = preserve_or_set(existing_row, Col.PREV_PRICE, "", old_row_num, new_row_num)
-                row[Col.PRICE_CHANGE_RATE.index] = preserve_or_set(existing_row, Col.PRICE_CHANGE_RATE, "", old_row_num, new_row_num)
-                row[Col.CURRENCY.index] = preserve_or_set(existing_row, Col.CURRENCY, "", old_row_num, new_row_num)
+                row[Col.SUPPLIER_STOCK.index] = _pos(existing_row, Col.SUPPLIER_STOCK, "", old_row_num, new_row_num)
+                row[Col.SUPPLIER_PRICE.index] = _pos(existing_row, Col.SUPPLIER_PRICE, "", old_row_num, new_row_num)
+                row[Col.PREV_PRICE.index] = _pos(existing_row, Col.PREV_PRICE, "", old_row_num, new_row_num)
+                row[Col.PRICE_CHANGE_RATE.index] = _pos(existing_row, Col.PRICE_CHANGE_RATE, "", old_row_num, new_row_num)
+                row[Col.CURRENCY.index] = _pos(existing_row, Col.CURRENCY, "", old_row_num, new_row_num)
 
                 # スクレイピング結果があれば適用（M-Q列を上書き）
                 if scraped_result and not scraped_result.scraped_data.error:
@@ -599,13 +771,11 @@ def main():
                             row[Col.PREV_PRICE.index] = prev_val
                         row[Col.SUPPLIER_PRICE.index] = str(scraped.price)
 
-                    # Q列: 通貨
-                    old_currency = row[Col.CURRENCY.index]
-                    row[Col.CURRENCY.index] = scraped.currency
-                    if old_currency != scraped.currency:
-                        if is_formula(old_currency):
-                            logger.info(f"  商品ID {product_id}: 通貨更新（数式を値に置換） -> {scraped.currency}")
-                        else:
+                    # Q列: 通貨（数式なら上書きしない = 商品仕入れ先一覧からVLOOKUP参照を保持）
+                    if not is_formula(row[Col.CURRENCY.index]):
+                        old_currency = row[Col.CURRENCY.index]
+                        row[Col.CURRENCY.index] = scraped.currency
+                        if old_currency != scraped.currency:
                             logger.info(f"  商品ID {product_id}: 通貨更新 {old_currency} -> {scraped.currency}")
 
                     # P列: 価格変動率
@@ -625,7 +795,7 @@ def main():
                             Col.QUANTITY, Col.PURCHASE_TOTAL, Col.MARGIN_RATE, Col.MARGIN_AMOUNT,
                             Col.SHIPPING, Col.FEE, Col.TOTAL_COST, Col.PROPER_PRICE,
                             Col.GROSS_PROFIT, Col.GROSS_PROFIT_RATE]:
-                    row[col.index] = preserve_or_set(existing_row, col, "", old_row_num, new_row_num)
+                    row[col.index] = _pos(existing_row, col, "", old_row_num, new_row_num)
 
                 # S列（為替レート）を自動更新
                 if not is_formula(row[Col.EXCHANGE_RATE.index]):
@@ -652,45 +822,71 @@ def main():
                             logger.info(f"  商品ID {product_id}: 為替レート更新 {rate_key} = {row[Col.EXCHANGE_RATE.index]}")
 
                 # === AE-AJ列: カラーミー価格情報 ===
-                # AE列: 数式がある場合は保持（数式で計算した販売価格をカラーミーに同期するため）
-                row[Col.SALES_PRICE.index] = preserve_or_set(existing_row, Col.SALES_PRICE, str(product.get("sales_price") or product.get("price") or 0), old_row_num, new_row_num, preserve_existing=True)
-                row[Col.REGULAR_PRICE.index] = preserve_or_set(existing_row, Col.REGULAR_PRICE, str(product.get("price") or 0), old_row_num, new_row_num, preserve_existing=False)
-                row[Col.MEMBERS_PRICE.index] = preserve_or_set(existing_row, Col.MEMBERS_PRICE, str(product.get("members_price") or 0), old_row_num, new_row_num, preserve_existing=False)
-                row[Col.COST.index] = preserve_or_set(existing_row, Col.COST, str(product.get("cost") or 0), old_row_num, new_row_num, preserve_existing=False)
-                row[Col.TAX_INCLUDED_PRICE.index] = preserve_or_set(existing_row, Col.TAX_INCLUDED_PRICE, "", old_row_num, new_row_num)
-                row[Col.TAX_AMOUNT.index] = preserve_or_set(existing_row, Col.TAX_AMOUNT, "", old_row_num, new_row_num)
+                # AE列(販売価格), AF列(定価): 常に数式（既存行の静的値化を防ぐ）
+                # セール判定はセールON/OFF・セール率列で行い、シート上の計算式が販売/定価を導出する。
+                # 過去に静的値化された場合の再発防止（Colorme APIの古い価格が
+                # マージン率変更後のAE(=roundup(AB,-2))と乖離してセール表示になるバグ回避）。
+                # 列文字は必ず Col から引く（ハードコードすると列の増減で参照がずれる）。
+                _cur_r = new_row_num  # シート上の行番号（既存行なら維持、新規行なら新番号）
+                # 原価下限(MAX(...,AA))は設けない。AAは「現在の」仕入れ先価格から計算されるため、
+                # 安く仕入れた在庫では実態と合わず、指定した割引率が効かなくなるため。
+                # セールONは商品ごとの手動操作なので、原価割れの可否は運用側で判断する。
+                _on = Col.SALE_ENABLED.letter
+                _rate = Col.SALE_RATE.letter
+                _ab = Col.PROPER_PRICE.letter
+                _sale_formula = (
+                    f'=IF({_on}{_cur_r}="ON",'
+                    f'ROUND({_ab}{_cur_r}*(1-IF({_rate}{_cur_r}="",0.05,{_rate}{_cur_r})),-2),'
+                    f'roundup({_ab}{_cur_r},-2))'
+                )
+                _regular_formula = f'=roundup({_ab}{_cur_r},-2)'
+                row[Col.SALES_PRICE.index] = _sale_formula
+                row[Col.REGULAR_PRICE.index] = _regular_formula
+                row[Col.MEMBERS_PRICE.index] = _pos(existing_row, Col.MEMBERS_PRICE, str(product.get("members_price") or 0), old_row_num, new_row_num, preserve_existing=False)
+                row[Col.COST.index] = _pos(existing_row, Col.COST, str(product.get("cost") or 0), old_row_num, new_row_num, preserve_existing=False)
+                row[Col.TAX_INCLUDED_PRICE.index] = _pos(existing_row, Col.TAX_INCLUDED_PRICE, "", old_row_num, new_row_num)
+                row[Col.TAX_AMOUNT.index] = _pos(existing_row, Col.TAX_AMOUNT, "", old_row_num, new_row_num)
 
                 # === AK-AN列: カテゴリー・グループ ===
-                row[Col.CATEGORY_ID_BIG.index] = preserve_or_set(existing_row, Col.CATEGORY_ID_BIG, str(category_id_big) if category_id_big else "", old_row_num, new_row_num)
-                row[Col.CATEGORY_NAME_BIG.index] = preserve_or_set(existing_row, Col.CATEGORY_NAME_BIG, "", old_row_num, new_row_num)
-                row[Col.GROUP_IDS.index] = preserve_or_set(existing_row, Col.GROUP_IDS, group_ids_str, old_row_num, new_row_num, preserve_existing=True)
-                row[Col.GROUP_NAMES.index] = preserve_or_set(existing_row, Col.GROUP_NAMES, "", old_row_num, new_row_num)
+                row[Col.CATEGORY_ID_BIG.index] = _pos(existing_row, Col.CATEGORY_ID_BIG, str(category_id_big) if category_id_big else "", old_row_num, new_row_num)
+                row[Col.CATEGORY_NAME_BIG.index] = _pos(existing_row, Col.CATEGORY_NAME_BIG, "", old_row_num, new_row_num)
+                row[Col.GROUP_IDS.index] = _pos(existing_row, Col.GROUP_IDS, group_ids_str, old_row_num, new_row_num, preserve_existing=True)
+                row[Col.GROUP_NAMES.index] = _pos(existing_row, Col.GROUP_NAMES, "", old_row_num, new_row_num)
 
                 # === AO列: 型番 ===
-                row[Col.MODEL_NUMBER.index] = preserve_or_set(existing_row, Col.MODEL_NUMBER, product.get("model_number", "") or "", old_row_num, new_row_num)
+                row[Col.MODEL_NUMBER.index] = _pos(existing_row, Col.MODEL_NUMBER, product.get("model_number", "") or "", old_row_num, new_row_num)
 
                 # === AP-AV列: 在庫管理 ===
                 # 在庫数: ユーザーがスプレッドシート上で変更した値を保持する（カラーミーの値で上書きしない）
-                row[Col.STOCKS.index] = preserve_or_set(existing_row, Col.STOCKS, str(product.get("stocks") or 0), old_row_num, new_row_num, preserve_existing=True)
-                row[Col.STOCK_MANAGED.index] = preserve_or_set(existing_row, Col.STOCK_MANAGED, "する" if product.get("stock_managed", True) else "しない", old_row_num, new_row_num, preserve_existing=True)
-                row[Col.FEW_NUM.index] = preserve_or_set(existing_row, Col.FEW_NUM, str(product.get("few_num") or 0), old_row_num, new_row_num, preserve_existing=True)
+                row[Col.STOCKS.index] = _pos(existing_row, Col.STOCKS, str(product.get("stocks") or 0), old_row_num, new_row_num, preserve_existing=True)
+                row[Col.STOCK_MANAGED.index] = _pos(existing_row, Col.STOCK_MANAGED, "する" if product.get("stock_managed", True) else "しない", old_row_num, new_row_num, preserve_existing=True)
+                row[Col.FEW_NUM.index] = _pos(existing_row, Col.FEW_NUM, str(product.get("few_num") or 0), old_row_num, new_row_num, preserve_existing=True)
                 soldout_display = product.get("soldout_display", True)
-                row[Col.SOLDOUT_DISPLAY.index] = preserve_or_set(existing_row, Col.SOLDOUT_DISPLAY, "表示" if soldout_display else "非表示", old_row_num, new_row_num, preserve_existing=True)
-                row[Col.MIN_NUM.index] = preserve_or_set(existing_row, Col.MIN_NUM, str(product.get("min_num") or 1), old_row_num, new_row_num, preserve_existing=True)
-                row[Col.MAX_NUM.index] = preserve_or_set(existing_row, Col.MAX_NUM, str(product.get("max_num") or 0), old_row_num, new_row_num, preserve_existing=True)
-                row[Col.UNIT.index] = preserve_or_set(existing_row, Col.UNIT, product.get("unit", "") or "", old_row_num, new_row_num, preserve_existing=True)
+                row[Col.SOLDOUT_DISPLAY.index] = _pos(existing_row, Col.SOLDOUT_DISPLAY, "表示" if soldout_display else "非表示", old_row_num, new_row_num, preserve_existing=True)
+                row[Col.MIN_NUM.index] = _pos(existing_row, Col.MIN_NUM, str(product.get("min_num") or 1), old_row_num, new_row_num, preserve_existing=True)
+                row[Col.MAX_NUM.index] = _pos(existing_row, Col.MAX_NUM, str(product.get("max_num") or 0), old_row_num, new_row_num, preserve_existing=True)
+                row[Col.UNIT.index] = _pos(existing_row, Col.UNIT, product.get("unit", "") or "", old_row_num, new_row_num, preserve_existing=True)
 
                 # === AW-AZ列: 送料・配送 ===
-                row[Col.DELIVERY_CHARGE.index] = preserve_or_set(existing_row, Col.DELIVERY_CHARGE, str(product.get("delivery_charge") or 0), old_row_num, new_row_num)
-                row[Col.COOL_CHARGE.index] = preserve_or_set(existing_row, Col.COOL_CHARGE, "", old_row_num, new_row_num)
-                row[Col.WEIGHT.index] = preserve_or_set(existing_row, Col.WEIGHT, "", old_row_num, new_row_num)
-                row[Col.NO_DELIVERY.index] = preserve_or_set(existing_row, Col.NO_DELIVERY, "", old_row_num, new_row_num)
+                # 個別送料: カラーミー側で「0」は送料無料扱いになり送料無料ラインが無効化されるため、
+                #          AW列は「空欄」が正解（= デフォルト送料を適用）。
+                #          API側が null/0 を返す場合も空欄で書き込む。
+                _dc_raw = product.get("delivery_charge")
+                try:
+                    _dc_val = int(_dc_raw) if _dc_raw not in (None, "") else 0
+                except (TypeError, ValueError):
+                    _dc_val = 0
+                _dc_str = str(_dc_val) if _dc_val > 0 else ""
+                row[Col.DELIVERY_CHARGE.index] = _pos(existing_row, Col.DELIVERY_CHARGE, _dc_str, old_row_num, new_row_num)
+                row[Col.COOL_CHARGE.index] = _pos(existing_row, Col.COOL_CHARGE, "", old_row_num, new_row_num)
+                row[Col.WEIGHT.index] = _pos(existing_row, Col.WEIGHT, "", old_row_num, new_row_num)
+                row[Col.NO_DELIVERY.index] = _pos(existing_row, Col.NO_DELIVERY, "", old_row_num, new_row_num)
 
                 # === BA-BD列: 商品説明 ===
-                row[Col.EXPL.index] = preserve_or_set(existing_row, Col.EXPL, product.get("expl", "") or "", old_row_num, new_row_num)
-                row[Col.SIMPLE_EXPL.index] = preserve_or_set(existing_row, Col.SIMPLE_EXPL, product.get("simple_expl", "") or "", old_row_num, new_row_num, preserve_existing=True)
-                row[Col.MOBILE_EXPL.index] = preserve_or_set(existing_row, Col.MOBILE_EXPL, "", old_row_num, new_row_num)
-                row[Col.MEMO.index] = preserve_or_set(existing_row, Col.MEMO, "", old_row_num, new_row_num)
+                row[Col.EXPL.index] = _pos(existing_row, Col.EXPL, product.get("expl", "") or "", old_row_num, new_row_num)
+                row[Col.SIMPLE_EXPL.index] = _pos(existing_row, Col.SIMPLE_EXPL, product.get("simple_expl", "") or "", old_row_num, new_row_num, preserve_existing=True)
+                row[Col.MOBILE_EXPL.index] = _pos(existing_row, Col.MOBILE_EXPL, "", old_row_num, new_row_num)
+                row[Col.MEMO.index] = _pos(existing_row, Col.MEMO, "", old_row_num, new_row_num)
 
                 # === BE-BN列: 画像 ===
                 image_cols = [Col.MAIN_IMAGE, Col.THUMBNAIL, Col.IMAGE_URL_1, Col.IMAGE_URL_2,
@@ -698,26 +894,92 @@ def main():
                               Col.IMAGE_URL_7, Col.IMAGE_URL_8]
                 for i, col in enumerate(image_cols):
                     img_url = image_urls[i] if i < len(image_urls) else ""
-                    row[col.index] = preserve_or_set(existing_row, col, img_url, old_row_num, new_row_num)
+                    row[col.index] = _pos(existing_row, col, img_url, old_row_num, new_row_num)
 
                 # === BO-BQ列: SEO ===
-                row[Col.PAGE_TITLE.index] = preserve_or_set(existing_row, Col.PAGE_TITLE, "", old_row_num, new_row_num)
-                row[Col.META_DESC.index] = preserve_or_set(existing_row, Col.META_DESC, "", old_row_num, new_row_num)
-                row[Col.META_KEYWORDS.index] = preserve_or_set(existing_row, Col.META_KEYWORDS, "", old_row_num, new_row_num)
+                # カラーミーAPIはSEOを返さないため、BS/APMEXマスタシートから CM_ID で引く
+                # 既存値があれば保持、空ならBS/APMEXマスタの値を反映
+                _seo_tuple = cm_id_to_seo.get(product_id, ("", "", ""))
+                row[Col.PAGE_TITLE.index] = _pos(existing_row, Col.PAGE_TITLE, _seo_tuple[0] or "", old_row_num, new_row_num)
+                row[Col.META_DESC.index] = _pos(existing_row, Col.META_DESC, _seo_tuple[1] or "", old_row_num, new_row_num)
+                row[Col.META_KEYWORDS.index] = _pos(existing_row, Col.META_KEYWORDS, _seo_tuple[2] or "", old_row_num, new_row_num)
 
                 # === BR-BV列: フラグ ===
-                row[Col.REDUCED_TAX.index] = preserve_or_set(existing_row, Col.REDUCED_TAX, "", old_row_num, new_row_num)
-                row[Col.DIGITAL_CONTENT.index] = preserve_or_set(existing_row, Col.DIGITAL_CONTENT, "", old_row_num, new_row_num)
-                row[Col.SUBSCRIPTION.index] = preserve_or_set(existing_row, Col.SUBSCRIPTION, "", old_row_num, new_row_num)
-                row[Col.DISPLAY_ORDER.index] = preserve_or_set(existing_row, Col.DISPLAY_ORDER, "", old_row_num, new_row_num)
-                row[Col.DISABLED_PAYMENTS.index] = preserve_or_set(existing_row, Col.DISABLED_PAYMENTS, "", old_row_num, new_row_num)
+                row[Col.REDUCED_TAX.index] = _pos(existing_row, Col.REDUCED_TAX, "", old_row_num, new_row_num)
+                row[Col.DIGITAL_CONTENT.index] = _pos(existing_row, Col.DIGITAL_CONTENT, "", old_row_num, new_row_num)
+                row[Col.SUBSCRIPTION.index] = _pos(existing_row, Col.SUBSCRIPTION, "", old_row_num, new_row_num)
+                row[Col.DISPLAY_ORDER.index] = _pos(existing_row, Col.DISPLAY_ORDER, "", old_row_num, new_row_num)
+                row[Col.DISABLED_PAYMENTS.index] = _pos(existing_row, Col.DISABLED_PAYMENTS, "", old_row_num, new_row_num)
 
                 # === BW-BX列: 掲載期間 ===
-                row[Col.START_DATE.index] = preserve_or_set(existing_row, Col.START_DATE, "", old_row_num, new_row_num)
-                row[Col.END_DATE.index] = preserve_or_set(existing_row, Col.END_DATE, "", old_row_num, new_row_num)
+                row[Col.START_DATE.index] = _pos(existing_row, Col.START_DATE, "", old_row_num, new_row_num)
+                row[Col.END_DATE.index] = _pos(existing_row, Col.END_DATE, "", old_row_num, new_row_num)
 
                 # === BY列: システム情報 ===
-                row[Col.SYNC_DATETIME.index] = preserve_or_set(existing_row, Col.SYNC_DATETIME, now, old_row_num, new_row_num, preserve_existing=False)
+                row[Col.SYNC_DATETIME.index] = _pos(existing_row, Col.SYNC_DATETIME, now, old_row_num, new_row_num, preserve_existing=False)
+
+                # === BZ-CC列: 競合情報（ユーザー手動入力、既存値を保持）===
+                row[Col.COMPETITOR_URL.index] = _pos(existing_row, Col.COMPETITOR_URL, "", old_row_num, new_row_num, preserve_existing=True)
+                row[Col.COMPETITOR_NAME.index] = _pos(existing_row, Col.COMPETITOR_NAME, "", old_row_num, new_row_num, preserve_existing=True)
+                row[Col.COMPETITOR_PRICE.index] = _pos(existing_row, Col.COMPETITOR_PRICE, "", old_row_num, new_row_num, preserve_existing=True)
+                row[Col.COMPETITOR_STOCK.index] = _pos(existing_row, Col.COMPETITOR_STOCK, "", old_row_num, new_row_num, preserve_existing=True)
+
+                # === CD列: サブショップ採用（ユーザー手動入力、既存値を保持） ===
+                row[Col.SUB_SHOP_ADOPTION.index] = _pos(existing_row, Col.SUB_SHOP_ADOPTION, "", old_row_num, new_row_num, preserve_existing=True)
+                # === CE列: 価格警告（数式、既存値を保持） ===
+                row[Col.PRICE_WARNING.index] = _pos(existing_row, Col.PRICE_WARNING, "", old_row_num, new_row_num, preserve_existing=True)
+                # === CF-CG列: セール制御（ユーザー手動入力、既存値を保持） ===
+                row[Col.SALE_ENABLED.index] = _pos(existing_row, Col.SALE_ENABLED, "", old_row_num, new_row_num, preserve_existing=True)
+                row[Col.SALE_RATE.index] = _pos(existing_row, Col.SALE_RATE, "", old_row_num, new_row_num, preserve_existing=True)
+                # === CH列: サブショップID（ユーザー手動入力、既存値を保持） ===
+                row[Col.SUB_SHOP_ID.index] = _pos(existing_row, Col.SUB_SHOP_ID, "", old_row_num, new_row_num, preserve_existing=True)
+                # === CJ列: 取り扱い区分（ユーザー手動選択、既存値を保持） ===
+                row[Col.HANDLING_CATEGORY.index] = _pos(existing_row, Col.HANDLING_CATEGORY, "", old_row_num, new_row_num, preserve_existing=True)
+
+                # === 新規行の場合のみ、M-S/T-AD/AI-AJ列に数式を自動挿入 ===
+                # 既存行は preserve_existing で守られるため上書きしない
+                if not is_existing:
+                    r = new_row_num  # シート上の行番号（1-indexed、ヘッダー含む）
+                    # M-S列: 商品仕入れ先一覧からVLOOKUP
+                    # M(在庫状況)←J列, N(現価)←K列, O(前回価格)←Q列, P(変動率)←R列,
+                    # Q(通貨)←L列, R(為替種類)←M列, S(為替レート)←N列
+                    vlookup_map = [
+                        (Col.SUPPLIER_STOCK, 'J'),
+                        (Col.SUPPLIER_PRICE, 'K'),
+                        (Col.PREV_PRICE, 'Q'),
+                        (Col.PRICE_CHANGE_RATE, 'R'),
+                        (Col.CURRENCY, 'L'),
+                        (Col.EXCHANGE_TYPE, 'M'),
+                        (Col.EXCHANGE_RATE, 'N'),
+                    ]
+                    for cm_col, sp_col in vlookup_map:
+                        row[cm_col.index] = (
+                            f"=IFERROR(INDEX('商品仕入れ先一覧'!${sp_col}:${sp_col},"
+                            f"MATCH($J{r},'商品仕入れ先一覧'!$C:$C,0)),\"\")"
+                        )
+                    # T-AD列: 計算式
+                    row[Col.PURCHASE_PRICE_JPY.index] = f"=N{r}*S{r}"           # T: 仕入れ額
+                    row[Col.QUANTITY.index] = 1                                  # U: 数量
+                    row[Col.PURCHASE_TOTAL.index] = f"=T{r}*U{r}"                # V: 仕入れ合計
+                    row[Col.MARGIN_RATE.index] = 1.12                            # W: マージン率
+                    row[Col.MARGIN_AMOUNT.index] = 0                             # X: マージン額
+                    row[Col.SHIPPING.index] = 150                                # Y: 送料
+                    row[Col.FEE.index] = 100                                     # Z: 諸経費
+                    row[Col.TOTAL_COST.index] = f"=V{r}+Y{r}+Z{r}"              # AA: 合計原価
+                    row[Col.PROPER_PRICE.index] = f"=AA{r}/(2-W{r})+Y{r}+Z{r}"  # AB: 適正価格
+                    row[Col.GROSS_PROFIT.index] = f"=AB{r}-AA{r}"               # AC: 粗利額
+                    row[Col.GROSS_PROFIT_RATE.index] = f"=(AB{r}-AA{r})/AB{r}"  # AD: 粗利率
+                    # AE(販売価格) / AF(定価) は上のセクションで既存/新規共通で数式設定済み
+                    # AH列: 原価 = AE（販売価格と一致、市場変動に追随）
+                    row[Col.COST.index] = f"=AE{r}"                              # AH: 原価
+                    # AI-AJ列: 税込販売価格・消費税額
+                    row[Col.TAX_INCLUDED_PRICE.index] = f"=AE{r}*1.1"           # AI
+                    row[Col.TAX_AMOUNT.index] = f"=AI{r}-AE{r}"                 # AJ
+                    # CF列: 価格警告（自ショップ税込価格 AI が 競合価格 CB の 20%超で警告表示）
+                    row[Col.PRICE_WARNING.index] = (
+                        f'=IF(AND(CB{r}>0,AI{r}>0,AI{r}>CB{r}*1.2),'
+                        f'"⚠ +"&ROUND((AI{r}/CB{r}-1)*100,1)&"%","")'
+                    )
 
                 # バッチに追加
                 if is_existing:
@@ -778,21 +1040,23 @@ def main():
                             logger.debug(f"  CM同期スキップ: 商品IDなし")
                     else:
                         try:
-                            # 数式で再計算されたAB〜AE列を読み戻す
-                            price_range = f'{Col.PROPER_PRICE.letter}{sheet_row}:{Col.SALES_PRICE.letter}{sheet_row}'
-                            price_cells = sheet.get(price_range)
-
-                            updated_row = list(row)
-                            while len(updated_row) <= Col.SALES_PRICE.index:
-                                updated_row.append("")
-
-                            if price_cells and price_cells[0]:
-                                read_cells = price_cells[0]
-                                start_idx = Col.PROPER_PRICE.index
-                                for j, val in enumerate(read_cells):
-                                    cell_idx = start_idx + j
-                                    if cell_idx < len(updated_row):
-                                        updated_row[cell_idx] = str(val) if val else ""
+                            # 【根治策】カラーミー送信直前に、シートの全列を計算値(FORMATTED_VALUE)で1回だけ読み込む
+                            # 数式列 (M-Q仕入れ先, R-S為替, T/V/AA-AJ 価格計算, BO-BQ SEO, BR-BT オプション 等)
+                            # がすべて計算後の値に置換される。数式テキストがカラーミーに漏れることを完全防止。
+                            #
+                            # 従来: row (数式含む) を渡し、AB-AE / M-Q / BO-BQ を個別に再読み込みしていた
+                            # (3回のAPI call + 数式列を手動列挙する必要あり = 見落としバグの温床)
+                            full_row_cells = sheet.get(f'A{sheet_row}:{last_col}{sheet_row}')
+                            if full_row_cells and full_row_cells[0]:
+                                updated_row = [str(v) if v is not None else "" for v in full_row_cells[0]]
+                                while len(updated_row) < Col.TOTAL_COLUMNS:
+                                    updated_row.append("")
+                            else:
+                                # フォールバック: シート読み込み失敗時は元の row を使用
+                                logger.warning(f"  シート行読み込み失敗、rowをフォールバック使用")
+                                updated_row = list(row)
+                                while len(updated_row) < Col.TOTAL_COLUMNS:
+                                    updated_row.append("")
 
                             # 更新データを構築（フルスペック）
                             data = row_to_update_data(updated_row, price_only=False, sync_fields=sync_fields)
@@ -849,7 +1113,8 @@ def main():
                 scraper_manager.__exit__(None, None, None)
 
         if args.fetch_prices:
-            logger.info(f"スクレイピング結果: 成功{scrape_success}件, 失敗{scrape_fail}件")
+            skip_note = f", 除外{scrape_skipped}件({','.join(SKIP_SCRAPE_DOMAINS)})" if scrape_skipped else ""
+            logger.info(f"スクレイピング結果: 成功{scrape_success}件, 失敗{scrape_fail}件{skip_note}")
         logger.info(f"シート更新完了: 更新{updated_count}件, 追加{added_count}件")
         if args.sync:
             logger.info(f"カラーミー同期成功: {sync_success}件")
@@ -861,6 +1126,64 @@ def main():
         import traceback
         traceback.print_exc()
         sys.exit(1)
+
+    # AM列(グループID)をRAWで再書き込み（USER_ENTEREDだと巨大数値として解釈されデータ破損するため）
+    # シート書き込みフェーズで AM=`'3190091,3190093` のように書いてもアポストロフィが効かず
+    # 数値解釈されてしまうので、最後に RAW で上書きしてテキスト保存を強制する
+    logger.info("")
+    logger.info("=== AM列(グループID)RAW再書き込み 開始 ===")
+    try:
+        sheet_for_am = client._spreadsheet.worksheet(Config.SHEET_COLORME_V2)
+        # 既存行マップを再構築（書き込み後の最新状態）
+        latest_rows = sheet_for_am.get_all_values()
+        pid_to_row = {}
+        for r_idx, r in enumerate(latest_rows[1:], start=2):
+            pid_str = r[Col.PRODUCT_ID.index] if Col.PRODUCT_ID.index < len(r) else ""
+            if pid_str and pid_str.isdigit():
+                pid_to_row[int(pid_str)] = r_idx
+
+        am_updates = []
+        for product in products:
+            pid = product.get("id")
+            if pid not in pid_to_row:
+                continue
+            gids = product.get("group_ids") or []
+            if not gids:
+                continue
+            row_n = pid_to_row[pid]
+            value = ",".join(str(g) for g in gids)
+            am_updates.append({
+                'range': f'{Config.SHEET_COLORME_V2}!{Col.GROUP_IDS.letter}{row_n}',
+                'values': [[value]]
+            })
+
+        if am_updates:
+            # チャンク分割（大量更新時のAPI制限対策）
+            CHUNK = 500
+            for i in range(0, len(am_updates), CHUNK):
+                chunk = am_updates[i:i+CHUNK]
+                sheet_for_am.spreadsheet.values_batch_update({
+                    'data': chunk,
+                    'valueInputOption': 'RAW',  # 数値解釈させずに文字列として保存
+                })
+                time.sleep(0.5)
+            logger.info(f"AM列RAW再書き込み: {len(am_updates)}件完了")
+        else:
+            logger.info("AM列RAW再書き込み: 対象なし")
+    except Exception as e:
+        logger.warning(f"AM列RAW再書き込みエラー（スキップ）: {e}")
+
+    # シート書き込み完了後にJ列(仕入れ先URL)を自動補完
+    # （新規行や空欄のJ列を埋めることで K-AE列のVLOOKUP/数式が連鎖計算される）
+    # スナップショット書き戻しによるレースコンディションを防ぐため、必ず最後に実行する
+    logger.info("")
+    logger.info("=== J列(仕入れ先URL)自動補完 開始 ===")
+    try:
+        from .fill_supplier_url import fill_supplier_urls
+        filled, no_match = fill_supplier_urls(client=client, dry_run=False, overwrite=False)
+        logger.info(f"J列補完: {filled}件更新 / マップにない商品 {no_match}件")
+    except Exception as e:
+        logger.warning(f"J列自動補完でエラー（スキップ、後で手動で fill_supplier_url 実行可）: {e}")
 
     logger.info(f"=== {mode_label}完了 ===")
 

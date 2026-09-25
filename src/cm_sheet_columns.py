@@ -189,12 +189,45 @@ class Col:
     # ※旧CI-CK列から移動、商品作成/更新日時を削除（インデックス調整: -10、-2列）
     SYNC_DATETIME = _col(76, "同期日時")
 
+    # === BZ-CC列: 競合情報（4列）===
+    COMPETITOR_URL = _col(77, "野口商品URL")
+    COMPETITOR_NAME = _col(78, "野口商品名")
+    COMPETITOR_PRICE = _col(79, "野口税込価格")
+    COMPETITOR_STOCK = _col(80, "野口在庫状況")
+
+    # === CD列: サブショップ採用（ユーザー独自フラグ、コードからは触らない） ===
+    SUB_SHOP_ADOPTION = _col(81, "サブショップ採用")
+
+    # === CE列: 価格警告（1列） ===
+    # シート上の数式のみで動作。カラーミーAPIには送信されない。
+    # 数式: =IF(AND(CB>0, AI>0, AI>CB*1.2), "⚠ +" & ROUND((AI/CB-1)*100,1) & "%", "")
+    PRICE_WARNING = _col(82, "価格警告")
+
+    # === CF-CG列: セール制御（2列） ===
+    # CF: セールON/OFF, CG: セール率（例 0.05 = 5%OFF）
+    # シート上の数式: AE(販売価格) = IF(CF="ON", MAX(ROUND(AB*(1-IF(CG="",0.05,CG)),-2), AA), AB)
+    #                 AF(定価)   = AB
+    SALE_ENABLED = _col(83, "セールON/OFF")
+    SALE_RATE = _col(84, "セール率")
+
+    # === CH列: サブショップID（1列） ===
+    # サブショップのカラーミー商品ID。ユーザー手動入力。
+    # CSV出力・同期時にメインシートの価格・在庫を参照するためのキー。
+    # コードからは書き込まない（保護対象）
+    SUB_SHOP_ID = _col(85, "サブショップID")
+
+    # === CI列: 取り扱い区分（1列） ===
+    # 商品ランク分類（ドロップダウン: メイン / サブ / 空）。ユーザー手動選択。
+    # フィルタでメイン商材のみ抽出する用途。
+    # コードからは書き込まない（保護対象）
+    HANDLING_CATEGORY = _col(86, "取り扱い区分")
+
     # 画像列の範囲（便利定数）
     IMAGE_FIRST = MAIN_IMAGE
     IMAGE_LAST = IMAGE_URL_8
 
-    # 総列数（89列 - 12列 = 77列）
-    TOTAL_COLUMNS = 77
+    # 総列数
+    TOTAL_COLUMNS = 87
 
     @classmethod
     def all_columns(cls) -> list[Column]:
@@ -212,7 +245,7 @@ class Col:
     @classmethod
     def last_column_letter(cls) -> str:
         """最終列の文字を返す（範囲指定用）"""
-        return cls.SYNC_DATETIME.letter  # BY
+        return cls.HANDLING_CATEGORY.letter  # CJ
 
     @classmethod
     def headers(cls) -> list[str]:

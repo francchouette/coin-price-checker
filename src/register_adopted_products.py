@@ -44,8 +44,9 @@ from src.config import Config
 from src.spreadsheet import SpreadsheetClient
 from src.colorme import ColorMeClient, ColorMeProduct
 from src.sync_supplier_list import sync_registered_products_to_supplier_list
-from src.add_product import CategoryDetector, DescriptionGenerator, SEOGenerator, JapaneseProductNameGenerator, ModelNumberGenerator
+from src.add_product import CategoryDetector, DescriptionGenerator, SEOGenerator, JapaneseProductNameGenerator, AIProductNameGenerator, ModelNumberGenerator
 from src.colorme_image_uploader import ColorMeImageUploader
+from src.image_filter import select_product_images
 from src.bs_sheet_columns import Col, get_cell, get_cell_float, cell_ref
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,7 @@ async def upload_images_only(
     source: str = "bs",
     limit: Optional[int] = None,
     dry_run: bool = False,
+    supplier_ids: Optional[set] = None,
 ) -> tuple[int, int, int]:
     """
     登録済み商品で画像未アップロードのものに画像のみアップロード
@@ -157,6 +159,12 @@ async def upload_images_only(
         if registration_status != "登録済" or not colorme_url:
             continue
 
+        # supplier_ids フィルタ
+        if supplier_ids:
+            sid = get_cell(row, Col.SUPPLIER_ID)
+            if sid not in supplier_ids:
+                continue
+
         # カラーミー商品IDを抽出
         m = _re.search(r'pid=(\d+)', colorme_url)
         if not m:
@@ -164,12 +172,16 @@ async def upload_images_only(
         product_id = int(m.group(1))
 
         # 画像URLを収集
-        image_urls = []
+        raw_image_urls = []
         for i in range(10):
             img_idx = Col.IMAGE_1.index + i
             img_url = row[img_idx].strip() if img_idx < len(row) and row[img_idx] else ""
-            if img_url and img_url not in image_urls:
-                image_urls.append(img_url)
+            if img_url and img_url not in raw_image_urls:
+                raw_image_urls.append(img_url)
+
+        # 仕入れ先URLでフィルタ（ジャンク除外＋関連商品除外＋先頭3枚）
+        product_url = get_cell(row, Col.PRODUCT_URL)
+        image_urls = select_product_images(product_url, raw_image_urls)
 
         if not image_urls:
             continue
@@ -268,7 +280,8 @@ async def register_adopted_products(
     dry_run: bool = False,
     limit: Optional[int] = None,
     upload_images: bool = False,
-    source: str = "bs"
+    source: str = "bs",
+    supplier_ids: Optional[set] = None,
 ) -> tuple[int, int, int]:
     """
     採用商品をカラーミーに登録
@@ -323,7 +336,8 @@ async def register_adopted_products(
     # AI生成器を初期化（商品説明・SEO・商品名）
     description_generator = DescriptionGenerator()
     seo_generator = SEOGenerator()
-    name_generator = JapaneseProductNameGenerator()
+    name_generator = JapaneseProductNameGenerator()  # 従来型（フォールバック用）
+    ai_name_generator = AIProductNameGenerator()  # AI型（説明文を参照して精度UP）
 
     try:
         # 対象シートを取得
@@ -345,18 +359,35 @@ async def register_adopted_products(
         model_number_generator = ModelNumberGenerator(existing_model_numbers)
         logger.info(f"型番生成器を初期化（既存型番: {len(existing_model_numbers)}件）")
 
-        # A列=「採用」かつ B列≠「登録済」の商品をフィルタ
+        # A列=「採用」または「予約」 かつ B列≠「登録済」の商品をフィルタ
+        # 「予約」は入荷待ち商品。登録後は D=ON(在庫連動) で入荷検知→自動反映される想定。
         target_products = []
         for row_idx, row in enumerate(bs_data[1:], start=2):
             adopted_flag = get_cell(row, Col.ADOPTED_FLAG)
             registration_status = get_cell(row, Col.REGISTRATION_STATUS)
 
-            if adopted_flag == "採用" and registration_status != "登録済":
+            if adopted_flag in ("採用", "予約") and registration_status != "登録済":
                 target_products.append((row_idx, row))
 
         if not target_products:
-            logger.info("登録対象の商品がありません（A列=「採用」かつ B列≠「登録済」）")
+            logger.info("登録対象の商品がありません（A列=「採用」or「予約」 かつ B列≠「登録済」）")
             return (0, 0, 0)
+
+        # supplier_ids 指定時は更に絞り込み
+        if supplier_ids:
+            before = len(target_products)
+            target_products = [
+                (r_idx, r) for r_idx, r in target_products
+                if get_cell(r, Col.SUPPLIER_ID) in supplier_ids
+            ]
+            logger.info(f"supplier_ids フィルタ適用: {before}件 → {len(target_products)}件")
+            found_ids = {get_cell(r, Col.SUPPLIER_ID) for _, r in target_products}
+            missing = supplier_ids - found_ids
+            if missing:
+                logger.warning(f"次のsupplier_idsは対象外（採用済み未登録ではない or 見つからない）: {sorted(missing)}")
+            if not target_products:
+                logger.info("指定された supplier_ids に該当する登録対象商品がありません")
+                return (0, 0, 0)
 
         if limit:
             target_products = target_products[:limit]
@@ -402,29 +433,16 @@ async def register_adopted_products(
                     skip_count += 1
                     continue
 
-                # CM商品名 - D列に既存値があればそれを使用、なければ自動生成
+                # 元データを先に読み込み（説明・商品名の両方で使用）
                 existing_cm_name = get_cell(row, Col.CM_PRODUCT_NAME)  # D列: CM商品名
                 desc_en = get_cell(row, Col.DESC_EN)  # M列: 商品説明（英語）
                 specs = get_cell(row, Col.SPECS)      # N列: 仕様・スペック
 
+                # 商品名の生成は説明生成後に行う（AI商品名生成が説明文を参照するため、下側に移動）
+                # ここでは既存値のみチェックし、なければ暫定的に空にしておく
+                cm_product_name = existing_cm_name if existing_cm_name else ""
                 if existing_cm_name:
-                    # D列に既存のCM商品名がある場合はそれを使用
-                    cm_product_name = existing_cm_name
                     logger.info(f"  CM商品名: D列の既存値を使用 → {cm_product_name[:50]}...")
-                else:
-                    # JapaneseProductNameGeneratorで自動生成
-                    product_info = {
-                        "name": product_name,
-                        "specs": specs,
-                        "description": desc_en,
-                    }
-                    cm_product_name = name_generator.generate(product_info, quantity=1)
-                    if cm_product_name:
-                        logger.info(f"  CM商品名: 自動生成 → {cm_product_name[:50]}...")
-                    else:
-                        # フォールバック: 仕入れ先商品名をそのまま使用
-                        cm_product_name = product_name
-                        logger.info(f"  CM商品名: フォールバック（仕入れ先商品名を使用）")
 
                 # カテゴリー・グループ自動判定（CategoryDetector使用）
                 category_big = 0
@@ -446,15 +464,24 @@ async def register_adopted_products(
                             group_id_str = existing_group_id.lstrip("'")
                             group_ids = [int(g.strip()) for g in group_id_str.split(",") if g.strip().isdigit()]
                         logger.info(f"  カテゴリー(既存値使用): 大={category_big}, 小={category_small}, グループ={group_ids}")
+
+                        # 既存グループIDが現行カラーミーグループに存在するか検証（旧グループ構成の残骸を排除）
+                        if category_detector and group_ids:
+                            valid_gids = {info["id"] for info in category_detector.existing_groups.values()}
+                            invalid = [g for g in group_ids if g not in valid_gids]
+                            if invalid:
+                                logger.warning(f"  既存グループIDに無効なものを検出（旧構成の残骸）: {invalid} → detect_v2で再判定します")
+                                group_ids = []
+                                category_big = 0  # detect_v2を走らせる
                     except ValueError as e:
                         logger.warning(f"  カテゴリー解析エラー: {e}")
                         pass
 
                 if not category_big:
-                    # CategoryDetectorで自動判定
+                    # CategoryDetectorで自動判定（v2: 現行グループ一覧から動的選択）
                     if category_detector:
-                        category_big, category_small, group_ids = category_detector.detect(product_name, product_url)
-                        logger.info(f"  カテゴリー(自動判定): 大={category_big}, 小={category_small}, グループ={group_ids}")
+                        category_big, category_small, group_ids = category_detector.detect_v2(product_name, product_url)
+                        logger.info(f"  カテゴリー(自動判定v2): 大={category_big}, 小={category_small}, グループ={group_ids}")
                     else:
                         # フォールバック: 従来のmap_category関数を使用
                         top_cat = get_cell(row, Col.TOP_CATEGORY)
@@ -509,6 +536,37 @@ async def register_adopted_products(
                         elif specs:
                             description = specs
 
+                # === CM商品名の生成（説明生成後に実施：説明文を参照して精度UP） ===
+                if not cm_product_name:
+                    # まず AI商品名生成器（説明文を参照）を試す
+                    if ai_name_generator.genai_model and description:
+                        ai_info = {
+                            "name": product_name,
+                            "specs": specs,
+                            "ja_description": description,
+                        }
+                        cm_product_name = ai_name_generator.generate(ai_info, quantity=1)
+                        if cm_product_name:
+                            logger.info(f"  CM商品名: AI生成成功 → {cm_product_name[:60]}")
+
+                    # AI失敗時は従来の正規表現ベースの生成器
+                    if not cm_product_name:
+                        legacy_info = {
+                            "name": product_name,
+                            "specs": specs,
+                            "description": desc_en,
+                            "country": get_cell(row, Col.COUNTRY) or "",
+                            "url": get_cell(row, Col.PRODUCT_URL) or "",
+                        }
+                        cm_product_name = name_generator.generate(legacy_info, quantity=1)
+                        if cm_product_name:
+                            logger.info(f"  CM商品名: 正規表現版フォールバックで生成 → {cm_product_name[:60]}")
+
+                    # それでもダメなら仕入れ先商品名をそのまま
+                    if not cm_product_name:
+                        cm_product_name = product_name
+                        logger.info(f"  CM商品名: 最終フォールバック（仕入れ先商品名をそのまま使用）")
+
                 # SEO項目の取得またはAI生成
                 if existing_page_title:
                     page_title = existing_page_title
@@ -551,13 +609,14 @@ async def register_adopted_products(
                         logger.info(f"  型番: フォールバック（仕入れ先ID使用） → {model_number}")
 
                 # 画像URL取得（BK-BT列: 画像URL1-10）
-                image_urls = []
-                # 画像URL1-10（BK-BT列: Col.IMAGE_1〜Col.IMAGE_10）
+                raw_image_urls = []
                 for i in range(10):
                     img_idx = Col.IMAGE_1.index + i
                     img_url = row[img_idx].strip() if img_idx < len(row) and row[img_idx] else ""
-                    if img_url and img_url not in image_urls:
-                        image_urls.append(img_url)
+                    if img_url and img_url not in raw_image_urls:
+                        raw_image_urls.append(img_url)
+                # ジャンク除外＋関連商品除外＋先頭3枚に絞り込み
+                image_urls = select_product_images(product_url, raw_image_urls)
 
                 # 価格関連情報を取得（スプレッドシートの値を優先）
                 # AH列: 販売価格, AI列: 定価, AJ列: 会員価格, AK列: 原価
@@ -805,6 +864,8 @@ def main():
     parser.add_argument("--skip-sync", action="store_true", help="仕入れ先一覧同期をスキップ")
     parser.add_argument("--source", choices=["bs", "ap"], default="bs",
                         help="対象シート（bs=ブリオンスター, ap=APMEX）")
+    parser.add_argument("--supplier-ids", type=str, default="",
+                        help="特定の仕入れ先商品IDのみ登録（カンマ区切り、例: AP-031099,AP-026058）")
 
     args = parser.parse_args()
 
@@ -840,21 +901,33 @@ def main():
         sys.exit(1)
 
     if args.images_only:
+        # supplier_ids 引数をパース
+        sids = None
+        if args.supplier_ids:
+            sids = set(s.strip() for s in args.supplier_ids.split(",") if s.strip())
+            logger.info(f"supplier_ids 指定: {sorted(sids)}")
         # 登録済み商品に画像のみアップロード
         success, error, skip = asyncio.run(upload_images_only(
             source=args.source,
             limit=args.limit,
             dry_run=args.dry_run,
+            supplier_ids=sids,
         ))
         logger.info("-" * 60)
         logger.info(f"画像アップロード結果: 成功={success}件, 失敗={error}件, スキップ={skip}件")
     else:
+        # supplier_ids 引数をパース
+        sids = None
+        if args.supplier_ids:
+            sids = set(s.strip() for s in args.supplier_ids.split(",") if s.strip())
+            logger.info(f"supplier_ids 指定: {sorted(sids)}")
         # 採用商品をカラーミーに登録
         success, error, skip = asyncio.run(register_adopted_products(
             dry_run=args.dry_run,
             limit=args.limit,
             upload_images=args.upload_images,
-            source=args.source
+            source=args.source,
+            supplier_ids=sids,
         ))
         logger.info("-" * 60)
         logger.info(f"カラーミー登録結果: 成功={success}件, 失敗={error}件, スキップ={skip}件")

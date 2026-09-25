@@ -30,6 +30,30 @@ logger = logging.getLogger(__name__)
 # デフォルトの進捗ファイルパス
 DEFAULT_PROGRESS_FILE = Path("data/image_upload_progress.json")
 
+# rembg実行環境（別venv: ~/rembg_env）
+REMBG_PYTHON = Path.home() / "rembg_env" / "bin" / "python"
+REMBG_TARGET_SIZE = 400  # カラーミー商品画像表示サイズ
+REMBG_TIMEOUT = 120  # rembg subprocess タイムアウト（秒、初回はモデルロードで60秒超える事あり）
+
+# rembg をスキップするキーワード（鑑定済み・スラブ入り商品）
+# rembg がスラブ（透明プラスチックケース）を背景と誤認してコインだけ残す問題を回避
+# 該当する場合は元のJPEG（白背景・スラブ写り込み）をそのままアップロードする
+REMBG_SKIP_KEYWORDS = [
+    'ms-70', 'ms-69', 'ms-68', 'ms70', 'ms69', 'ms68',
+    'pf-70', 'pf-69', 'pf70', 'pf69',
+    'pr-70', 'pr-69', 'pr70', 'pr69',
+    'pcgs', 'ngc',
+    'slab', 'slabbed', 'graded',
+]
+
+
+def _should_skip_rembg(image_url: str) -> bool:
+    """画像URLから rembg スキップ判定（鑑定済み等）"""
+    if not image_url:
+        return False
+    url_lower = image_url.lower()
+    return any(kw in url_lower for kw in REMBG_SKIP_KEYWORDS)
+
 
 @dataclass
 class ImageUploadResult:
@@ -237,7 +261,11 @@ class ColorMeImageUploader:
         """
         画像をダウンロードして一時ファイルに保存
 
-        全ての画像をPNG形式で保存する（透過対応のため）。
+        - 透過PNG（Bullionstar等）: そのままPNG保存
+        - 不透明画像（APMEX等）: rembgで背景除去 → リサイズ → pngquant圧縮
+
+        rembgは別venv（~/rembg_env）で動作するため subprocess 経由で呼び出す。
+        rembg環境が無い場合は元のJPEG保存にフォールバック。
 
         Args:
             image_url: 画像URL
@@ -258,27 +286,105 @@ class ColorMeImageUploader:
 
             # 透過画像かどうか判定
             has_alpha = img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info)
+            url_hash = hash(image_url) & 0xFFFFFFFF
 
-            # 全てPNG形式で保存（透過対応）
             if has_alpha:
-                if img.mode == 'P':
-                    img = img.convert('RGBA')
-                elif img.mode == 'LA':
-                    img = img.convert('RGBA')
-            else:
-                # 透過なしの場合もRGBAに変換（将来の透過処理に対応可能）
+                # 透過あり → PNG保存（透過維持、Bullionstar等）
                 if img.mode != 'RGBA':
                     img = img.convert('RGBA')
+                temp_file = temp_dir / f"upload_{url_hash}.png"
+                img.save(temp_file, format='PNG', optimize=True)
+                logger.info(f"    → PNG保存（透過あり）: {temp_file.stat().st_size:,} bytes")
+                return temp_file
 
-            temp_file = temp_dir / f"upload_{hash(image_url) & 0xFFFFFFFF}.png"
-            img.save(temp_file, format='PNG', optimize=True)
-            logger.info(f"    → PNG保存: {temp_file.stat().st_size:,} bytes")
+            # 鑑定済み・スラブ入り商品はrembgスキップ（スラブが背景と誤認される問題を回避）
+            skip_rembg = _should_skip_rembg(image_url)
+            if skip_rembg:
+                logger.info(f"    → 鑑定品・スラブ入りキーワード検出 → rembgスキップ（JPEG保存）")
+            elif REMBG_PYTHON.exists():
+                # 透過なし → rembgで背景除去を試みる（APMEX白背景等）
+                processed = self._process_with_rembg(img, temp_dir, url_hash)
+                if processed:
+                    return processed
+                logger.warning("    → rembg処理失敗、JPEG保存にフォールバック")
+            else:
+                logger.debug(f"    rembg環境なし ({REMBG_PYTHON}) → JPEG保存")
 
+            # フォールバック: JPEG軽量保存
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            temp_file = temp_dir / f"upload_{url_hash}.jpg"
+            img.save(temp_file, format='JPEG', quality=85, optimize=True)
+            logger.info(f"    → JPEG保存（透過なし）: {temp_file.stat().st_size:,} bytes")
             return temp_file
 
         except Exception as e:
             logger.error(f"    → 画像準備エラー: {e}")
             return None
+
+    def _process_with_rembg(self, img: Image.Image, temp_dir: Path, url_hash: int) -> Optional[Path]:
+        """
+        不透明画像をrembgで背景除去 → リサイズ → pngquant圧縮
+
+        ~/rembg_env/bin/python で src.rembg_processor を実行する。
+
+        Args:
+            img: 元画像（PIL Image）
+            temp_dir: 一時ディレクトリ
+            url_hash: ファイル名衝突回避用ハッシュ
+
+        Returns:
+            Path: 処理済みPNGパス（失敗時None）
+        """
+        import subprocess
+
+        # 入力画像を一時ファイルに保存（rembgサブプロセスに渡す）
+        input_path = temp_dir / f"rembg_in_{url_hash}.png"
+        output_path = temp_dir / f"upload_{url_hash}.png"
+
+        try:
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            img.save(input_path, format='PNG')
+        except Exception as e:
+            logger.warning(f"    rembg入力保存失敗: {e}")
+            return None
+
+        try:
+            # プロジェクトルートをcwdに指定（src.rembg_processor 解決のため）
+            project_root = Path(__file__).resolve().parent.parent
+            result = subprocess.run(
+                [
+                    str(REMBG_PYTHON), '-m', 'src.rembg_processor',
+                    str(input_path), str(output_path),
+                    '--size', str(REMBG_TARGET_SIZE),
+                ],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=REMBG_TIMEOUT,
+            )
+
+            if result.returncode != 0:
+                logger.warning(f"    rembg失敗 (rc={result.returncode}): {result.stderr.strip()[:200]}")
+                return None
+
+            if not output_path.exists():
+                logger.warning(f"    rembg出力なし: {output_path}")
+                return None
+
+            logger.info(f"    → rembg処理PNG: {output_path.stat().st_size:,} bytes ({REMBG_TARGET_SIZE}px)")
+            return output_path
+
+        except subprocess.TimeoutExpired:
+            logger.warning(f"    rembgタイムアウト ({REMBG_TIMEOUT}秒)")
+            return None
+        except Exception as e:
+            logger.warning(f"    rembg実行エラー: {e}")
+            return None
+        finally:
+            # 入力一時ファイルは削除（出力は呼び出し側で使用）
+            input_path.unlink(missing_ok=True)
 
     async def _wait_for_plupload_complete(self, max_wait: float = 30.0) -> bool:
         """
@@ -936,8 +1042,11 @@ class ColorMeImageUploader:
         Returns:
             tuple[bool, str]: (成功フラグ, エラーメッセージ)
         """
-        if delivery_charge < 0:
-            return True, "個別送料が指定されていません"
+        # 注: カラーミーでは「0円」を設定すると送料無料商品扱いになり、
+        #     送料無料ライン（例: 合計金額XX円以上で送料無料）が無効化される。
+        #     0 はスキップして管理画面に入力しない（空欄のまま = デフォルト送料適用）
+        if delivery_charge <= 0:
+            return True, "個別送料が指定されていません（0または空欄）"
 
         if not self._logged_in:
             if not await self.login():

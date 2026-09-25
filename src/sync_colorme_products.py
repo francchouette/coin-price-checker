@@ -6,6 +6,7 @@
 """
 
 import argparse
+import asyncio
 import logging
 import sys
 import time
@@ -23,10 +24,55 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# シートのエラー値。API送信前に空文字へ落とす（値が無い扱いにする）
+SHEET_ERROR_VALUES = frozenset(
+    ("#N/A", "#REF!", "#DIV/0!", "#VALUE!", "#NAME?", "#NUM!", "#NULL!", "#ERROR!")
+)
+
 
 def parse_bool_ja(value: str, true_value: str = "する") -> bool:
     """日本語のブール値を変換"""
     return value.strip() == true_value
+
+
+async def _update_delivery_charges_via_playwright(targets: list) -> tuple[int, int]:
+    """
+    Playwright経由で個別送料を一括更新する
+
+    Args:
+        targets: [(product_id, delivery_charge, row_num), ...]
+
+    Returns:
+        (成功件数, 失敗件数)
+    """
+    from .colorme_image_uploader import ColorMeImageUploader
+
+    success = 0
+    fail = 0
+
+    uploader = ColorMeImageUploader(headless=True)
+    await uploader.__aenter__()
+    try:
+        for i, (product_id, delivery_charge, row_num) in enumerate(targets):
+            logger.info(f"  [{i+1}/{len(targets)}] 商品ID {product_id}: 個別送料={delivery_charge}円 (行{row_num})")
+            try:
+                ok, err = await uploader.update_delivery_charge(product_id, delivery_charge)
+                if ok:
+                    success += 1
+                    logger.info(f"    → 成功")
+                else:
+                    fail += 1
+                    logger.warning(f"    → 失敗: {err}")
+            except Exception as e:
+                fail += 1
+                logger.error(f"    → 例外: {e}")
+    finally:
+        try:
+            await uploader.__aexit__(None, None, None)
+        except Exception:
+            pass
+
+    return success, fail
 
 
 def row_to_update_data(row: list, price_only: bool = False, sync_fields: set | None = None) -> dict:
@@ -37,11 +83,25 @@ def row_to_update_data(row: list, price_only: bool = False, sync_fields: set | N
         row: シートの行データ
         price_only: Trueの場合、価格・在庫・表示状態のみ（カテゴリ・型番・説明等を除外）
         sync_fields: 同期する項目セット（None=全項目）
-            price, name, description, category, model, stock, display, stock_settings, shipping, seo, options
+            price, name, description, category, model, stock, display, stock_settings, shipping, seo, options, images
 
     Returns:
         dict: API更新用のデータ（操作フラグ含む）
     """
+    # 安全策: 数式テキスト(=vlookup等)が混入している場合はAPI送信を防ぐ
+    # download_colorme_products.py 側で計算値に置換されているはずだが、
+    # 保険としてここでも数式リテラルを空文字に置換
+    #
+    # あわせてエラー値(#N/A 等)も空文字に落とす。
+    # 例: BR列(軽減税率)が #N/A のとき `if reduced_tax:` を通過してしまい、
+    #     意図せず False が送信される。M列(仕入れ先在庫)が #N/A の場合は
+    #     "In Stock" 以外とみなされ在庫0が送信される危険もある。
+    #     空文字にしておけば、各項目の「値が無ければ送らない」判定に正しく載る。
+    row = [
+        "" if isinstance(v, str) and (v.startswith("=") or v.strip() in SHEET_ERROR_VALUES) else v
+        for v in row
+    ]
+
     # 商品ID
     product_id = get_cell_int(row, Col.PRODUCT_ID)
     if product_id <= 0:
@@ -72,24 +132,38 @@ def row_to_update_data(row: list, price_only: bool = False, sync_fields: set | N
         updates["name"] = name
 
     # 価格情報（C列が"OFF"でない限り更新する）
-    # AE列（販売価格）の数式で計算された値を優先、なければAB列（適正価格）をフォールバック
+    # 定価(price)=AF列、販売価格(sales_price)=AE列 を送信
+    # AE<AF の場合、カラーミー側で自動的にセール表示になる（定価 → 販売価格）
+    # AE/AFが空の場合はAB(適正価格)をフォールバック
     if price_update_enabled and _enabled("price"):
-        # デバッグ: 生の値をログに記録（数式エラー等の検出用）
         sales_price_raw = get_cell(row, Col.SALES_PRICE)
+        regular_price_raw = get_cell(row, Col.REGULAR_PRICE)
         proper_price_raw = get_cell(row, Col.PROPER_PRICE)
         sales_price = get_cell_int(row, Col.SALES_PRICE)
+        regular_price = get_cell_int(row, Col.REGULAR_PRICE)
         proper_price = get_cell_int(row, Col.PROPER_PRICE)
-        logger.debug(f"  価格デバッグ: AE列(生)='{sales_price_raw}' → {sales_price}, AB列(生)='{proper_price_raw}' → {proper_price}")
-        price = sales_price if sales_price > 0 else proper_price
+        logger.debug(f"  価格デバッグ: AE(販売)='{sales_price_raw}'→{sales_price}, AF(定価)='{regular_price_raw}'→{regular_price}, AB(適正)='{proper_price_raw}'→{proper_price}")
+
+        # 定価: AF > AB フォールバック
+        price = regular_price if regular_price > 0 else proper_price
+        # 販売価格: AE > AB フォールバック
+        sales = sales_price if sales_price > 0 else proper_price
+        # 販売価格が定価より高い状態は不正 → 定価に揃える
+        if sales > price > 0:
+            logger.warning(f"  AE({sales}) > AF({price}) → 販売価格を定価に揃えます")
+            sales = price
+
         if price > 0:
             updates["price"] = price           # 定価
-            updates["sales_price"] = price     # 販売価格
-            updates["members_price"] = price   # 会員価格
-            updates["cost"] = price            # 原価
-            source = "販売価格(AE)" if sales_price > 0 else "適正価格(AB)"
-            log_parts.append(f"価格: {price:,}円（{source}から更新）")
+            updates["sales_price"] = sales     # 販売価格（セール時はprice未満）
+            updates["members_price"] = sales   # 会員価格
+            updates["cost"] = sales            # 原価
+            if sales < price:
+                log_parts.append(f"価格: 定価{price:,}円 / セール{sales:,}円")
+            else:
+                log_parts.append(f"価格: {price:,}円")
         else:
-            logger.warning(f"  価格が0のため更新スキップ: AE列='{sales_price_raw}', AB列='{proper_price_raw}'")
+            logger.warning(f"  価格が0のため更新スキップ: AE='{sales_price_raw}', AF='{regular_price_raw}', AB='{proper_price_raw}'")
 
     # カテゴリー・グループID（price_only時はスキップ）
     if not price_only and _enabled("category"):
@@ -117,7 +191,10 @@ def row_to_update_data(row: list, price_only: bool = False, sync_fields: set | N
         # 仕入れ先の在庫状態に連動
         # - 在庫あり: AP列の在庫数をそのまま使用（ユーザーが0に設定した場合もそのまま）
         # - 在庫なし: 0に設定
-        if is_in_stock:
+        # - 判定不能(空文字): 在庫更新をスキップ（誤って在庫あり扱いにしない）
+        if not supplier_stock:
+            logger.warning(f"  在庫連動ON だが supplier_stock 空 → 在庫更新スキップ (安全策)")
+        elif is_in_stock:
             stocks = get_cell_int(row, Col.STOCKS, 10)  # デフォルト10（セルが空の場合のみ）
             updates["stocks"] = stocks
             log_parts.append(f"在庫: {stocks}（在庫あり連動）")
@@ -202,11 +279,11 @@ def row_to_update_data(row: list, price_only: bool = False, sync_fields: set | N
         if unit:
             updates["unit"] = unit
 
+    # 個別送料はカラーミーAPIで設定不可のため、updatesには含めず
+    # 別途Playwrightで更新するためにdelivery_charge_pendingに格納
+    delivery_charge_pending = -1
     if not price_only and _enabled("shipping"):
-        # 個別送料
-        delivery_charge = get_cell_int(row, Col.DELIVERY_CHARGE, -1)
-        if delivery_charge >= 0:
-            updates["delivery_charge"] = delivery_charge
+        delivery_charge_pending = get_cell_int(row, Col.DELIVERY_CHARGE, -1)
 
     if not price_only and _enabled("description"):
         # 商品説明
@@ -234,6 +311,17 @@ def row_to_update_data(row: list, price_only: bool = False, sync_fields: set | N
         if meta_keywords:
             updates["meta_keywords"] = meta_keywords
 
+    if not price_only and _enabled("images"):
+        # 画像URL（カラーミーAPIではURL指定での画像更新は非対応）
+        # Playwright経由の管理画面アップロードが必要
+        # ここではログ記録のみ行い、updatesには含めない
+        image_cols = [Col.MAIN_IMAGE, Col.THUMBNAIL,
+                      Col.IMAGE_URL_1, Col.IMAGE_URL_2, Col.IMAGE_URL_3, Col.IMAGE_URL_4,
+                      Col.IMAGE_URL_5, Col.IMAGE_URL_6, Col.IMAGE_URL_7, Col.IMAGE_URL_8]
+        img_count = sum(1 for c in image_cols if get_cell(row, c))
+        if img_count > 0:
+            log_parts.append(f"画像: {img_count}件（API非対応・ログのみ）")
+
     if not price_only and _enabled("options"):
         # 軽減税率対象
         reduced_tax = get_cell(row, Col.REDUCED_TAX)
@@ -254,6 +342,7 @@ def row_to_update_data(row: list, price_only: bool = False, sync_fields: set | N
         "product_id": product_id,
         "name": name,
         "updates": updates,
+        "delivery_charge_pending": delivery_charge_pending,
         "row": row,
         "log_parts": log_parts,
         "flags": {
@@ -401,7 +490,9 @@ def main():
     parser.add_argument("--limit", type=int, default=0,
                         help="処理件数制限（0=無制限）")
     parser.add_argument("--sync-fields", type=str, default="",
-                        help="同期項目をカンマ区切りで指定（空=全項目）: price,name,description,category,model,stock,display,stock_settings,shipping,seo,options")
+                        help="同期項目をカンマ区切りで指定（空=全項目）: price,name,description,category,model,stock,display,stock_settings,shipping,seo,options,images")
+    parser.add_argument("--product-ids", type=str, default="",
+                        help="特定のカラーミー商品IDのみ同期（カンマ区切り、例: 192300627,192300718）")
     args = parser.parse_args()
 
     if args.verbose or args.compare:
@@ -452,6 +543,16 @@ def main():
         logger.info("データがありません")
         return
 
+    # product-ids 指定をパース
+    target_pids = None
+    if args.product_ids:
+        target_pids = set()
+        for s in args.product_ids.split(","):
+            s = s.strip()
+            if s.isdigit():
+                target_pids.add(int(s))
+        logger.info(f"product-ids 指定: {sorted(target_pids)}")
+
     # 更新対象を抽出（A列が「更新」の商品のみ）
     update_targets = []
     for row_num, row in enumerate(all_data[1:], start=2):  # ヘッダーをスキップ
@@ -463,6 +564,9 @@ def main():
         if sync_mode == "更新":
             data = row_to_update_data(row, price_only=args.price_only, sync_fields=sync_fields)
             if data and data.get("product_id", 0) > 0:
+                # product-ids フィルタ
+                if target_pids is not None and data["product_id"] not in target_pids:
+                    continue
                 data["row_num"] = row_num
                 update_targets.append(data)
 
@@ -477,6 +581,7 @@ def main():
     fail_count = 0
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     pending_sheet_updates = []  # スプレッドシートへのバッチ更新用
+    delivery_charge_targets = []  # Playwrightで個別送料更新する対象 [(product_id, delivery_charge, row_num), ...]
 
     def flush_sheet_updates():
         """溜まったスプレッドシート更新をバッチで書き込む"""
@@ -529,6 +634,14 @@ def main():
         update_keys = list(updates.keys())
         logger.info(f"  更新項目: {', '.join(update_keys)}")
 
+        # 個別送料はAPIで設定不可なのでPlaywright更新キューに追加
+        # 注: カラーミーでは「0円」は送料無料扱いになり送料無料ラインが無効化される
+        #     AW列を空欄または負数にするとデフォルト送料（全商品共通）が適用される
+        #     よって 0 はキューに追加しない（空欄扱い）
+        delivery_charge_pending = target.get("delivery_charge_pending", -1)
+        if delivery_charge_pending > 0:
+            delivery_charge_targets.append((product_id, delivery_charge_pending, row_num))
+
         # API更新
         if colorme.update_product(product_id, updates):
             success_count += 1
@@ -567,10 +680,29 @@ def main():
     # 残りのステータスを保存
     flush_sheet_updates()
 
+    # 個別送料をPlaywrightで一括更新
+    delivery_success = 0
+    delivery_fail = 0
+    if delivery_charge_targets:
+        logger.info("")
+        logger.info(f"=== 個別送料の更新（Playwright経由）===")
+        logger.info(f"対象: {len(delivery_charge_targets)}件")
+        try:
+            delivery_success, delivery_fail = asyncio.run(
+                _update_delivery_charges_via_playwright(delivery_charge_targets)
+            )
+        except Exception as e:
+            logger.error(f"個別送料更新で例外発生: {e}")
+            delivery_fail = len(delivery_charge_targets)
+        logger.info(f"個別送料 更新成功: {delivery_success}件 / 失敗: {delivery_fail}件")
+
     # 結果サマリー
     logger.info("=== 結果 ===")
     logger.info(f"更新成功: {success_count}件")
     logger.info(f"更新失敗: {fail_count}件")
+    if delivery_charge_targets:
+        logger.info(f"個別送料更新成功: {delivery_success}件")
+        logger.info(f"個別送料更新失敗: {delivery_fail}件")
 
     if fail_count > 0:
         logger.warning("一部の商品の更新に失敗しました")
